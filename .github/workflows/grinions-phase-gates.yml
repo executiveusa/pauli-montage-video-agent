@@ -62,37 +62,39 @@ jobs:
           npm install -g @fission-ai/openspec@1.3.1
           openspec --version
 
-      - name: Resolve pinned Beads registry metadata
+      - name: Download pinned Beads release and checksum manifest
         shell: bash
         run: |
           set -euo pipefail
-          TARBALL_URL="$(npm view "@beads/bd@${BEADS_VERSION}" dist.tarball)"
-          EXPECTED="$(npm view "@beads/bd@${BEADS_VERSION}" dist.integrity)"
-          test -n "$TARBALL_URL"
+          BEADS_TAG="v${BEADS_VERSION}"
+          BEADS_ARCHIVE="beads_${BEADS_VERSION}_linux_amd64.tar.gz"
+          BEADS_BASE="https://github.com/gastownhall/beads/releases/download/${BEADS_TAG}"
+          curl -fsSL "${BEADS_BASE}/${BEADS_ARCHIVE}" -o "/tmp/${BEADS_ARCHIVE}"
+          curl -fsSL "${BEADS_BASE}/checksums.txt" -o /tmp/beads-checksums.txt
+          echo "BEADS_ARCHIVE=$BEADS_ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Verify pinned Beads release checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(awk -v target="$BEADS_ARCHIVE" '{name=$2; sub(/^\*/, "", name); if (name == target) {print $1; exit}}' /tmp/beads-checksums.txt)"
           test -n "$EXPECTED"
-          echo "BEADS_TARBALL_URL=$TARBALL_URL" >> "$GITHUB_ENV"
-          echo "BEADS_EXPECTED_INTEGRITY=$EXPECTED" >> "$GITHUB_ENV"
+          ACTUAL="$(sha256sum "/tmp/${BEADS_ARCHIVE}" | awk '{print $1}')"
+          test "$EXPECTED" = "$ACTUAL"
 
-      - name: Download and verify pinned Beads tarball
+      - name: Install verified Beads native binary
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL "$BEADS_TARBALL_URL" -o /tmp/beads-bd.tgz
-          ACTUAL="sha512-$(openssl dgst -sha512 -binary /tmp/beads-bd.tgz | openssl base64 -A)"
-          test "$BEADS_EXPECTED_INTEGRITY" = "$ACTUAL"
-
-      - name: Install verified Beads tarball
-        run: npm install -g /tmp/beads-bd.tgz
-
-      - name: Verify pinned Beads binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -f /tmp/beads-bd.tgz
-          BD_BIN="$(command -v bd)"
-          test -x "$BD_BIN"
-          echo "BD_BIN=$BD_BIN" >> "$GITHUB_ENV"
-          "$BD_BIN" version
+          rm -rf /tmp/beads-extract
+          mkdir -p /tmp/beads-extract "$RUNNER_TEMP/bin"
+          tar -xzf "/tmp/${BEADS_ARCHIVE}" -C /tmp/beads-extract
+          BD_SOURCE="$(find /tmp/beads-extract -maxdepth 2 -type f -name bd -perm -u+x | head -n 1)"
+          test -n "$BD_SOURCE"
+          install -m 0755 "$BD_SOURCE" "$RUNNER_TEMP/bin/bd"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "BD_BIN=$RUNNER_TEMP/bin/bd" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/bin/bd" version
 
       - name: Validate all active OpenSpec changes strictly
         shell: bash
