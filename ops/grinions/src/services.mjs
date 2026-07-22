@@ -78,10 +78,7 @@ async function readPrChecks(repoRoot, target, required = false) {
   if (required) args.push('--required');
   args.push('--json', 'name,state,bucket,workflow');
   const result = await runResult('gh', args, { cwd: repoRoot });
-  if (!result.stdout.trim()) {
-    if (required) return [];
-    throw new Error(`Unable to read PR checks: ${result.stderr || `exit ${result.code}`}`);
-  }
+  if (!result.stdout.trim()) return [];
   const checks = parseJson(result.stdout, 'gh pr checks');
   if (!Array.isArray(checks)) throw new Error('gh pr checks did not return an array');
   return checks;
@@ -97,11 +94,11 @@ function selectedGateChecks(allChecks, requiredChecks, phase) {
 }
 
 function assertChecksPass(checks) {
-  if (!checks.length) throw new Error('NO_GATE_CHECKS_FOUND');
+  if (!checks.length) return { pending: [], passed: false, missing: true };
   const failed = checks.filter((check) => ['fail', 'cancel'].includes(check.bucket));
   const pending = checks.filter((check) => !['pass', 'skipping'].includes(check.bucket));
   if (failed.length) throw new Error(`GATE_CHECK_FAILED:${failed.map((item) => item.name).join(',')}`);
-  return { pending, passed: pending.length === 0 };
+  return { pending, passed: pending.length === 0, missing: false };
 }
 
 async function unresolvedReviewThreads(repoRoot, prNumber) {
@@ -126,6 +123,22 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
     },
 
     async validateSpec(phase) {
+      const existing = await existingWorktreeForBranch(repoRoot, phase.branch);
+      if (existing) return run('openspec', ['validate', phase.openspecId, '--no-interactive'], { cwd: existing });
+
+      if (await remoteBranchExists(repoRoot, phase.branch)) {
+        await run('git', ['fetch', 'origin', phase.branch], { cwd: repoRoot });
+        const validationPath = join(tmpdir(), 'grinions-spec-validation', `${safeSegment(phase.phaseId)}-${safeSegment(phase.branch)}`);
+        await mkdir(dirname(validationPath), { recursive: true });
+        await removeWorktree(repoRoot, validationPath);
+        await run('git', ['worktree', 'add', '--detach', validationPath, `origin/${phase.branch}`], { cwd: repoRoot });
+        try {
+          return await run('openspec', ['validate', phase.openspecId, '--no-interactive'], { cwd: validationPath });
+        } finally {
+          await removeWorktree(repoRoot, validationPath);
+        }
+      }
+
       return run('openspec', ['validate', phase.openspecId, '--no-interactive'], { cwd: repoRoot });
     },
 
@@ -206,10 +219,11 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       return run('openspec', ['validate', phase.openspecId, '--strict', '--no-interactive'], { cwd: workspace.path });
     },
 
-    async createOrUpdatePr(phase) {
+    async createOrUpdatePr(phase, meta = {}) {
       const existing = await run('gh', ['pr', 'list', '--head', phase.branch, '--json', 'number', '--jq', '.[0].number // empty'], { cwd: repoRoot });
       if (existing.stdout.trim()) return { number: Number(existing.stdout.trim()), reused: true };
-      const created = await run('gh', ['pr', 'create', '--base', 'main', '--head', phase.branch, '--title', `phase(${phase.phaseId}): ${phase.openspecId} [GRINION]`, '--body-file', `ops/reports/phase-${phase.phaseId}.md`], { cwd: repoRoot });
+      const cwd = meta.workspace?.path || repoRoot;
+      const created = await run('gh', ['pr', 'create', '--base', 'main', '--head', phase.branch, '--title', `phase(${phase.phaseId}): ${phase.openspecId} [GRINION]`, '--body-file', `ops/reports/phase-${phase.phaseId}.md`], { cwd });
       return { url: created.stdout.trim(), reused: false };
     },
 
@@ -241,7 +255,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       const requiredChecks = await readPrChecks(repoRoot, target, true);
       const gates = selectedGateChecks(allChecks, requiredChecks, phase);
       const state = assertChecksPass(gates);
-      if (!state.passed) throw new Error('PR_CHECKS_PENDING');
+      if (!state.passed) throw new Error(state.missing ? 'NO_GATE_CHECKS_FOUND' : 'PR_CHECKS_PENDING');
 
       const unresolved = await unresolvedReviewThreads(repoRoot, Number(details.number));
       if (unresolved.length) throw new Error(`UNRESOLVED_REVIEW_THREADS:${unresolved.length}`);
