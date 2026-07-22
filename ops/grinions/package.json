@@ -12,6 +12,6 @@
     "run-phase": "node src/run-phase.mjs"
   },
   "dependencies": {
-    "absurd-sdk": "^0.4.0"
+    "absurd-sdk": "0.4.0"
   }
 }
