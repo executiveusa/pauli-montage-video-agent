@@ -1,0 +1,23 @@
+# Phase 02 implementation checklist
+
+- [x] Create `phase/02-studio-project-contracts` from verified Phase 01 squash baseline.
+- [ ] Record Phase 01 completion/rollback evidence.
+- [ ] Add StudioProject v1 root schema.
+- [ ] Add Asset v1 schema.
+- [ ] Add Element v1 schema.
+- [ ] Add Timeline v1 schema.
+- [ ] Add Job v1 schema.
+- [ ] Add Approval v1 schema.
+- [ ] Add Decision v1 schema.
+- [ ] Add Event v1 schema.
+- [ ] Add Render v1 schema.
+- [ ] Add Export v1 schema.
+- [ ] Add a valid example StudioProject.
+- [ ] Add local/offline JSON Schema validation script.
+- [ ] Add semantic cross-reference validation for stable IDs.
+- [ ] Add ICM stage templates and deterministic workspace initializer.
+- [ ] Add contract/ICM tests including path-traversal rejection and JSON round-trip.
+- [ ] Extend GRINIONS CI to run Phase 02 contract tests when contract/ICM paths change.
+- [ ] Add Phase 02 rollback/report evidence.
+- [ ] Run strict OpenSpec and all phase gates.
+- [ ] Open PR, repair valid findings, squash merge, post-merge verify.
