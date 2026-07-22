@@ -1,4 +1,5 @@
 import { checkpointedSideEffect } from './checkpoints.mjs';
+import { buildPhaseReceipt } from './receipt.mjs';
 
 const REQUIRED_PHASE_FIELDS = ['initiativeId', 'phaseId', 'openspecId', 'branch', 'risk'];
 const MAX_BEADS_PER_PHASE = 1000;
@@ -140,7 +141,17 @@ export async function runPhase(ctx, request, services) {
 
   const postMerge = await ctx.step('post-merge-verification', () => services.verifyPostMerge(phase, merge));
   if (!postMerge?.passed) throw new Error(`POST_MERGE_VERIFY_FAILED:${phase.phaseId}`);
-  await ctx.step('attest', () => services.attest(phase, { baseline, rollback, workspace, beads, pr, judgment, merge, postMerge }));
 
-  return { phaseId: phase.phaseId, status: 'completed', baseline, rollback, workspace, beads, pr, judgment, merge, postMerge };
+  const receipt = buildPhaseReceipt(phase, {
+    baseline,
+    rollback,
+    beads,
+    pr,
+    judgment,
+    merge,
+    postMerge,
+  });
+  await ctx.step('attest', () => services.attest(phase, receipt));
+
+  return { phaseId: phase.phaseId, status: 'completed', baseline, rollback, workspace, beads, pr, judgment, merge, postMerge, receipt };
 }
