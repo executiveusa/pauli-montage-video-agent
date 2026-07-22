@@ -31,6 +31,7 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
   await rm(failMarker, { force: true });
 
   const app = new Absurd({ db, queueName: 'grinions_test' });
+  let worker = null;
 
   app.registerTask({ name: 'checkpoint-proof', defaultMaxAttempts: 3 }, async (_params, ctx) => {
     const sideEffect = await ctx.step('external-side-effect', async () => {
@@ -48,9 +49,8 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
     return { sideEffect, lines: await lineCount(marker) };
   });
 
-  const worker = await app.startWorker({ concurrency: 1 });
-
   try {
+    worker = await app.startWorker({ concurrency: 1 });
     const { taskID } = await app.spawn(
       'checkpoint-proof',
       {},
@@ -65,7 +65,7 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
     assert.equal(result.state, 'completed');
     assert.equal(await lineCount(marker), 1);
   } finally {
-    await worker.close();
+    if (worker) await worker.close();
     await app.close();
     await rm(marker, { force: true });
     await rm(failMarker, { force: true });
