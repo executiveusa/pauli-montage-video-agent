@@ -11,12 +11,12 @@
 - [x] Inspect Open-clipz dependency surface and verify missing root license.
 - [x] Inspect AI YouTube Shorts Generator capabilities and verify missing root license despite README MIT claim.
 - [x] Inspect Sovereign Video Agent artifact and classify it as behavior/skill source, not another backend.
-- [ ] Commit `docs/CAPABILITY_MATRIX.md` with one canonical owner per durable subsystem.
-- [ ] Commit `docs/DEPENDENCY_REGISTER.md` with runtime, license, integration mode, and removal path.
-- [ ] Commit `docs/LICENSE_BOUNDARIES.md` with corrected commercial constraints.
-- [ ] Commit `docs/DUPLICATION_MAP.md` identifying overlapping project/UI/orchestration/provider/editing systems.
-- [ ] Commit `docs/MIGRATION_MAP.md` with `KEEP/EXTEND/ADAPT/HARVEST/OWNER-ONLY/ARCHIVE/REJECT` decisions.
-- [ ] Add Phase 01 rollback/report evidence.
+- [x] Commit `docs/CAPABILITY_MATRIX.md` with one canonical owner per durable subsystem.
+- [x] Commit `docs/DEPENDENCY_REGISTER.md` with runtime, license, integration mode, and removal path.
+- [x] Commit `docs/LICENSE_BOUNDARIES.md` with corrected commercial constraints.
+- [x] Commit `docs/DUPLICATION_MAP.md` identifying overlapping project/UI/orchestration/provider/editing systems.
+- [x] Commit `docs/MIGRATION_MAP.md` with `KEEP/EXTEND/ADAPT/HARVEST/OWNER-ONLY/ARCHIVE/REJECT` decisions.
+- [x] Add Phase 01 rollback/report evidence.
 - [ ] Run OpenSpec strict validation and GRINIONS phase gates.
 - [ ] Open final Phase 01 PR and repair valid review findings.
 - [ ] Squash merge after all gates pass.
