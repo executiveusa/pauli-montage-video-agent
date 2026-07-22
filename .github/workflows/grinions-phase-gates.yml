@@ -43,8 +43,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: ops/grinions/package-lock.json
 
       - name: Install control-plane dependencies
         run: npm install --prefix ops/grinions --ignore-scripts
