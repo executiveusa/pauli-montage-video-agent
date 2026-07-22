@@ -1,0 +1,20 @@
+{
+  "phaseId": "00",
+  "openspecId": "phase-00-grinions-harness",
+  "baselineMainSha": "b814abdba5a96b26c51101eab26ff3c4161daf56",
+  "deploymentId": "dpl_D5FsCHyuwLHcCfLNXMmL4XExjLZD",
+  "deploymentStateAtBaseline": "ERROR",
+  "migrations": [],
+  "backups": [],
+  "affectedServices": [
+    "repository build/release control plane only"
+  ],
+  "featureFlags": [],
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "After merge, revert the recorded Phase 00 squash SHA on main.",
+    "Stop or remove the GRINIONS worker; no customer runtime rollback is required."
+  ],
+  "dataLossRisk": "none; Phase 00 does not modify customer or product databases",
+  "notes": "The baseline Vercel production deployment was already failing because the repository had no supported web entrypoint. Phase 00 does not attempt to fix the product deployment. The runtime attestation step replaces rollbackCommands with an executable git revert command using the verified squash SHA."
+}
