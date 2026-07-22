@@ -6,12 +6,16 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const required = [
   'AGENTS.md',
   'README.md',
+  'EMERALD_TABLETS.md',
   'openspec/config.yaml',
   '.ralphy/config.yaml',
   'ops/grinions/src/phase-workflow.mjs',
   'ops/grinions/src/absurd-runtime.mjs',
   'ops/grinions/src/services.mjs',
+  'ops/grinions/src/beads.mjs',
   'ops/grinions/test/idempotency.test.mjs',
+  'ops/grinions/test/process.test.mjs',
+  'ops/grinions/test/beads.test.mjs',
 ];
 
 for (const path of required) await access(resolve(repoRoot, path));
