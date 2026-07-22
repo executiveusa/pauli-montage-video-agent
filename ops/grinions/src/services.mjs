@@ -1,6 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import {
+  belongsToPhase,
+  boundedBead,
+  compileBeadTaskPacket,
+  isClosed,
+  normalizeBdItems,
+} from './beads.mjs';
 import { run } from './process.mjs';
 import { runRalphy } from './ralphy.mjs';
 
@@ -39,6 +46,11 @@ function parseJson(text, label) {
   } catch (error) {
     throw new Error(`${label} returned invalid JSON: ${error.message}`);
   }
+}
+
+async function bdItems(args, cwd) {
+  const { stdout } = await run('bd', [...args, '--json'], { cwd });
+  return normalizeBdItems(parseJson(stdout, `bd ${args.join(' ')}`));
 }
 
 function safeSegment(value) {
@@ -124,6 +136,14 @@ async function unresolvedReviewThreads(repoRoot, prNumber) {
   return connection.nodes.filter((thread) => !thread.isResolved);
 }
 
+function executionSummary(result) {
+  return {
+    code: result.code,
+    stdoutTail: result.stdout.slice(-4000),
+    stderrTail: result.stderr.slice(-4000),
+  };
+}
+
 export function createShellServices({ repoRoot = process.cwd() } = {}) {
   return {
     async hydrateContext(phase) {
@@ -205,35 +225,103 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       throw new Error(`DESTRUCTIVE_ACTION_APPROVAL_REQUIRED:${phase.phaseId}:${actionId}`);
     },
 
-    async executeBeads(phase, workspace) {
-      await run('bd', ['ready'], { cwd: workspace.path });
+    async selectReadyBead(phase, workspace) {
+      const ready = await bdItems(['ready'], workspace.path);
+      return ready.find((issue) => belongsToPhase(issue, phase)) || null;
+    },
+
+    async phaseBeadStatus(phase, workspace) {
+      const open = (await bdItems(['list'], workspace.path)).filter((issue) => belongsToPhase(issue, phase) && !isClosed(issue));
+      const closed = (await bdItems(['list', '--status', 'closed'], workspace.path)).filter((issue) => belongsToPhase(issue, phase));
+      const ids = new Set([...open, ...closed].map((issue) => issue.id).filter(Boolean));
+      return { total: ids.size, open: open.length, closed: closed.length };
+    },
+
+    async claimBead(phase, workspace, ready) {
+      const agentId = process.env.GRINIONS_AGENT_ID || 'grinions';
+      const before = (await bdItems(['show', ready.id], workspace.path))[0] || ready;
+      const status = String(before.status || '').toLowerCase();
+      const assignee = before.assignee || before.owner || before.assigned_to || null;
+
+      if (status === 'in_progress') {
+        if (assignee && assignee !== agentId) throw new Error(`BEAD_ALREADY_CLAIMED:${ready.id}:${assignee}`);
+      } else {
+        await run('bd', ['update', ready.id, '--claim', '--assignee', agentId, '--json'], { cwd: workspace.path });
+      }
+
+      const claimed = (await bdItems(['show', ready.id], workspace.path))[0];
+      if (!claimed) throw new Error(`BEAD_NOT_FOUND_AFTER_CLAIM:${ready.id}`);
+      return boundedBead(claimed, phase);
+    },
+
+    async compileBead(phase, _workspace, bead) {
+      const taskFile = join(tmpdir(), 'grinions-bead-packets', safeSegment(phase.phaseId), `${safeSegment(bead.id)}.md`);
+      await mkdir(dirname(taskFile), { recursive: true });
+      await writeFile(taskFile, compileBeadTaskPacket(bead, phase), 'utf8');
+      return { beadId: bead.id, taskFile };
+    },
+
+    async executeBead(phase, workspace, bead, packet) {
       const before = await listBranches(workspace.path);
       const result = await runRalphy({
         cwd: workspace.path,
-        taskFile: `openspec/changes/${phase.openspecId}/tasks.md`,
+        taskFile: packet.taskFile,
         baseBranch: phase.branch,
         maxRetries: 3,
       });
       const after = await listBranches(workspace.path);
-      const taskBranches = [...after].filter((branch) => !before.has(branch) && branch.startsWith('ralphy/')).sort();
-      return { ...result, taskBranches };
+      const beadToken = bead.id.toLowerCase();
+      const matching = [...after].filter((branch) => branch.startsWith('ralphy/') && branch.toLowerCase().includes(beadToken));
+      const created = [...after].filter((branch) => !before.has(branch) && branch.startsWith('ralphy/'));
+      const taskBranches = matching.length ? matching : created;
+      if (!taskBranches.length) throw new Error(`RALPHY_TASK_BRANCH_NOT_FOUND:${bead.id}`);
+      return { ...executionSummary(result), taskBranches: [...new Set(taskBranches)].sort() };
     },
 
-    async integrateBeads(phase, workspace, execution) {
+    async integrateBead(phase, workspace, bead, execution) {
       await run('git', ['checkout', phase.branch], { cwd: workspace.path });
       const integratedBranches = [];
-      for (const taskBranch of execution.taskBranches || []) {
+      for (const taskBranch of execution.taskBranches) {
         await run('git', ['merge', '--no-ff', '--no-edit', taskBranch], { cwd: workspace.path });
         integratedBranches.push(taskBranch);
       }
       await run('git', ['push', '--set-upstream', 'origin', phase.branch], { cwd: workspace.path });
       const { stdout } = await run('git', ['rev-parse', 'HEAD'], { cwd: workspace.path });
-      return { branch: phase.branch, headSha: stdout.trim(), integratedBranches };
+      return { beadId: bead.id, branch: phase.branch, headSha: stdout.trim(), integratedBranches };
+    },
+
+    async verifyBead(_phase, workspace, bead, integration) {
+      const commands = [];
+      for (const verification of bead.verificationCommands) {
+        const result = await run(verification.command, verification.args, {
+          cwd: workspace.path,
+          timeoutMs: 20 * 60 * 1000,
+          maxOutputBytes: 10 * 1024 * 1024,
+        });
+        commands.push({ command: verification.command, args: verification.args, ...executionSummary(result) });
+      }
+      return {
+        beadId: bead.id,
+        headSha: integration.headSha,
+        contract: bead.verification,
+        requiredEvidence: bead.evidence,
+        commands,
+        passed: true,
+      };
+    },
+
+    async closeBead(_phase, workspace, bead, integration, verification) {
+      const evidence = verification.requiredEvidence.join('; ');
+      const reason = `Verified on ${integration.headSha}. Evidence contract: ${evidence}`;
+      await run('bd', ['close', bead.id, '--reason', reason, '--json'], { cwd: workspace.path });
+      const closed = (await bdItems(['show', bead.id], workspace.path))[0];
+      if (!closed || !isClosed(closed)) throw new Error(`BEAD_CLOSE_NOT_CONFIRMED:${bead.id}`);
+      return { id: bead.id, status: closed.status, reason };
     },
 
     async verifyLocal(_phase, workspace) {
       await run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: workspace.path });
-      return run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs'], { cwd: workspace.path });
+      return run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs', 'ops/grinions/test/beads.test.mjs'], { cwd: workspace.path });
     },
 
     async verifyPhase(phase, workspace) {
@@ -321,7 +409,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
       try {
         await run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: verifyPath });
-        await run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs'], { cwd: verifyPath });
+        await run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs', 'ops/grinions/test/beads.test.mjs'], { cwd: verifyPath });
         await run('openspec', ['validate', phase.openspecId, '--strict', '--no-interactive'], { cwd: verifyPath });
       } finally {
         await removeWorktree(repoRoot, verifyPath);
