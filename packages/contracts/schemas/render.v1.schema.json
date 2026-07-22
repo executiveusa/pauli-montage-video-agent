@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/render.v1.schema.json",
+  "title": "YAPPY-CLIPZ Render v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "version", "status", "createdAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "version": {"type": "integer", "minimum": 1},
+    "status": {"enum": ["queued", "rendering", "verifying", "passed", "failed", "cancelled"]},
+    "engine": {"type": ["string", "null"]},
+    "timelineVersion": {"type": ["integer", "null"], "minimum": 1},
+    "jobId": {"type": ["string", "null"]},
+    "assetId": {"type": ["string", "null"]},
+    "settings": {"type": "object", "additionalProperties": true},
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passed": {"type": ["boolean", "null"]},
+        "checks": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+        "verifiedAt": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "createdAt": {"type": "string", "format": "date-time"},
+    "finishedAt": {"type": ["string", "null"], "format": "date-time"},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}
