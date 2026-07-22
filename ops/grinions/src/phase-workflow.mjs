@@ -1,6 +1,7 @@
 import { checkpointedSideEffect } from './checkpoints.mjs';
 
 const REQUIRED_PHASE_FIELDS = ['initiativeId', 'phaseId', 'openspecId', 'branch', 'risk'];
+const MAX_BEADS_PER_PHASE = 1000;
 
 export function validatePhaseRequest(request) {
   for (const field of REQUIRED_PHASE_FIELDS) {
@@ -31,13 +32,38 @@ export async function runPhase(ctx, request, services) {
     );
   }
 
-  const execution = await ctx.step('execute-beads', () => services.executeBeads(phase, workspace));
-  const integration = await ctx.step('integrate-beads', () => services.integrateBeads(phase, workspace, execution));
-  await ctx.step('local-verification', () => services.verifyLocal(phase, workspace, integration));
+  const beads = [];
+  for (let iteration = 0; iteration < MAX_BEADS_PER_PHASE; iteration += 1) {
+    const ready = await ctx.step(`select-ready-bead:${iteration}`, () => services.selectReadyBead(phase, workspace));
+
+    if (!ready) {
+      const status = await ctx.step(`phase-bead-status:${iteration}`, () => services.phaseBeadStatus(phase, workspace));
+      if (status.total === 0) throw new Error(`NO_PHASE_BEADS:${phase.phaseId}`);
+      if (status.open > 0) {
+        throw new Error(`PHASE_BEADS_BLOCKED:${phase.phaseId}:${status.open}`);
+      }
+      break;
+    }
+
+    const beadId = ready.id;
+    const claimed = await ctx.step(`claim-bead:${beadId}`, () => services.claimBead(phase, workspace, ready));
+    const packet = await ctx.step(`compile-bead:${beadId}`, () => services.compileBead(phase, workspace, claimed));
+    const execution = await ctx.step(`execute-bead:${beadId}`, () => services.executeBead(phase, workspace, claimed, packet));
+    const integration = await ctx.step(`integrate-bead:${beadId}`, () => services.integrateBead(phase, workspace, claimed, execution));
+    const verification = await ctx.step(`verify-bead:${beadId}`, () => services.verifyBead(phase, workspace, claimed, integration));
+    const closed = await ctx.step(`close-bead:${beadId}`, () => services.closeBead(phase, workspace, claimed, integration, verification));
+    beads.push({ id: beadId, integration, verification, closed });
+  }
+
+  if (beads.length >= MAX_BEADS_PER_PHASE) {
+    throw new Error(`PHASE_BEAD_LIMIT_EXCEEDED:${phase.phaseId}:${MAX_BEADS_PER_PHASE}`);
+  }
+
+  await ctx.step('local-verification', () => services.verifyLocal(phase, workspace, beads));
   await ctx.step('phase-verification', () => services.verifyPhase(phase, workspace));
 
   const pr = await checkpointedSideEffect(ctx, 'create-or-update-pr', (idempotencyKey) =>
-    services.createOrUpdatePr(phase, { idempotencyKey, baseline, rollback, workspace, integration }),
+    services.createOrUpdatePr(phase, { idempotencyKey, baseline, rollback, workspace, beads }),
   );
 
   await ctx.step('pr-watch', () => services.watchPr(phase, pr));
@@ -54,7 +80,7 @@ export async function runPhase(ctx, request, services) {
 
   const postMerge = await ctx.step('post-merge-verification', () => services.verifyPostMerge(phase, merge));
   if (!postMerge?.passed) throw new Error(`POST_MERGE_VERIFY_FAILED:${phase.phaseId}`);
-  await ctx.step('attest', () => services.attest(phase, { baseline, rollback, workspace, integration, pr, judgment, merge, postMerge }));
+  await ctx.step('attest', () => services.attest(phase, { baseline, rollback, workspace, beads, pr, judgment, merge, postMerge }));
 
-  return { phaseId: phase.phaseId, baseline, rollback, workspace, integration, pr, judgment, merge, postMerge };
+  return { phaseId: phase.phaseId, baseline, rollback, workspace, beads, pr, judgment, merge, postMerge };
 }
