@@ -50,20 +50,17 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install current spec and memory tooling
+      - name: Install spec and memory tooling
         run: |
-          npm install -g @fission-ai/openspec@1.3.1
-          curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          npm install -g @fission-ai/openspec@1.3.1 @beads/bd
           openspec --version
-          "$HOME/.local/bin/bd" --version
+          bd version
 
       - name: Validate OpenSpec change strictly
         run: openspec validate phase-00-grinions-harness --strict --no-interactive
 
       - name: Verify Beads agent bootstrap contract
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
           export BEADS_DIR="$RUNNER_TEMP/yappy-clipz-beads"
           bd init --quiet --stealth
           bd prime >/tmp/bd-prime.txt
