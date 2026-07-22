@@ -38,8 +38,8 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
       return { written: true };
     });
 
-    // Deliberately fail once *outside* a checkpoint. Absurd should retry the
-    // task, replay the completed checkpoint above from Postgres, and continue.
+    // Deliberately fail once outside a checkpoint. On retry, Absurd should
+    // replay the completed external-side-effect checkpoint from Postgres.
     if (!(await exists(failMarker))) {
       await writeFile(failMarker, 'failed-once\n', 'utf8');
       throw new Error('simulated transient failure after checkpoint');
@@ -48,7 +48,7 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
     return { sideEffect, lines: await lineCount(marker) };
   });
 
-  const workerPromise = app.startWorker({ concurrency: 1 });
+  const worker = await app.startWorker({ concurrency: 1 });
 
   try {
     const { taskID } = await app.spawn(
@@ -57,7 +57,7 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
       {
         queue: 'grinions_test',
         maxAttempts: 3,
-        retryStrategy: { kind: 'fixed', delaySeconds: 1 },
+        retryStrategy: { kind: 'fixed', baseSeconds: 1 },
       },
     );
     const result = await app.awaitTaskResult(taskID, { timeout: 30 });
@@ -65,11 +65,8 @@ test('Absurd retry replays checkpoints without duplicating completed side effect
     assert.equal(result.state, 'completed');
     assert.equal(await lineCount(marker), 1);
   } finally {
+    await worker.close();
     await app.close();
-    await Promise.race([
-      workerPromise.catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
     await rm(marker, { force: true });
     await rm(failMarker, { force: true });
   }
