@@ -29,8 +29,9 @@ function services(counters) {
     validateSpec: async () => true,
     captureBaseline: async () => ({ mainSha: 'base' }),
     writeRollbackReceipt: async () => ({ ok: true }),
-    provisionWorkspace: async () => ({ ok: true }),
-    executeBeads: async () => ({ ok: true }),
+    provisionWorkspace: async () => ({ path: '/tmp/worktree', branch: phase.branch }),
+    executeBeads: async () => ({ ok: true, taskBranches: [] }),
+    integrateBeads: async () => ({ headSha: 'phase-head', integratedBranches: [] }),
     verifyLocal: async () => true,
     verifyPhase: async () => true,
     createOrUpdatePr: async (_phase, meta) => {
@@ -38,12 +39,13 @@ function services(counters) {
       assert.match(meta.idempotencyKey, /create-or-update-pr/);
       return { number: 42 };
     },
-    watchPr: async () => true,
-    judge: async () => true,
+    watchPr: async () => ({ passed: true }),
+    judge: async () => ({ passed: true, headRefOid: 'phase-head' }),
     requireHighRiskApproval: async () => true,
     squashMerge: async (_phase, _pr, meta) => {
       counters.merge += 1;
       assert.match(meta.idempotencyKey, /squash-merge/);
+      assert.equal(meta.judgment.passed, true);
       return { sha: 'squash' };
     },
     verifyPostMerge: async () => ({ passed: true }),
@@ -68,4 +70,23 @@ test('a simulated restart resumes after completed checkpoints', async () => {
   assert.equal(persisted.has('capture-baseline'), true);
   await runPhase(new MemoryContext(persisted), phase, services(counters));
   assert.deepEqual(counters, { pr: 1, merge: 1 });
+});
+
+test('a failed judge blocks squash merge', async () => {
+  const counters = { pr: 0, merge: 0 };
+  const blocked = services(counters);
+  blocked.judge = async () => ({ passed: false });
+  await assert.rejects(() => runPhase(new MemoryContext(), phase, blocked), /PHASE_JUDGE_FAILED/);
+  assert.equal(counters.merge, 0);
+});
+
+test('failed post-merge verification blocks attestation', async () => {
+  const counters = { pr: 0, merge: 0 };
+  let attested = false;
+  const broken = services(counters);
+  broken.verifyPostMerge = async () => ({ passed: false });
+  broken.attest = async () => { attested = true; };
+  await assert.rejects(() => runPhase(new MemoryContext(), phase, broken), /POST_MERGE_VERIFY_FAILED/);
+  assert.equal(counters.merge, 1);
+  assert.equal(attested, false);
 });
