@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "00",
+  "openspecId": "phase-00-grinions-harness",
+  "risk": "medium",
+  "completedAt": "2026-07-21T23:59:00-04:00",
+  "baselineMainSha": "b814abdba5a96b26c51101eab26ff3c4161daf56",
+  "beads": [],
+  "pullRequest": {
+    "number": 1,
+    "url": null,
+    "headSha": "66962c7c09a87f26ddc0ceae4b59dd079ef11612"
+  },
+  "judgment": {
+    "passed": true,
+    "unresolvedReviewThreads": 0
+  },
+  "merge": {
+    "sha": "21e5ce6bf04712d60a7ca0f0b3f4b1ac076981c9",
+    "mergedAt": null
+  },
+  "postMerge": {
+    "passed": true,
+    "mainSha": "21e5ce6bf04712d60a7ca0f0b3f4b1ac076981c9"
+  },
+  "rollback": {
+    "baselineCaptured": true,
+    "receiptPath": "ops/rollback/phase-00.json"
+  }
+}
