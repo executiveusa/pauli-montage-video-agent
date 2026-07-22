@@ -10,10 +10,11 @@
     "repository build/release control plane only"
   ],
   "featureFlags": [],
-  "rollbackCommands": [
-    "Revert the Phase 00 squash commit on main",
-    "Remove or disable the GRINIONS worker; no customer runtime rollback is required"
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "After merge, revert the recorded Phase 00 squash SHA on main.",
+    "Stop or remove the GRINIONS worker; no customer runtime rollback is required."
   ],
   "dataLossRisk": "none; Phase 00 does not modify customer or product databases",
-  "notes": "The baseline Vercel production deployment was already failing because the repository had no supported web entrypoint. Phase 00 does not attempt to fix the product deployment."
+  "notes": "The baseline Vercel production deployment was already failing because the repository had no supported web entrypoint. Phase 00 does not attempt to fix the product deployment. The runtime attestation step replaces rollbackCommands with an executable git revert command using the verified squash SHA."
 }
