@@ -3,6 +3,8 @@ name: GRINIONS phase gates
 on:
   pull_request:
     paths:
+      - 'AGENTS.md'
+      - 'README.md'
       - 'ops/grinions/**'
       - 'openspec/**'
       - '.ralphy/**'
@@ -14,6 +16,8 @@ on:
     branches:
       - 'phase/**'
     paths:
+      - 'AGENTS.md'
+      - 'README.md'
       - 'ops/grinions/**'
       - 'openspec/**'
       - '.ralphy/**'
