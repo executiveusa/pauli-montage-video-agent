@@ -16,7 +16,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       return { phase, hydratedAt: new Date().toISOString() };
     },
     async validateSpec(phase) {
-      return run('openspec', ['validate', phase.openspecId], { cwd: repoRoot });
+      return run('openspec', ['validate', phase.openspecId, '--no-interactive'], { cwd: repoRoot });
     },
     async captureBaseline() {
       const { stdout } = await run('git', ['rev-parse', 'main'], { cwd: repoRoot });
@@ -51,7 +51,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       return run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: repoRoot });
     },
     async verifyPhase(phase) {
-      return run('openspec', ['verify', phase.openspecId], { cwd: repoRoot });
+      return run('openspec', ['validate', phase.openspecId, '--strict', '--no-interactive'], { cwd: repoRoot });
     },
     async createOrUpdatePr(phase) {
       const existing = await run('gh', ['pr', 'list', '--head', phase.branch, '--json', 'number', '--jq', '.[0].number // empty'], { cwd: repoRoot });
