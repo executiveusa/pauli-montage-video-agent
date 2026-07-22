@@ -1,0 +1,17 @@
+{
+  "phaseId": "01",
+  "openspecId": "phase-01-repo-truth",
+  "baselineMainSha": "21e5ce6bf04712d60a7ca0f0b3f4b1ac076981c9",
+  "deploymentId": null,
+  "migrations": [],
+  "backups": [],
+  "affectedServices": [
+    "architecture and dependency policy documentation only"
+  ],
+  "featureFlags": [],
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "Revert the eventual Phase 01 squash SHA on main."
+  ],
+  "dataLossRisk": "none; Phase 01 does not change product runtime or customer data"
+}
