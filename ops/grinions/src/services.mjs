@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run } from './process.mjs';
@@ -15,6 +15,15 @@ async function runResult(command, args = [], options = {}) {
       stdout: error.stdout || '',
       stderr: error.stderr || error.message || '',
     };
+  }
+}
+
+async function readJsonIfExists(path, fallback = {}) {
+  try {
+    return JSON.parse(await readFile(path, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return fallback;
+    throw error;
   }
 }
 
@@ -150,15 +159,22 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
     async writeRollbackReceipt(phase, baseline) {
       const path = resolve(repoRoot, 'ops', 'rollback', `phase-${phase.phaseId}.json`);
+      const existing = await readJsonIfExists(path);
       return writeJson(path, {
+        ...existing,
         phaseId: phase.phaseId,
+        openspecId: existing.openspecId || phase.openspecId,
         baselineMainSha: baseline.mainSha,
-        deploymentId: null,
-        migrations: [],
-        affectedServices: [],
-        featureFlags: [],
-        rollbackCommands: [`git revert <phase-${phase.phaseId}-squash-sha>`],
-        dataLossRisk: 'none-known-at-baseline',
+        deploymentId: existing.deploymentId ?? null,
+        deploymentStateAtBaseline: existing.deploymentStateAtBaseline ?? null,
+        migrations: existing.migrations || [],
+        backups: existing.backups || [],
+        affectedServices: existing.affectedServices || [],
+        featureFlags: existing.featureFlags || [],
+        rollbackCommands: (existing.rollbackCommands || []).filter((command) => !String(command).includes('<phase-')),
+        dataLossRisk: existing.dataLossRisk || 'none-known-at-baseline',
+        notes: existing.notes || null,
+        capturedAt: baseline.capturedAt,
       });
     },
 
@@ -182,6 +198,11 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       }
 
       return { branch: phase.branch, path: workspacePath, repoRoot, reused: false };
+    },
+
+    async requireDestructiveApproval(phase, action) {
+      const actionId = action?.id || action?.name || String(action);
+      throw new Error(`DESTRUCTIVE_ACTION_APPROVAL_REQUIRED:${phase.phaseId}:${actionId}`);
     },
 
     async executeBeads(phase, workspace) {
@@ -212,7 +233,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
     async verifyLocal(_phase, workspace) {
       await run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: workspace.path });
-      return run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs'], { cwd: workspace.path });
+      return run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs'], { cwd: workspace.path });
     },
 
     async verifyPhase(phase, workspace) {
@@ -300,7 +321,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
       try {
         await run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: verifyPath });
-        await run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs'], { cwd: verifyPath });
+        await run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs'], { cwd: verifyPath });
         await run('openspec', ['validate', phase.openspecId, '--strict', '--no-interactive'], { cwd: verifyPath });
       } finally {
         await removeWorktree(repoRoot, verifyPath);
@@ -310,6 +331,16 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
     },
 
     async attest(phase, evidence) {
+      const rollbackPath = resolve(repoRoot, 'ops', 'rollback', `phase-${phase.phaseId}.json`);
+      const rollback = await readJsonIfExists(rollbackPath);
+      await writeJson(rollbackPath, {
+        ...rollback,
+        mergeSha: evidence.merge?.sha || null,
+        verifiedMainSha: evidence.postMerge?.mainSha || null,
+        rollbackCommands: evidence.merge?.sha ? [`git revert ${evidence.merge.sha}`] : rollback.rollbackCommands || [],
+        updatedAt: new Date().toISOString(),
+      });
+
       const path = resolve(repoRoot, 'ops', 'receipts', `phase-${phase.phaseId}.json`);
       return writeJson(path, { phaseId: phase.phaseId, completedAt: new Date().toISOString(), ...evidence });
     },
