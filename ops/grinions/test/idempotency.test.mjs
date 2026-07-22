@@ -23,8 +23,7 @@ const phase = {
   risk: 'medium',
 };
 
-function services(counters) {
-  let selectionCount = 0;
+function services(counters, beadState = { closed: false }) {
   return {
     hydrateContext: async () => true,
     validateSpec: async () => true,
@@ -34,17 +33,17 @@ function services(counters) {
     requireDestructiveApproval: async (_phase, action) => {
       throw new Error(`DESTRUCTIVE_ACTION_APPROVAL_REQUIRED:${action.id}`);
     },
-    selectReadyBead: async () => {
-      selectionCount += 1;
-      return selectionCount === 1 ? { id: 'bd-a1b2', title: 'Bounded task' } : null;
-    },
-    phaseBeadStatus: async () => ({ total: 1, open: 0, closed: 1 }),
+    selectReadyBead: async () => beadState.closed ? null : { id: 'bd-a1b2', title: 'Bounded task' },
+    phaseBeadStatus: async () => ({ total: 1, open: beadState.closed ? 0 : 1, closed: beadState.closed ? 1 : 0 }),
     claimBead: async () => ({ id: 'bd-a1b2', title: 'Bounded task' }),
     compileBead: async () => ({ beadId: 'bd-a1b2', taskFile: '/tmp/bd-a1b2.md' }),
     executeBead: async () => ({ taskBranches: ['ralphy/bead-bd-a1b2-bounded-task'] }),
     integrateBead: async () => ({ beadId: 'bd-a1b2', headSha: 'phase-head', integratedBranches: ['ralphy/bead-bd-a1b2-bounded-task'] }),
     verifyBead: async () => ({ beadId: 'bd-a1b2', passed: true, requiredEvidence: ['tests'] }),
-    closeBead: async () => ({ id: 'bd-a1b2', status: 'closed' }),
+    closeBead: async () => {
+      beadState.closed = true;
+      return { id: 'bd-a1b2', status: 'closed' };
+    },
     verifyLocal: async () => true,
     verifyPhase: async () => true,
     createOrUpdatePr: async (_phase, meta) => {
@@ -69,7 +68,8 @@ function services(counters) {
 test('replay with persisted checkpoints does not duplicate PR or merge side effects', async () => {
   const persisted = new Map();
   const counters = { pr: 0, merge: 0 };
-  const svc = services(counters);
+  const beadState = { closed: false };
+  const svc = services(counters, beadState);
   await runPhase(new MemoryContext(persisted), phase, svc);
   await runPhase(new MemoryContext(persisted), phase, svc);
   assert.deepEqual(counters, { pr: 1, merge: 1 });
@@ -78,13 +78,14 @@ test('replay with persisted checkpoints does not duplicate PR or merge side effe
 test('a simulated restart resumes after completed checkpoints', async () => {
   const persisted = new Map();
   const counters = { pr: 0, merge: 0 };
-  const first = services(counters);
+  const beadState = { closed: false };
+  const first = services(counters, beadState);
   first.executeBead = async () => { throw new Error('simulated worker death'); };
   await assert.rejects(() => runPhase(new MemoryContext(persisted), phase, first), /simulated worker death/);
   assert.equal(persisted.has('capture-baseline'), true);
   assert.equal(persisted.has('claim-bead:bd-a1b2'), true);
 
-  const resumed = services(counters);
+  const resumed = services(counters, beadState);
   await runPhase(new MemoryContext(persisted), phase, resumed);
   assert.deepEqual(counters, { pr: 1, merge: 1 });
 });
@@ -126,4 +127,12 @@ test('a phase cannot silently continue without any phase Beads', async () => {
   empty.phaseBeadStatus = async () => ({ total: 0, open: 0, closed: 0 });
   await assert.rejects(() => runPhase(new MemoryContext(), phase, empty), /NO_PHASE_BEADS/);
   assert.deepEqual(counters, { pr: 0, merge: 0 });
+});
+
+test('open phase Beads with none ready fail as blocked work', async () => {
+  const counters = { pr: 0, merge: 0 };
+  const blocked = services(counters);
+  blocked.selectReadyBead = async () => null;
+  blocked.phaseBeadStatus = async () => ({ total: 2, open: 2, closed: 0 });
+  await assert.rejects(() => runPhase(new MemoryContext(), phase, blocked), /PHASE_BEADS_BLOCKED:00:2/);
 });
