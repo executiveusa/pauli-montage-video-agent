@@ -1,0 +1,17 @@
+{
+  "name": "@yappyverse/grinions-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Durable GRINIONS build/release control plane for YAPPY-CLIPZ.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "verify": "node scripts/verify.mjs",
+    "worker": "node src/worker.mjs",
+    "run-phase": "node src/run-phase.mjs"
+  },
+  "dependencies": {
+    "absurd-sdk": "^0.4.0"
+  }
+}
