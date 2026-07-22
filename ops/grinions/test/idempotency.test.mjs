@@ -49,14 +49,14 @@ function services(counters, beadState = { closed: false }) {
       return { number: 42 };
     },
     watchPr: async () => ({ passed: true }),
-    judge: async () => ({ passed: true, headRefOid: 'phase-head' }),
+    judge: async () => ({ passed: true, headRefOid: 'phase-head', unresolvedReviewThreads: 0 }),
     squashMerge: async (_phase, _pr, meta) => {
       counters.merge += 1;
       assert.match(meta.idempotencyKey, /squash-merge/);
       assert.equal(meta.judgment.passed, true);
-      return { sha: 'squash' };
+      return { sha: 'squash', mergedAt: '2026-07-22T00:00:00Z' };
     },
-    verifyPostMerge: async () => ({ passed: true }),
+    verifyPostMerge: async () => ({ passed: true, mainSha: 'main' }),
     attest: async () => true,
   };
 }
