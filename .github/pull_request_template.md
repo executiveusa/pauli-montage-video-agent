@@ -24,10 +24,15 @@
 - [ ] Browser/visual/accessibility evidence attached for user-facing work
 - [ ] Rollback receipt exists
 - [ ] No unexpected dependency or scope expansion
+- [ ] Post-merge verification owner, commands, evidence location, and OpenSpec archive step are recorded; archive is gated on successful post-merge verification
 
 ## Verification evidence
 
 <!-- Exact commands, CI checks, screenshots, reports, and relevant links. -->
+
+## Post-merge verification and archival plan
+
+<!-- Name the responsible owner/agent, exact commands, evidence path, deployment/runtime checks, and the OpenSpec archive command. Do not archive before post-merge verification passes. -->
 
 ## Security / migration impact
 
