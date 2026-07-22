@@ -3,6 +3,34 @@ import { checkpointedSideEffect } from './checkpoints.mjs';
 const REQUIRED_PHASE_FIELDS = ['initiativeId', 'phaseId', 'openspecId', 'branch', 'risk'];
 const MAX_BEADS_PER_PHASE = 1000;
 
+function explicitApproval(record) {
+  return Boolean(
+    record
+    && record.approved === true
+    && typeof record.approvedBy === 'string'
+    && record.approvedBy.trim()
+    && typeof record.approvedAt === 'string'
+    && record.approvedAt.trim()
+    && typeof record.evidence === 'string'
+    && record.evidence.trim(),
+  );
+}
+
+function destructiveApproval(phase, actionId) {
+  const approvals = phase.approvals?.destructiveActions;
+  if (!Array.isArray(approvals)) return null;
+  return approvals.find((item) => String(item?.id) === String(actionId)) || null;
+}
+
+function approvalRequired(phase, kind, details, state = {}) {
+  return {
+    phaseId: phase.phaseId,
+    status: 'approval_required',
+    approval: { kind, ...details },
+    ...state,
+  };
+}
+
 export function validatePhaseRequest(request) {
   for (const field of REQUIRED_PHASE_FIELDS) {
     if (!request?.[field]) throw new TypeError(`phase request missing ${field}`);
@@ -12,6 +40,9 @@ export function validatePhaseRequest(request) {
   }
   if (request.destructiveActions && !Array.isArray(request.destructiveActions)) {
     throw new TypeError('destructiveActions must be an array when provided');
+  }
+  if (request.approvals && (typeof request.approvals !== 'object' || Array.isArray(request.approvals))) {
+    throw new TypeError('approvals must be an object when provided');
   }
   return request;
 }
@@ -27,8 +58,22 @@ export async function runPhase(ctx, request, services) {
 
   for (const action of phase.destructiveActions || []) {
     const actionId = String(action.id || action.name || action).replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const approval = destructiveApproval(phase, actionId);
+    if (!explicitApproval(approval)) {
+      return approvalRequired(
+        phase,
+        'destructive_action',
+        { actionId, action },
+        { baseline, rollback, workspace },
+      );
+    }
     await ctx.step(`destructive-action-approval:${actionId}`, () =>
-      services.requireDestructiveApproval(phase, action, workspace),
+      services.recordApproval(phase, {
+        kind: 'destructive_action',
+        actionId,
+        action,
+        approval,
+      }),
     );
   }
 
@@ -71,7 +116,21 @@ export async function runPhase(ctx, request, services) {
   if (!judgment?.passed) throw new Error(`PHASE_JUDGE_FAILED:${phase.phaseId}`);
 
   if (phase.risk === 'high') {
-    await ctx.step('high-risk-merge-approval', () => services.requireHighRiskApproval(phase, pr));
+    const approval = phase.approvals?.highRiskMerge;
+    if (!explicitApproval(approval)) {
+      return approvalRequired(
+        phase,
+        'high_risk_merge',
+        { prNumber: pr.number || null, prUrl: pr.url || null },
+        { baseline, rollback, workspace, beads, pr, judgment },
+      );
+    }
+    await ctx.step('high-risk-merge-approval', () => services.recordApproval(phase, {
+      kind: 'high_risk_merge',
+      approval,
+      pr,
+      judgment,
+    }));
   }
 
   const merge = await checkpointedSideEffect(ctx, 'squash-merge', (idempotencyKey) =>
@@ -82,5 +141,5 @@ export async function runPhase(ctx, request, services) {
   if (!postMerge?.passed) throw new Error(`POST_MERGE_VERIFY_FAILED:${phase.phaseId}`);
   await ctx.step('attest', () => services.attest(phase, { baseline, rollback, workspace, beads, pr, judgment, merge, postMerge }));
 
-  return { phaseId: phase.phaseId, baseline, rollback, workspace, beads, pr, judgment, merge, postMerge };
+  return { phaseId: phase.phaseId, status: 'completed', baseline, rollback, workspace, beads, pr, judgment, merge, postMerge };
 }
