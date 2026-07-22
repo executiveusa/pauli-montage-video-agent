@@ -7,6 +7,9 @@ on:
       - 'openspec/**'
       - '.ralphy/**'
       - '.github/workflows/grinions-phase-gates.yml'
+      - '.github/pull_request_template.md'
+      - 'EMERALD_TABLETS.md'
+      - 'icm/**'
   push:
     branches:
       - 'phase/**'
@@ -15,6 +18,9 @@ on:
       - 'openspec/**'
       - '.ralphy/**'
       - '.github/workflows/grinions-phase-gates.yml'
+      - '.github/pull_request_template.md'
+      - 'EMERALD_TABLETS.md'
+      - 'icm/**'
 
 permissions:
   contents: read
@@ -22,7 +28,7 @@ permissions:
 jobs:
   harness:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -44,6 +50,27 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install current spec and memory tooling
+        run: |
+          npm install -g @fission-ai/openspec@1.3.1
+          curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          openspec --version
+          "$HOME/.local/bin/bd" --version
+
+      - name: Validate OpenSpec change strictly
+        run: openspec validate phase-00-grinions-harness --strict --no-interactive
+
+      - name: Verify Beads agent bootstrap contract
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          export BEADS_DIR="$RUNNER_TEMP/yappy-clipz-beads"
+          bd init --quiet --stealth
+          bd prime >/tmp/bd-prime.txt
+          bd ready --json >/tmp/bd-ready.json
+          test -s /tmp/bd-prime.txt
+          test -s /tmp/bd-ready.json
+
       - name: Install control-plane dependencies
         run: npm install --prefix ops/grinions --ignore-scripts
 
@@ -53,7 +80,7 @@ jobs:
           uvx absurdctl init -d "$ABSURD_DATABASE_URL"
           uvx absurdctl create-queue -d "$ABSURD_DATABASE_URL" grinions_test
 
-      - name: Unit and restart/idempotency tests
+      - name: Unit, restart, and Absurd/Postgres idempotency tests
         run: npm test --prefix ops/grinions
 
       - name: Deterministic structure gate
