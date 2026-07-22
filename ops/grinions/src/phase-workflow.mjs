@@ -67,14 +67,13 @@ export async function runPhase(ctx, request, services) {
         { baseline, rollback, workspace },
       );
     }
-    await ctx.step(`destructive-action-approval:${actionId}`, () =>
-      services.recordApproval(phase, {
-        kind: 'destructive_action',
-        actionId,
-        action,
-        approval,
-      }),
-    );
+    await ctx.step(`destructive-action-approval:${actionId}`, async () => ({
+      kind: 'destructive_action',
+      actionId,
+      approvedBy: approval.approvedBy,
+      approvedAt: approval.approvedAt,
+      evidence: approval.evidence,
+    }));
   }
 
   const beads = [];
@@ -125,11 +124,13 @@ export async function runPhase(ctx, request, services) {
         { baseline, rollback, workspace, beads, pr, judgment },
       );
     }
-    await ctx.step('high-risk-merge-approval', () => services.recordApproval(phase, {
+    await ctx.step('high-risk-merge-approval', async () => ({
       kind: 'high_risk_merge',
-      approval,
-      pr,
-      judgment,
+      approvedBy: approval.approvedBy,
+      approvedAt: approval.approvedAt,
+      evidence: approval.evidence,
+      prNumber: pr.number || null,
+      prUrl: pr.url || null,
     }));
   }
 
