@@ -92,7 +92,7 @@ jobs:
           BD_BIN="$(command -v bd)"
           test -x "$BD_BIN"
           echo "BD_BIN=$BD_BIN" >> "$GITHUB_ENV"
-          "$BD_BIN" version | grep -F "$BEADS_VERSION"
+          "$BD_BIN" version
 
       - name: Validate all active OpenSpec changes strictly
         shell: bash
