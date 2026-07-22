@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/asset.v1.schema.json",
+  "title": "YAPPY-CLIPZ Asset v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "kind", "role", "storage", "source", "createdAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["image", "video", "audio", "document", "text", "archive", "other"]},
+    "role": {"type": "string", "minLength": 1},
+    "name": {"type": ["string", "null"]},
+    "mimeType": {"type": ["string", "null"]},
+    "bytes": {"type": ["integer", "null"], "minimum": 0},
+    "checksum": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": {"enum": ["sha256", "sha512", "blake3"]},
+        "value": {"type": "string", "minLength": 16}
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "key"],
+      "properties": {
+        "type": {"enum": ["local", "s3", "r2", "url", "provider"]},
+        "key": {"type": "string", "minLength": 1},
+        "bucket": {"type": ["string", "null"]},
+        "url": {"type": ["string", "null"], "format": "uri"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["upload", "generated", "stock", "archive", "recording", "derived", "imported"]},
+        "provider": {"type": ["string", "null"]},
+        "externalId": {"type": ["string", "null"]},
+        "parentAssetIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "license": {"type": ["string", "null"]},
+        "attribution": {"type": ["string", "null"]},
+        "sourceUrl": {"type": ["string", "null"], "format": "uri"}
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {"type": ["integer", "null"], "minimum": 1},
+        "height": {"type": ["integer", "null"], "minimum": 1},
+        "durationSeconds": {"type": ["number", "null"], "minimum": 0},
+        "fps": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "channels": {"type": ["integer", "null"], "minimum": 1},
+        "sampleRate": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commercialUse": {"type": ["boolean", "null"]},
+        "consentRecordIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "releaseAssetIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "expiresAt": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "createdBy": {"type": ["string", "null"]},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}
