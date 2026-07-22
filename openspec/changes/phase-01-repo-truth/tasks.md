@@ -1,0 +1,22 @@
+# Phase 01 implementation checklist
+
+- [x] Create `phase/01-repo-truth` from verified Phase 00 squash baseline.
+- [x] Carry Phase 00 completion receipt and actual rollback SHA into governed evidence.
+- [x] Inspect canonical OpenMontage license and production architecture.
+- [x] Inspect Twick editor architecture and actual repository license.
+- [x] Inspect ViMax architecture and MIT license.
+- [x] Inspect VideoAgent architecture and MIT license; record metadata inconsistency risk where applicable.
+- [x] Identify current official LTX-2 repository and current community license.
+- [x] Inspect ClipCannon BSL commercial-service restriction.
+- [x] Inspect Open-clipz dependency surface and verify missing root license.
+- [x] Inspect AI YouTube Shorts Generator capabilities and verify missing root license despite README MIT claim.
+- [x] Inspect Sovereign Video Agent artifact and classify it as behavior/skill source, not another backend.
+- [ ] Commit `docs/CAPABILITY_MATRIX.md` with one canonical owner per durable subsystem.
+- [ ] Commit `docs/DEPENDENCY_REGISTER.md` with runtime, license, integration mode, and removal path.
+- [ ] Commit `docs/LICENSE_BOUNDARIES.md` with corrected commercial constraints.
+- [ ] Commit `docs/DUPLICATION_MAP.md` identifying overlapping project/UI/orchestration/provider/editing systems.
+- [ ] Commit `docs/MIGRATION_MAP.md` with `KEEP/EXTEND/ADAPT/HARVEST/OWNER-ONLY/ARCHIVE/REJECT` decisions.
+- [ ] Add Phase 01 rollback/report evidence.
+- [ ] Run OpenSpec strict validation and GRINIONS phase gates.
+- [ ] Open final Phase 01 PR and repair valid review findings.
+- [ ] Squash merge after all gates pass.
