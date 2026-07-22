@@ -56,9 +56,20 @@ jobs:
           openspec --version
 
       - name: Install Beads
+        shell: bash
         run: |
-          npm install -g @beads/bd
-          bd version
+          curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash
+          BD_BIN="$(command -v bd || true)"
+          if [ -z "$BD_BIN" ]; then
+            for candidate in "$HOME/.local/bin/bd" "$HOME/bin/bd" /usr/local/bin/bd; do
+              if [ -x "$candidate" ]; then BD_BIN="$candidate"; break; fi
+            done
+          fi
+          test -n "$BD_BIN"
+          test -x "$BD_BIN"
+          echo "BD_BIN=$BD_BIN" >> "$GITHUB_ENV"
+          echo "$(dirname "$BD_BIN")" >> "$GITHUB_PATH"
+          "$BD_BIN" version
 
       - name: Validate OpenSpec change strictly
         run: openspec validate phase-00-grinions-harness --strict --no-interactive
@@ -66,9 +77,9 @@ jobs:
       - name: Verify Beads agent bootstrap contract
         run: |
           export BEADS_DIR="$RUNNER_TEMP/yappy-clipz-beads"
-          bd init --quiet --stealth
-          bd prime >/tmp/bd-prime.txt
-          bd ready --json >/tmp/bd-ready.json
+          "$BD_BIN" init --quiet --stealth
+          "$BD_BIN" prime >/tmp/bd-prime.txt
+          "$BD_BIN" ready --json >/tmp/bd-ready.json
           test -s /tmp/bd-prime.txt
           test -s /tmp/bd-ready.json
 
