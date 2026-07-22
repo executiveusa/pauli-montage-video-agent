@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/job.v1.schema.json",
+  "title": "YAPPY-CLIPZ Job v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "type", "capability", "state", "attempt", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "type": {"type": "string", "minLength": 1},
+    "capability": {"type": "string", "minLength": 1},
+    "state": {"enum": ["queued", "claimed", "running", "awaiting_approval", "succeeded", "failed", "cancelled"]},
+    "attempt": {"type": "integer", "minimum": 0},
+    "progress": {"type": "number", "minimum": 0, "maximum": 1},
+    "inputRefs": {"type": "array", "items": {"type": "string"}},
+    "outputRefs": {"type": "array", "items": {"type": "string"}},
+    "providerRouteId": {"type": ["string", "null"]},
+    "estimatedCost": {"type": ["number", "null"], "minimum": 0},
+    "actualCost": {"type": ["number", "null"], "minimum": 0},
+    "currency": {"type": ["string", "null"], "minLength": 3, "maxLength": 3},
+    "claimedBy": {"type": ["string", "null"]},
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string"},
+        "message": {"type": "string"},
+        "retryable": {"type": "boolean"},
+        "details": {"type": "object", "additionalProperties": true}
+      }
+    },
+    "createdAt": {"type": "string", "format": "date-time"},
+    "updatedAt": {"type": "string", "format": "date-time"},
+    "startedAt": {"type": ["string", "null"], "format": "date-time"},
+    "finishedAt": {"type": ["string", "null"], "format": "date-time"},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}
