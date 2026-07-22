@@ -19,6 +19,7 @@ const required = [
   'ops/grinions/test/process.test.mjs',
   'ops/grinions/test/beads.test.mjs',
   'ops/grinions/test/receipt.test.mjs',
+  'ops/grinions/test/runtime.test.mjs',
 ];
 
 for (const path of required) await access(resolve(repoRoot, path));
