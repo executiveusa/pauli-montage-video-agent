@@ -6,10 +6,12 @@ This package is build/release infrastructure for YAPPY-CLIPZ. It is not part of 
 
 - persist phase execution with Absurd/Postgres;
 - hydrate OpenSpec, Beads, ICM, and repo context;
-- run bounded Ralphy implementation tasks;
+- atomically claim one ready phase Bead at a time;
+- compile one bounded Bead into one Ralphy task packet;
+- integrate and verify that Bead before closing it or selecting another;
 - execute deterministic verification gates;
 - checkpoint PR/merge/deployment side effects;
-- stop for high-risk approval;
+- stop for destructive-action and high-risk approval;
 - capture receipts, evidence, and rollback information.
 
 ## Required tools
@@ -43,9 +45,37 @@ Dispatch a phase:
 npm run run-phase --prefix ops/grinions -- path/to/phase.json
 ```
 
+## OpenSpec versus Beads
+
+OpenSpec is phase/specification truth. `openspec/changes/<phase>/tasks.md` is a planning and completion checklist; it is never sent directly to Ralphy.
+
+Executable work lives in Beads. Before Ralphy runs, GRINIONS requires a ready Bead that is linked to the active phase/OpenSpec, atomically claims it, reads the full JSON record, validates its bounded execution contract, and compiles a temporary one-Bead task packet.
+
+Required `metadata.grinions` fields:
+
+```json
+{
+  "openspec_id": "phase-01-repo-truth",
+  "grinions": {
+    "scope": ["docs/capability-matrix.md"],
+    "verification": "Explain exactly what success proves.",
+    "verification_commands": [
+      {"command": "node", "args": ["ops/grinions/scripts/verify.mjs"]}
+    ],
+    "evidence": ["matrix paths", "source references"],
+    "prohibited_changes": ["Do not vendor external repositories"],
+    "rollback": "Revert the Bead integration commit from the phase branch."
+  }
+}
+```
+
+The Bead must also contain `title`, `description`, `design`, `acceptance`, and any dependency edges. Missing contract data fails closed with `BEAD_CONTRACT_INVALID`; GRINIONS does not guess or widen scope.
+
 ## Ralphy authority
 
-The adapter always uses branch-per-task isolation and `--no-merge`. Ralphy does not create the phase PR, merge main, deploy production, alter approved specs, or perform high-risk destructive actions.
+The adapter always uses branch-per-task isolation and `--no-merge`. Ralphy does not create the phase PR, merge main, deploy production, alter approved specs, or perform high-risk/destructive actions.
+
+Each generated packet contains exactly one unchecked Ralphy task and the claimed Bead ID. Discovered work becomes a linked Bead or new OpenSpec change rather than being silently added to the active task.
 
 ## Absurd boundary
 
@@ -55,7 +85,7 @@ Only `src/absurd-runtime.mjs` imports `absurd-sdk`. Core workflow code depends o
 
 ```bash
 npm test --prefix ops/grinions
-node ops/grinions/scripts/verify.mjs
+npm run verify --prefix ops/grinions
 ```
 
-CI additionally starts PostgreSQL and executes the real Absurd checkpoint/retry integration test.
+CI additionally starts PostgreSQL, validates all active OpenSpec changes, exercises non-interactive Beads bootstrap, and executes the real Absurd checkpoint/retry integration test.
