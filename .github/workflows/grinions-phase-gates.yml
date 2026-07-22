@@ -106,5 +106,5 @@ jobs:
       - name: Unit, restart, and Absurd/Postgres idempotency tests
         run: npm test --prefix ops/grinions
 
-      - name: Deterministic structure gate
-        run: node ops/grinions/scripts/verify.mjs
+      - name: Deterministic structure gate from package working directory
+        run: npm run verify --prefix ops/grinions
