@@ -66,14 +66,15 @@ jobs:
         run: |
           set -euo pipefail
           BEADS_VERSION=1.1.0
-          npm pack "@beads/bd@${BEADS_VERSION}" --json > /tmp/beads-pack.json
-          TARBALL="$(node -e "const p=require('/tmp/beads-pack.json')[0]; process.stdout.write(p.filename)")"
+          TARBALL_URL="$(npm view "@beads/bd@${BEADS_VERSION}" dist.tarball)"
           EXPECTED="$(npm view "@beads/bd@${BEADS_VERSION}" dist.integrity)"
-          ACTUAL="$(node -e "const p=require('/tmp/beads-pack.json')[0]; process.stdout.write(p.integrity)")"
+          test -n "$TARBALL_URL"
           test -n "$EXPECTED"
+          curl -fsSL "$TARBALL_URL" -o /tmp/beads-bd.tgz
+          ACTUAL="sha512-$(openssl dgst -sha512 -binary /tmp/beads-bd.tgz | openssl base64 -A)"
           test "$EXPECTED" = "$ACTUAL"
-          npm install -g "./${TARBALL}"
-          rm -f "$TARBALL"
+          npm install -g /tmp/beads-bd.tgz
+          rm -f /tmp/beads-bd.tgz
           BD_BIN="$(command -v bd)"
           test -x "$BD_BIN"
           echo "BD_BIN=$BD_BIN" >> "$GITHUB_ENV"
