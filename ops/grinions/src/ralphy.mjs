@@ -14,5 +14,9 @@ export function buildRalphyArgs({ taskFile, baseBranch, maxRetries = 3, browser 
 
 export async function runRalphy(options) {
   const bin = process.env.RALPHY_BIN || 'ralphy';
-  return run(bin, buildRalphyArgs(options), { cwd: options.cwd });
+  return run(bin, buildRalphyArgs(options), {
+    cwd: options.cwd,
+    timeoutMs: options.timeoutMs ?? 60 * 60 * 1000,
+    maxOutputBytes: options.maxOutputBytes ?? 25 * 1024 * 1024,
+  });
 }
