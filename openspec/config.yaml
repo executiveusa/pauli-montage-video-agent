@@ -1,0 +1,18 @@
+schema: spec-driven
+context: |
+  Product: YAPPY-CLIPZ, the canonical video-production platform inside Yappyverse Studio.
+  Governance: Read EMERALD_TABLETS.md, AGENTS.md, and AGENT_GUIDE.md before implementation.
+  Architecture: Reuse OpenMontage as the production control plane; integrate external engines through contracts and adapters rather than copying repositories wholesale.
+  Interfaces: Durable user-facing capabilities must converge on shared application services for web, CLI, API, and MCP.
+  Release: One GRINIONS phase equals one OpenSpec change and one final squash-merged PR with rollback and post-merge evidence.
+rules:
+  proposal:
+    - State commercial or owner value, non-goals, risk class, affected systems, and rollback implications.
+    - Identify existing capabilities being reused before proposing a new dependency or service.
+  specs:
+    - Use SHALL or MUST for normative requirements.
+    - Include observable WHEN/THEN scenarios for every requirement.
+  design:
+    - Document security, tenancy, licensing, failure/retry behavior, replaceability, and rollback boundaries when applicable.
+  tasks:
+    - Keep tasks bounded and verifiable; discovered scope becomes a linked Bead or new OpenSpec change rather than silent expansion.
