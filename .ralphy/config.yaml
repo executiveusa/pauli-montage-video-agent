@@ -1,0 +1,20 @@
+project:
+  name: yappy-clipz
+  base_branch: main
+
+execution:
+  branch_per_task: true
+  no_merge: true
+  max_retries: 3
+  max_parallel: 1
+
+capabilities:
+  browser: auto
+
+rules:
+  - Read AGENTS.md, AGENT_GUIDE.md, the active OpenSpec change, and the claimed Bead before editing.
+  - Work on one bounded Bead at a time.
+  - Never merge main, create production deployments, modify secrets, or weaken required checks.
+  - Do not change accepted requirements without a recorded OpenSpec change.
+  - Run tests and lint; never use fast/no-tests/no-lint modes in GRINIONS execution.
+  - Record discoveries as new linked Beads rather than expanding scope silently.
