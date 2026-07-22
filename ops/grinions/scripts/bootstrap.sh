@@ -10,8 +10,9 @@ if [ ! -d .beads ]; then
   bd init --quiet
 fi
 
-if ! command -v ralphy >/dev/null 2>&1; then
-  echo "ERROR: Ralphy CLI is required. Install ralphy-cli or set RALPHY_BIN." >&2
+RALPHY_CMD="${RALPHY_BIN:-ralphy}"
+if ! command -v "$RALPHY_CMD" >/dev/null 2>&1 && [ ! -x "$RALPHY_CMD" ]; then
+  echo "ERROR: Ralphy CLI is required. Install ralphy-cli or set RALPHY_BIN to an executable path." >&2
   exit 1
 fi
 
@@ -25,6 +26,7 @@ else
   exit 1
 fi
 
+export RALPHY_BIN="$RALPHY_CMD"
 npm install --prefix ops/grinions
 npm test --prefix ops/grinions
 node ops/grinions/scripts/verify.mjs
