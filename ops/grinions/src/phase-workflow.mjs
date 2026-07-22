@@ -9,6 +9,9 @@ export function validatePhaseRequest(request) {
   if (!['low', 'medium', 'high'].includes(request.risk)) {
     throw new TypeError(`unsupported phase risk: ${request.risk}`);
   }
+  if (request.destructiveActions && !Array.isArray(request.destructiveActions)) {
+    throw new TypeError('destructiveActions must be an array when provided');
+  }
   return request;
 }
 
@@ -20,6 +23,14 @@ export async function runPhase(ctx, request, services) {
   const baseline = await ctx.step('capture-baseline', () => services.captureBaseline(phase));
   const rollback = await ctx.step('write-rollback-receipt', () => services.writeRollbackReceipt(phase, baseline));
   const workspace = await ctx.step('provision-workspace', () => services.provisionWorkspace(phase, baseline));
+
+  for (const action of phase.destructiveActions || []) {
+    const actionId = String(action.id || action.name || action).replace(/[^a-zA-Z0-9._-]+/g, '-');
+    await ctx.step(`destructive-action-approval:${actionId}`, () =>
+      services.requireDestructiveApproval(phase, action, workspace),
+    );
+  }
+
   const execution = await ctx.step('execute-beads', () => services.executeBeads(phase, workspace));
   const integration = await ctx.step('integrate-beads', () => services.integrateBeads(phase, workspace, execution));
   await ctx.step('local-verification', () => services.verifyLocal(phase, workspace, integration));
