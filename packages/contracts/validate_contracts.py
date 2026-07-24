@@ -56,6 +56,14 @@ def _ids(items: Iterable[dict[str, Any]]) -> set[str]:
     return {str(item["id"]) for item in items if isinstance(item, dict) and item.get("id")}
 
 
+def _by_id(items: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        str(item["id"]): item
+        for item in items
+        if isinstance(item, dict) and item.get("id")
+    }
+
+
 def _require_refs(errors: list[str], refs: Iterable[str], allowed: set[str], label: str) -> None:
     for ref in refs:
         if ref not in allowed:
@@ -95,6 +103,10 @@ def semantic_errors(project: dict[str, Any]) -> list[str]:
     decisions = _ids(collections["decisions"])
     events = _ids(collections["events"])
     renders = _ids(collections["renders"])
+
+    scenes_by_id = _by_id(collections["scenes"])
+    shots_by_id = _by_id(collections["shots"])
+    approvals_by_id = _by_id(collections["approvals"])
 
     for name in ("assets", "elements", "jobs", "approvals", "decisions", "events", "renders", "exports"):
         for item in collections[name]:
@@ -136,20 +148,45 @@ def semantic_errors(project: dict[str, Any]) -> list[str]:
         _require_refs(errors, element.get("referenceAssetIds", []), assets, f"element/{element.get('id')}.referenceAssetIds")
 
     for scene in collections["scenes"]:
-        _require_refs(errors, scene.get("elementIds", []), elements, f"scene/{scene.get('id')}.elementIds")
+        scene_id = scene.get("id")
+        _require_refs(errors, scene.get("elementIds", []), elements, f"scene/{scene_id}.elementIds")
         location = scene.get("locationElementId")
         if location is not None:
-            _require_refs(errors, [location], elements, f"scene/{scene.get('id')}.locationElementId")
-        _require_refs(errors, scene.get("shotIds", []), shots, f"scene/{scene.get('id')}.shotIds")
+            _require_refs(errors, [location], elements, f"scene/{scene_id}.locationElementId")
+        scene_shot_ids = scene.get("shotIds", [])
+        _require_refs(errors, scene_shot_ids, shots, f"scene/{scene_id}.shotIds")
+        for shot_id in scene_shot_ids:
+            linked_shot = shots_by_id.get(shot_id)
+            if linked_shot and linked_shot.get("sceneId") != scene_id:
+                errors.append(
+                    f"scene/{scene_id}.shotIds contains {shot_id} but shot/{shot_id}.sceneId is {linked_shot.get('sceneId')}"
+                )
 
     for shot in collections["shots"]:
-        _require_refs(errors, [shot.get("sceneId")], scenes, f"shot/{shot.get('id')}.sceneId")
-        _require_refs(errors, shot.get("elementIds", []), elements, f"shot/{shot.get('id')}.elementIds")
-        _require_refs(errors, shot.get("referenceAssetIds", []), assets, f"shot/{shot.get('id')}.referenceAssetIds")
-        _require_refs(errors, shot.get("generatedAssetIds", []), assets, f"shot/{shot.get('id')}.generatedAssetIds")
+        shot_id = shot.get("id")
+        scene_id = shot.get("sceneId")
+        _require_refs(errors, [scene_id], scenes, f"shot/{shot_id}.sceneId")
+        owning_scene = scenes_by_id.get(scene_id)
+        if owning_scene and shot_id not in owning_scene.get("shotIds", []):
+            errors.append(
+                f"shot/{shot_id}.sceneId points to {scene_id} but scene/{scene_id}.shotIds does not contain {shot_id}"
+            )
+        _require_refs(errors, shot.get("elementIds", []), elements, f"shot/{shot_id}.elementIds")
+        _require_refs(errors, shot.get("referenceAssetIds", []), assets, f"shot/{shot_id}.referenceAssetIds")
+        _require_refs(errors, shot.get("generatedAssetIds", []), assets, f"shot/{shot_id}.generatedAssetIds")
         if shot.get("providerDecisionId") is not None:
-            _require_refs(errors, [shot["providerDecisionId"]], decisions, f"shot/{shot.get('id')}.providerDecisionId")
-        _require_refs(errors, shot.get("approvalIds", []), approvals, f"shot/{shot.get('id')}.approvalIds")
+            _require_refs(errors, [shot["providerDecisionId"]], decisions, f"shot/{shot_id}.providerDecisionId")
+
+        shot_approval_ids = shot.get("approvalIds", [])
+        _require_refs(errors, shot_approval_ids, approvals, f"shot/{shot_id}.approvalIds")
+        for approval_id in shot_approval_ids:
+            approval = approvals_by_id.get(approval_id)
+            if not approval:
+                continue
+            if approval.get("scopeType") != "shot" or approval.get("subjectId") != shot_id:
+                errors.append(
+                    f"shot/{shot_id}.approvalIds contains {approval_id} but approval scope/subject does not match the shot"
+                )
 
     timeline = project.get("timeline", {})
     track_ids = [track.get("id") for track in timeline.get("tracks", []) if track.get("id")]
