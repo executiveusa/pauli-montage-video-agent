@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from packages.contracts.validate_contracts import ContractValidationError, validate_project
 
-from .repository import ProjectRepository, validate_slug
+from .repository import ProjectRepository, validate_identifier
 
 QUALITY_LANES = {"economy", "premium", "sovereign", "owner_private"}
+PROJECT_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 class ServiceValidationError(ValueError):
     """Raised when user-facing project input is invalid."""
+
+
+def validate_project_slug(value: str) -> str:
+    """Validate the user-facing slug exactly as required by StudioProject v1."""
+    if not isinstance(value, str) or not PROJECT_SLUG.fullmatch(value):
+        raise ServiceValidationError("slug must use lowercase letters/numbers with single hyphens")
+    return value
 
 
 class StudioService:
@@ -44,11 +53,11 @@ class StudioService:
         constraints: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create and persist a minimal valid StudioProject v1 document."""
-        tenant = validate_slug(tenant_id, "tenant_id")
-        project_slug = validate_slug(slug, "slug")
+        tenant = validate_identifier(tenant_id, "tenant_id")
+        project_slug = validate_project_slug(slug)
         clean_title = title.strip() if isinstance(title, str) else ""
         clean_objective = objective.strip() if isinstance(objective, str) else ""
-        clean_deliverables = [item.strip() for item in deliverables if isinstance(item, str) and item.strip()]
+        clean_deliverables = [item.strip() for item in (deliverables or []) if isinstance(item, str) and item.strip()]
         if not clean_title:
             raise ServiceValidationError("title is required")
         if not clean_objective:
@@ -116,11 +125,11 @@ class StudioService:
 
     def get_project(self, *, tenant_id: str, project_id: str) -> dict[str, Any]:
         """Return a tenant-owned StudioProject."""
-        return self.repository.get(validate_slug(tenant_id, "tenant_id"), project_id)
+        return self.repository.get(validate_identifier(tenant_id, "tenant_id"), project_id)
 
     def list_projects(self, *, tenant_id: str) -> list[dict[str, Any]]:
         """Return compact project summaries for one tenant."""
-        tenant = validate_slug(tenant_id, "tenant_id")
+        tenant = validate_identifier(tenant_id, "tenant_id")
         summaries: list[dict[str, Any]] = []
         for document in self.repository.list(tenant):
             meta = document["project"]
