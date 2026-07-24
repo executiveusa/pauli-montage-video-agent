@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "03",
+  "openspecId": "phase-03-application-services",
+  "risk": "medium",
+  "completedAt": "2026-07-24T04:59:30Z",
+  "baselineMainSha": "e9de73ff91731f8e536960537d47967d424073ee",
+  "beads": [],
+  "pullRequest": {
+    "number": 4,
+    "url": null,
+    "headSha": "19c49cabbfce9aa16fec8407efa91ca994a15375"
+  },
+  "judgment": {
+    "passed": true,
+    "unresolvedReviewThreads": 0
+  },
+  "merge": {
+    "sha": "9e292608576dd858058ad579d34dcb29d27329ad",
+    "mergedAt": null
+  },
+  "postMerge": {
+    "passed": true,
+    "mainSha": "9e292608576dd858058ad579d34dcb29d27329ad"
+  },
+  "rollback": {
+    "baselineCaptured": true,
+    "receiptPath": "ops/rollback/phase-03.json"
+  }
+}
