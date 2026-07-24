@@ -20,6 +20,20 @@ The application service SHALL depend on a project repository interface rather th
 - **WHEN** a later phase supplies a Postgres/Supabase repository implementation
 - **THEN** CLI/API/MCP public behavior SHALL remain unchanged without duplicating business logic.
 
+### Requirement: Canonical identifiers remain opaque
+
+The application service SHALL preserve StudioProject-valid `tenantId` and `project.id` values without narrowing them to repository-private filename formats.
+
+#### Scenario: A valid project uses underscores or path-like opaque IDs
+
+- **WHEN** a StudioProject contains contract-valid identifiers such as `tenant_demo`, `project_demo`, or another non-empty opaque ID
+- **THEN** the file repository SHALL preserve the exact canonical value and derive a deterministic filesystem-neutral storage key instead of rejecting or rewriting the ID.
+
+#### Scenario: Opaque ID contains path syntax
+
+- **WHEN** an otherwise contract-valid opaque ID contains characters that would be unsafe as a filesystem path
+- **THEN** the repository SHALL hash/encode that ID before path construction and SHALL verify the stored canonical ID on read so the value cannot escape or alias the storage root.
+
 ### Requirement: Tenant isolation fails closed
 
 Every project lookup/list/create operation SHALL be explicitly tenant scoped.
