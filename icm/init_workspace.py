@@ -49,6 +49,19 @@ def _resolved_under(root: Path, candidate: Path) -> Path:
     return resolved_candidate
 
 
+def _copy_if_absent(source: Path, destination: Path) -> None:
+    if not destination.exists():
+        shutil.copyfile(source, destination)
+
+
+def _write_json_if_absent(destination: Path, payload: dict) -> None:
+    if not destination.exists():
+        destination.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+
 def initialize_workspace(root: Path, tenant: str, project: str) -> Path:
     tenant = validate_slug(tenant, "tenant")
     project = validate_slug(project, "project")
@@ -70,14 +83,11 @@ def initialize_workspace(root: Path, tenant: str, project: str) -> Path:
         stage_dir.mkdir(parents=True, exist_ok=True)
         (stage_dir / "input").mkdir(exist_ok=True)
         (stage_dir / "output").mkdir(exist_ok=True)
-        shutil.copyfile(context_template, stage_dir / "CONTEXT.md")
-        shutil.copyfile(checklist_template, stage_dir / "CHECKLIST.md")
+        _copy_if_absent(context_template, stage_dir / "CONTEXT.md")
+        _copy_if_absent(checklist_template, stage_dir / "CHECKLIST.md")
         handoff = dict(handoff_base)
         handoff["stage"] = stage
-        (stage_dir / "handoff.json").write_text(
-            json.dumps(handoff, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        _write_json_if_absent(stage_dir / "handoff.json", handoff)
 
     manifest = {
         "schemaVersion": 1,
@@ -85,10 +95,16 @@ def initialize_workspace(root: Path, tenant: str, project: str) -> Path:
         "project": project,
         "stages": list(STAGES),
     }
-    (workspace / "workspace.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    manifest_path = workspace / "workspace.json"
+    if manifest_path.exists():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if existing != manifest:
+            raise WorkspaceError("existing workspace.json does not match requested tenant/project/stage contract")
+    else:
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return workspace
 
 
