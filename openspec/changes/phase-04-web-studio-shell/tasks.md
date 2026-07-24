@@ -12,6 +12,6 @@
 - [x] Add web typecheck/build and deployed-dependency security audit to GRINIONS CI.
 - [x] Add Phase 04 rollback/report evidence.
 - [x] Open PR and obtain READY Vercel previews while iterating on the exact branch.
-- [ ] Repair all valid review findings and rerun exact-head gates.
-- [ ] Squash merge only after CI + review + exact-head Vercel preview gates pass.
+- [x] Repair all valid review findings and pass the exact-head CI/Vercel gates.
+- [ ] Squash merge only after the final checklist head passes CI + review + Vercel preview gates.
 - [ ] Verify production deployment from merged `main`.
