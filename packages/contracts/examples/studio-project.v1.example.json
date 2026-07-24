@@ -1,0 +1,250 @@
+{
+  "schemaVersion": "1.0.0",
+  "project": {
+    "id": "project_demo",
+    "tenantId": "tenant_demo",
+    "slug": "forest-spirit-demo",
+    "title": "Forest Spirit Demo",
+    "status": "active",
+    "createdAt": "2026-07-21T12:00:00Z",
+    "updatedAt": "2026-07-21T12:10:00Z"
+  },
+  "brief": {
+    "objective": "Create a ten-second anime character reveal while preserving approved identity anchors.",
+    "audience": ["portfolio viewers"],
+    "deliverables": ["16:9 master"],
+    "qualityLane": "premium",
+    "referenceAssetIds": ["asset_reference"]
+  },
+  "brand": {
+    "name": "YAPPY-CLIPZ Demo",
+    "logoAssetIds": [],
+    "rules": ["Never overwrite source media."]
+  },
+  "assets": [
+    {
+      "id": "asset_reference",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "kind": "image",
+      "role": "character_reference",
+      "storage": {
+        "type": "local",
+        "key": "assets/images/character-reference.png"
+      },
+      "source": {
+        "type": "upload"
+      },
+      "createdAt": "2026-07-21T12:00:00Z"
+    },
+    {
+      "id": "asset_shot_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "kind": "video",
+      "role": "generated_shot",
+      "storage": {
+        "type": "local",
+        "key": "assets/video/shot-1.mp4"
+      },
+      "source": {
+        "type": "generated",
+        "provider": "demo-provider",
+        "parentAssetIds": ["asset_reference"]
+      },
+      "createdAt": "2026-07-21T12:05:00Z"
+    },
+    {
+      "id": "asset_master",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "kind": "video",
+      "role": "master_render",
+      "storage": {
+        "type": "local",
+        "key": "renders/master-v1.mp4"
+      },
+      "source": {
+        "type": "derived",
+        "provider": "ffmpeg",
+        "parentAssetIds": ["asset_shot_1"]
+      },
+      "createdAt": "2026-07-21T12:09:00Z"
+    }
+  ],
+  "elements": [
+    {
+      "id": "element_character_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "type": "character",
+      "name": "Forest Spirit",
+      "status": "approved",
+      "version": 1,
+      "referenceAssetIds": ["asset_reference"],
+      "identityAnchors": ["round amber eyes", "indigo hooded cloak"],
+      "negativeConstraints": ["do not change eye color"],
+      "createdAt": "2026-07-21T12:00:00Z",
+      "updatedAt": "2026-07-21T12:00:00Z"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene_1",
+      "order": 0,
+      "title": "Reveal",
+      "elementIds": ["element_character_1"],
+      "shotIds": ["shot_1"]
+    }
+  ],
+  "shots": [
+    {
+      "id": "shot_1",
+      "sceneId": "scene_1",
+      "order": 0,
+      "description": "The forest spirit steps from shadow into warm light.",
+      "durationSeconds": 10,
+      "status": "locked",
+      "elementIds": ["element_character_1"],
+      "referenceAssetIds": ["asset_reference"],
+      "generatedAssetIds": ["asset_shot_1"],
+      "providerDecisionId": "decision_provider_1",
+      "approvalIds": ["approval_shot_1"]
+    }
+  ],
+  "timeline": {
+    "version": 1,
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "durationSeconds": 10
+    },
+    "tracks": [
+      {
+        "id": "track_video_1",
+        "type": "video",
+        "order": 0,
+        "items": [
+          {
+            "id": "timeline_item_1",
+            "kind": "asset",
+            "assetId": "asset_shot_1",
+            "shotId": "shot_1",
+            "startSeconds": 0,
+            "durationSeconds": 10,
+            "sourceStartSeconds": 0,
+            "sourceEndSeconds": 10
+          }
+        ]
+      }
+    ]
+  },
+  "jobs": [
+    {
+      "id": "job_generate_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "type": "generate_shot",
+      "capability": "video_generation",
+      "state": "succeeded",
+      "attempt": 1,
+      "inputRefs": ["shot_1", "asset_reference"],
+      "outputRefs": ["asset_shot_1"],
+      "providerRouteId": "decision_provider_1",
+      "createdAt": "2026-07-21T12:03:00Z",
+      "updatedAt": "2026-07-21T12:05:00Z"
+    },
+    {
+      "id": "job_render_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "type": "render_master",
+      "capability": "composition",
+      "state": "succeeded",
+      "attempt": 1,
+      "inputRefs": ["asset_shot_1"],
+      "outputRefs": ["asset_master"],
+      "createdAt": "2026-07-21T12:08:00Z",
+      "updatedAt": "2026-07-21T12:09:30Z"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval_shot_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "scopeType": "shot",
+      "subjectId": "shot_1",
+      "status": "approved",
+      "requestedAt": "2026-07-21T12:02:00Z",
+      "resolvedAt": "2026-07-21T12:02:30Z",
+      "resolvedBy": "owner"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "decision_provider_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "category": "provider",
+      "subjectId": "shot_1",
+      "selected": {
+        "provider": "demo-provider",
+        "model": "demo-video-v1"
+      },
+      "reasons": ["reference-image support", "quality lane"],
+      "createdAt": "2026-07-21T12:01:00Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "event_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "type": "shot.locked",
+      "subjectId": "shot_1",
+      "occurredAt": "2026-07-21T12:06:00Z",
+      "payload": {
+        "assetId": "asset_shot_1"
+      }
+    }
+  ],
+  "renders": [
+    {
+      "id": "render_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "version": 1,
+      "status": "passed",
+      "engine": "ffmpeg",
+      "timelineVersion": 1,
+      "jobId": "job_render_1",
+      "assetId": "asset_master",
+      "createdAt": "2026-07-21T12:08:00Z",
+      "finishedAt": "2026-07-21T12:09:30Z"
+    }
+  ],
+  "exports": [
+    {
+      "id": "export_1",
+      "tenantId": "tenant_demo",
+      "projectId": "project_demo",
+      "type": "master",
+      "status": "succeeded",
+      "renderId": "render_1",
+      "assetId": "asset_master",
+      "createdAt": "2026-07-21T12:09:30Z",
+      "finishedAt": "2026-07-21T12:10:00Z"
+    }
+  ],
+  "provenance": {
+    "decisionIds": ["decision_provider_1"],
+    "eventIds": ["event_1"]
+  },
+  "extensions": {
+    "ai.yappyverse.example": {
+      "purpose": "contract-validation"
+    }
+  }
+}
