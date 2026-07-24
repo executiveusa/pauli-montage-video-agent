@@ -12,7 +12,7 @@
 - [x] Add dedicated studio dependency file without bloating OpenMontage core requirements.
 - [x] Extend GRINIONS CI to run Phase 03 tests.
 - [x] Add Phase 03 rollback/report evidence.
-- [ ] Run strict OpenSpec and all phase gates on the final PR head.
-- [ ] Open PR and repair all valid review findings.
-- [ ] Squash merge after the exact final head passes required gates.
+- [x] Run strict OpenSpec and all required phase gates on the PR head.
+- [x] Open PR and confirm no unresolved valid review findings.
+- [ ] Squash merge after the final exact-head gate passes.
 - [ ] Post-merge verify and carry receipt/rollback SHA into Phase 04.
