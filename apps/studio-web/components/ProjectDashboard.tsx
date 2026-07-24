@@ -11,6 +11,32 @@ const lanes = [
   ["Clip Factory", "Long-form to campaign assets"],
 ] as const;
 
+function statusCopy(error: ServiceError | null) {
+  if (!error) return null;
+  if (error.error === "authentication_required") {
+    return {
+      title: "Studio session required",
+      detail: "The backend is available, but project data stays locked until you have an authenticated YAPPY Studio session.",
+    };
+  }
+  if (error.error === "authentication_not_configured") {
+    return {
+      title: "Authentication not connected",
+      detail: "The backend is configured, but project access remains locked until secure studio sessions are enabled.",
+    };
+  }
+  if (error.error === "service_unreachable") {
+    return {
+      title: "Studio API unreachable",
+      detail: "The web studio is healthy, but the configured project service did not respond inside the allowed request window.",
+    };
+  }
+  return {
+    title: "Studio API not connected",
+    detail: "The visual studio is deployed, but it will not invent local project state. Connect the shared Studio API and authenticated session layer to persist real projects.",
+  };
+}
+
 export function ProjectDashboard() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [error, setError] = useState<ServiceError | null>(null);
@@ -31,6 +57,7 @@ export function ProjectDashboard() {
   }, []);
 
   const connected = !loading && !error;
+  const unavailable = statusCopy(error);
 
   return (
     <>
@@ -45,9 +72,9 @@ export function ProjectDashboard() {
 
       <div className={`service-banner ${connected ? "connected" : ""}`}>
         <div>
-          <span className={`status-pill`}>
+          <span className="status-pill">
             <span className={`status-dot ${connected ? "live" : "warn"}`} />
-            {loading ? "Checking Studio API" : connected ? "Studio API connected" : "Studio API not connected"}
+            {loading ? "Checking Studio API" : connected ? "Studio API connected" : unavailable?.title}
           </span>
         </div>
         <span className="muted">
@@ -55,7 +82,7 @@ export function ProjectDashboard() {
             ? "Reading service state…"
             : connected
               ? "Project operations are using the shared Phase 03 StudioService."
-              : "This preview is healthy, but persisted project operations need YAPPY_STUDIO_API_URL."}
+              : unavailable?.detail}
         </span>
       </div>
 
@@ -85,10 +112,10 @@ export function ProjectDashboard() {
             </div>
           ) : (
             <div className="empty">
-              <strong>{error ? "Backend not connected yet." : "No projects yet."}</strong>
+              <strong>{error ? unavailable?.title : "No projects yet."}</strong>
               <p>
                 {error
-                  ? "The visual studio is deployed, but it will not invent local project state. Connect the shared Studio API to create and persist real projects."
+                  ? unavailable?.detail
                   : "Start with a brief. YAPPY-CLIPZ will keep characters, assets, decisions, jobs, timelines, and exports under one project contract."}
               </p>
               <Link className="button secondary" href="/studio/new">Create first project</Link>
