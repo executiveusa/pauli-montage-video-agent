@@ -17,8 +17,31 @@ The Next.js application SHALL treat project operations as transport calls to the
 
 #### Scenario: User creates a project
 
-- **WHEN** the create-project form is submitted
-- **THEN** the web route SHALL forward the tenant context and request payload to the configured Studio API and SHALL NOT generate canonical project IDs, construct StudioProject JSON, or persist project records itself.
+- **WHEN** the create-project form is submitted by an authenticated studio session
+- **THEN** the web route SHALL forward the verified tenant context and request payload to the configured Studio API and SHALL NOT generate canonical project IDs, construct StudioProject JSON, or persist project records itself.
+
+### Requirement: Tenant identity is derived from trusted server session state
+
+The public web proxy SHALL NOT trust a caller-supplied tenant header for project access.
+
+#### Scenario: Caller supplies an arbitrary tenant header
+
+- **WHEN** a request includes `X-Yappy-Tenant` without a valid signed YAPPY Studio session
+- **THEN** the proxy SHALL ignore that public header and SHALL NOT forward any project request to the Studio API.
+
+#### Scenario: Authentication is not configured or session is invalid
+
+- **WHEN** an upstream Studio API exists but secure session verification is unavailable or the signed session is absent/invalid/expired
+- **THEN** the proxy SHALL fail closed with a structured authentication-not-configured or authentication-required response.
+
+### Requirement: Upstream requests are bounded
+
+The project proxy SHALL bound Studio API requests so a stalled upstream cannot consume server capacity indefinitely.
+
+#### Scenario: Studio API stalls
+
+- **WHEN** the upstream request does not complete inside the configured request window
+- **THEN** the proxy SHALL abort the request and return the structured service-unreachable response.
 
 ### Requirement: Missing upstream service fails honestly
 
@@ -36,7 +59,7 @@ The studio SHALL expose clear navigation for Projects, Create, Elements, Canvas,
 #### Scenario: User enters the studio
 
 - **WHEN** the studio dashboard loads
-- **THEN** project state, service connection state, primary create action, and production lanes SHALL be understandable without terminal knowledge.
+- **THEN** project state, service/authentication state, primary create action, and production lanes SHALL be understandable without terminal knowledge, and later-phase navigation SHALL be visibly disabled rather than linking to nonexistent targets.
 
 ### Requirement: Responsive premium shell
 
@@ -49,9 +72,9 @@ The landing and studio shell SHALL be usable on phone, tablet, and desktop witho
 
 ### Requirement: Existing product gates remain green
 
-Phase 04 SHALL preserve StudioProject, ICM, StudioService, CLI/API/MCP, and GRINIONS verification while adding the web build gate.
+Phase 04 SHALL preserve StudioProject, ICM, StudioService, CLI/API/MCP, and GRINIONS verification while adding the web build/security gate.
 
 #### Scenario: Phase 04 is evaluated for merge
 
 - **WHEN** the exact final Phase 04 head is tested
-- **THEN** prior contract, ICM, StudioService, CLI/API/MCP, and GRINIONS gates SHALL pass in addition to the new web typecheck/build and Vercel preview gates.
+- **THEN** prior contract, ICM, StudioService, CLI/API/MCP, and GRINIONS gates SHALL pass in addition to deployed-dependency audit, web typecheck/build, review, and Vercel preview gates.
