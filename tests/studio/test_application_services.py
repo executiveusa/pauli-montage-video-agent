@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from packages.contracts.validate_contracts import validate_project
+from packages.contracts.validate_contracts import EXAMPLE, validate_project
 from yappy_clipz.api import create_app
 from yappy_clipz.cli import main as cli_main
 from yappy_clipz.mcp_server import build_mcp
@@ -20,7 +20,7 @@ from yappy_clipz.repository import (
     FileProjectRepository,
     ProjectNotFound,
     RepositoryCorruptionError,
-    UnsafeIdentifier,
+    storage_key,
 )
 from yappy_clipz.service import StudioService
 
@@ -44,35 +44,44 @@ class ApplicationServiceTests(unittest.TestCase):
             deliverables=["16:9 master"],
         )
 
+    def project_path(self, tenant: str, project_id: str) -> Path:
+        return self.root / "tenants" / storage_key(tenant) / "projects" / f"{storage_key(project_id)}.json"
+
     def test_service_creates_contract_valid_atomic_project(self) -> None:
         project = self.create_demo()
         validate_project(project)
         project_id = project["project"]["id"]
-        target = self.root / "tenants" / "tenant-demo" / "projects" / f"{project_id}.json"
+        target = self.project_path("tenant-demo", project_id)
         self.assertTrue(target.is_file())
         self.assertEqual(json.loads(target.read_text(encoding="utf-8")), project)
         self.assertEqual(list(target.parent.glob("*.tmp")), [])
+
+    def test_contract_valid_opaque_ids_round_trip_without_narrowing(self) -> None:
+        example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+        self.assertEqual(example["project"]["tenantId"], "tenant_demo")
+        self.assertEqual(example["project"]["id"], "project_demo")
+        self.repository.save("tenant_demo", example)
+        loaded = self.repository.get("tenant_demo", "project_demo")
+        self.assertEqual(loaded, example)
+        self.assertTrue(self.project_path("tenant_demo", "project_demo").is_file())
+
+    def test_path_like_opaque_tenant_id_is_hashed_and_cannot_escape_root(self) -> None:
+        project = self.create_demo(tenant="../escape")
+        target = self.project_path("../escape", project["project"]["id"])
+        target.resolve().relative_to(self.root.resolve())
+        self.assertTrue(target.is_file())
+        self.assertFalse((self.root.parent / "escape").exists())
+        self.assertEqual(project["project"]["tenantId"], "../escape")
 
     def test_cross_tenant_lookup_fails_as_not_found(self) -> None:
         project = self.create_demo()
         with self.assertRaises(ProjectNotFound):
             self.service.get_project(tenant_id="tenant-other", project_id=project["project"]["id"])
 
-    def test_unsafe_tenant_fails_before_filesystem_write(self) -> None:
-        with self.assertRaises(UnsafeIdentifier):
-            self.service.create_project(
-                tenant_id="../escape",
-                slug="demo-project",
-                title="Bad",
-                objective="Should fail.",
-                deliverables=["none"],
-            )
-        self.assertFalse((self.root / "tenants").exists())
-
     def test_corrupted_stored_project_fails_closed(self) -> None:
         project = self.create_demo()
         project_id = project["project"]["id"]
-        target = self.root / "tenants" / "tenant-demo" / "projects" / f"{project_id}.json"
+        target = self.project_path("tenant-demo", project_id)
         target.write_text('{"schemaVersion":"1.0.0"}', encoding="utf-8")
         with self.assertRaises(RepositoryCorruptionError):
             self.service.get_project(tenant_id="tenant-demo", project_id=project_id)
@@ -81,7 +90,7 @@ class ApplicationServiceTests(unittest.TestCase):
         client = TestClient(create_app(self.service))
         response = client.post(
             "/api/v1/projects",
-            headers={"X-Yappy-Tenant": "tenant-demo"},
+            headers={"X-Yappy-Tenant": "tenant_demo"},
             json={
                 "slug": "cross-interface",
                 "title": "Cross Interface",
@@ -97,19 +106,19 @@ class ApplicationServiceTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            exit_code = cli_main(["project", "list", "--tenant", "tenant-demo"], service=self.service)
+            exit_code = cli_main(["project", "list", "--tenant", "tenant_demo"], service=self.service)
         self.assertEqual(exit_code, 0, stderr.getvalue())
         listed = json.loads(stdout.getvalue())
         self.assertEqual([item["id"] for item in listed], [project_id])
 
-        mcp_project = project_get(self.service, tenant_id="tenant-demo", project_id=project_id)
+        mcp_project = project_get(self.service, tenant_id="tenant_demo", project_id=project_id)
         self.assertEqual(mcp_project["project"]["id"], project_id)
-        self.assertEqual(project_list(self.service, tenant_id="tenant-demo")[0]["id"], project_id)
-        self.assertTrue(project_validate(self.service, tenant_id="tenant-demo", project_id=project_id)["valid"])
+        self.assertEqual(project_list(self.service, tenant_id="tenant_demo")[0]["id"], project_id)
+        self.assertTrue(project_validate(self.service, tenant_id="tenant_demo", project_id=project_id)["valid"])
 
         get_response = client.get(
             f"/api/v1/projects/{project_id}",
-            headers={"X-Yappy-Tenant": "tenant-demo"},
+            headers={"X-Yappy-Tenant": "tenant_demo"},
         )
         self.assertEqual(get_response.status_code, 200)
         self.assertEqual(get_response.json()["project"]["id"], project_id)
