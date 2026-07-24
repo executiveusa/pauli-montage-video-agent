@@ -81,7 +81,9 @@ jobs:
           openspec --version
 
       - name: Install deployed web dependency set
-        run: npm install --omit=optional
+        run: |
+          npm install --omit=optional
+          npm install --no-save @next/swc-linux-x64-gnu@16.2.11
 
       - name: Audit deployed production web dependencies
         run: npm audit --omit=dev --omit=optional --audit-level=high
