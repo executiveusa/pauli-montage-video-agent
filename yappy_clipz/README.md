@@ -4,19 +4,21 @@ This package is the shared product service boundary. CLI, HTTP API, MCP, and the
 
 ## Owner-local project storage
 
-Default:
+Default physical storage:
 
 ```text
-.yappy-clipz/data/tenants/<tenant>/projects/<project-id>.json
+.yappy-clipz/data/tenants/<sha256(tenantId)>/projects/<sha256(project.id)>.json
 ```
 
-Override without changing application logic:
+The hashes are storage keys only. Canonical StudioProject `tenantId` and `project.id` values remain unchanged and opaque; values such as `tenant_demo` and `project_demo` remain valid. Hashing prevents path syntax in opaque IDs from becoming filesystem paths.
+
+Override the storage root without changing application logic:
 
 ```bash
 export YAPPY_PROJECT_ROOT=/owner-controlled/storage/yappy-clipz
 ```
 
-The file repository validates StudioProject v1 before write and after read, writes through a temporary file plus atomic replace, and fails cross-tenant lookups as not found.
+The file repository validates StudioProject v1 before write and after read, verifies canonical IDs against deterministic storage keys, writes through a temporary file plus atomic replace, and fails cross-tenant lookups as not found.
 
 ## CLI
 
