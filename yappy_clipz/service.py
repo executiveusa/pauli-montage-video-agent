@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -19,10 +20,27 @@ class ServiceValidationError(ValueError):
     """Raised when user-facing project input is invalid."""
 
 
+class TimelineVersionConflict(ServiceValidationError):
+    """Raised when a timeline save is based on a stale canonical version."""
+
+    def __init__(self, *, expected_version: int, current_version: int) -> None:
+        self.expected_version = expected_version
+        self.current_version = current_version
+        super().__init__(
+            f"timeline version conflict: expected {expected_version}, current {current_version}"
+        )
+
+
 def validate_project_slug(value: str) -> str:
     """Validate the user-facing slug exactly as required by StudioProject v1."""
     if not isinstance(value, str) or not PROJECT_SLUG.fullmatch(value):
         raise ServiceValidationError("slug must use lowercase letters/numbers with single hyphens")
+    return value
+
+
+def _positive_version(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ServiceValidationError(f"{field} must be an integer >= 1")
     return value
 
 
@@ -155,4 +173,44 @@ class StudioService:
             "schemaVersion": document["schemaVersion"],
             "projectId": document["project"]["id"],
             "tenantId": document["project"]["tenantId"],
+        }
+
+    def get_timeline(self, *, tenant_id: str, project_id: str) -> dict[str, Any]:
+        """Return a detached copy of the canonical Timeline v1 document."""
+        document = self.get_project(tenant_id=tenant_id, project_id=project_id)
+        return json.loads(json.dumps(document["timeline"]))
+
+    def replace_timeline(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        expected_version: int,
+        timeline: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Optimistically replace Timeline v1 under the repository mutation lock."""
+        tenant = validate_identifier(tenant_id, "tenant_id")
+        expected = _positive_version(expected_version, "expected_version")
+        if not isinstance(timeline, dict):
+            raise ServiceValidationError("timeline must be an object")
+        incoming = json.loads(json.dumps(timeline))
+        incoming_version = _positive_version(incoming.get("version"), "timeline.version")
+        if incoming_version != expected:
+            raise ServiceValidationError("timeline.version must equal expected_version before save")
+
+        def mutate(current: dict[str, Any]) -> dict[str, Any]:
+            current_version = _positive_version(current.get("timeline", {}).get("version"), "current timeline.version")
+            if current_version != expected:
+                raise TimelineVersionConflict(expected_version=expected, current_version=current_version)
+            updated_timeline = json.loads(json.dumps(incoming))
+            updated_timeline["version"] = current_version + 1
+            current["timeline"] = updated_timeline
+            current["project"]["updatedAt"] = self._now()
+            return current
+
+        updated = self.repository.mutate(tenant, project_id, mutate)
+        return {
+            "projectId": updated["project"]["id"],
+            "updatedAt": updated["project"]["updatedAt"],
+            "timeline": json.loads(json.dumps(updated["timeline"])),
         }
