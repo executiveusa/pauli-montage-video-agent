@@ -42,6 +42,16 @@ The studio SHALL expose clear navigation for Projects, Create, Elements, Canvas,
 
 The landing and studio shell SHALL be usable on phone, tablet, and desktop without horizontal overflow or hidden primary actions.
 
+#### Scenario: User opens the studio on different viewport sizes
+
+- **WHEN** the landing page or studio is rendered at phone, tablet, or desktop widths
+- **THEN** primary navigation/actions SHALL remain reachable and the page SHALL NOT require horizontal scrolling to use the core workflow.
+
 ### Requirement: Existing product gates remain green
 
 Phase 04 SHALL preserve StudioProject, ICM, StudioService, CLI/API/MCP, and GRINIONS verification while adding the web build gate.
+
+#### Scenario: Phase 04 is evaluated for merge
+
+- **WHEN** the exact final Phase 04 head is tested
+- **THEN** prior contract, ICM, StudioService, CLI/API/MCP, and GRINIONS gates SHALL pass in addition to the new web typecheck/build and Vercel preview gates.
