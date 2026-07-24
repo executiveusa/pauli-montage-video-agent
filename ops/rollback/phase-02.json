@@ -1,0 +1,17 @@
+{
+  "phaseId": "02",
+  "openspecId": "phase-02-studio-project-contracts",
+  "baselineMainSha": "cafc165ca23f41386a680031a2223cbc7c877ca3",
+  "deploymentId": null,
+  "migrations": [],
+  "backups": [],
+  "affectedServices": [
+    "StudioProject/ICM contracts and validation only"
+  ],
+  "featureFlags": [],
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "Revert the eventual Phase 02 squash SHA on main."
+  ],
+  "dataLossRisk": "none; Phase 02 defines contracts but does not migrate production/customer data"
+}
