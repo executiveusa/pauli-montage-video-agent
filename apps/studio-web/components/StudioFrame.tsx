@@ -21,8 +21,23 @@ export function StudioFrame({ children, active = "Projects" }: { children: React
                 {item.label}
               </Link>
             ) : (
-              <span className="disabled" aria-disabled="true" key={item.label} title="Coming in a later production phase">
-                {item.label}<small>Soon</small>
+              <span
+                aria-disabled="true"
+                key={item.label}
+                title="Coming in a later production phase"
+                style={{
+                  alignItems: "center",
+                  borderRadius: 12,
+                  color: "#5f5b56",
+                  display: "flex",
+                  fontSize: ".9rem",
+                  gap: 8,
+                  justifyContent: "space-between",
+                  padding: "11px 12px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.label}<small style={{ fontSize: ".6rem", textTransform: "uppercase" }}>Soon</small>
               </span>
             ),
           )}
