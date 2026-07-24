@@ -1,0 +1,20 @@
+{
+  "phaseId": "05",
+  "openspecId": "phase-05-editor-round-trip",
+  "baselineMainSha": "f709fabf9bac38430035aca5fd54b6ec3225a5c5",
+  "deploymentId": "dpl_9b2J4uVgRuFzM27CVpFTU9stV5rP",
+  "migrations": [],
+  "backups": [],
+  "affectedServices": [
+    "StudioService timeline mutation",
+    "CLI/API/MCP timeline operations",
+    "YAPPY neutral web timeline editor"
+  ],
+  "featureFlags": [],
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "Revert the eventual Phase 05 squash SHA on main.",
+    "Redeploy the verified Phase 04 main SHA if the editor deployment regresses."
+  ],
+  "dataLossRisk": "low; no schema/database migration occurs and existing Timeline v1 documents remain valid"
+}
