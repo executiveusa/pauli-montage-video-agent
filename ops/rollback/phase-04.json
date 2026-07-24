@@ -1,0 +1,18 @@
+{
+  "phaseId": "04",
+  "openspecId": "phase-04-web-studio-shell",
+  "baselineMainSha": "9e292608576dd858058ad579d34dcb29d27329ad",
+  "deploymentId": null,
+  "migrations": [],
+  "backups": [],
+  "affectedServices": [
+    "linked Vercel web deployment and studio web shell"
+  ],
+  "featureFlags": [],
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "Revert the eventual Phase 04 squash SHA on main.",
+    "Redeploy the prior verified main SHA if the web deployment regresses."
+  ],
+  "dataLossRisk": "none; Phase 04 adds a web/proxy surface and performs no customer database migration"
+}
