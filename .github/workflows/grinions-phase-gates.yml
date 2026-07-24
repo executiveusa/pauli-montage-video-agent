@@ -83,6 +83,9 @@ jobs:
       - name: Install web workspace dependencies
         run: npm install
 
+      - name: Audit production web dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Typecheck YAPPY-CLIPZ studio web
         run: npm run typecheck:studio
 
