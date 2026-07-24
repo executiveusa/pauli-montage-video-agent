@@ -51,6 +51,39 @@ class StudioProjectContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractValidationError, "tenantId does not match project tenantId"):
             validate_project(broken)
 
+    def test_shot_approval_must_match_scope_and_subject(self) -> None:
+        broken = copy.deepcopy(self.example)
+        broken["approvals"][0]["subjectId"] = "different_shot"
+        with self.assertRaisesRegex(
+            ContractValidationError,
+            "approval scope/subject does not match the shot",
+        ):
+            validate_project(broken)
+
+    def test_scene_shot_relationship_must_be_bidirectionally_consistent(self) -> None:
+        broken = copy.deepcopy(self.example)
+        broken["scenes"].append({
+            "id": "scene_2",
+            "order": 1,
+            "title": "Second Scene",
+            "shotIds": [],
+        })
+        broken["shots"][0]["sceneId"] = "scene_2"
+        with self.assertRaisesRegex(
+            ContractValidationError,
+            "scene/scene_1.shotIds contains shot_1 but shot/shot_1.sceneId is scene_2",
+        ):
+            validate_project(broken)
+
+    def test_shot_scene_inverse_reference_is_required(self) -> None:
+        broken = copy.deepcopy(self.example)
+        broken["scenes"][0]["shotIds"] = []
+        with self.assertRaisesRegex(
+            ContractValidationError,
+            "shot/shot_1.sceneId points to scene_1 but scene/scene_1.shotIds does not contain shot_1",
+        ):
+            validate_project(broken)
+
     def test_json_round_trip_is_semantically_stable(self) -> None:
         original = copy.deepcopy(self.example)
         encoded = json.dumps(original, sort_keys=True)
