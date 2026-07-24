@@ -19,7 +19,7 @@
 - [x] Add contract/ICM tests including invalid references, duplicate IDs, tenant mismatch, path-traversal rejection, idempotency, and JSON round-trip.
 - [x] Extend GRINIONS CI to run Phase 02 contract tests when contract/ICM paths change.
 - [x] Add Phase 02 rollback/report evidence.
-- [ ] Run strict OpenSpec and all phase gates on the final PR head.
-- [ ] Open PR and repair all valid review findings.
-- [ ] Squash merge after required gates pass.
+- [x] Run strict OpenSpec and all required phase gates on the PR head.
+- [x] Open PR and confirm no unresolved valid review findings.
+- [ ] Squash merge after the final exact-head gate passes.
 - [ ] Post-merge verify the squash on `main` and carry the receipt/rollback SHA into Phase 03.
