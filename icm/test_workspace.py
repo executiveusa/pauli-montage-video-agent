@@ -35,13 +35,36 @@ class IcmWorkspaceTests(unittest.TestCase):
                 self.assertEqual(handoff["stage"], stage)
                 self.assertEqual(handoff["status"], "pending")
 
-    def test_initializer_is_idempotent(self) -> None:
+    def test_initializer_is_idempotent_without_overwriting_stage_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             first = initialize_workspace(root, "tenant-demo", "forest-spirit")
+            stage_dir = first / STAGES[0]
+            context_path = stage_dir / "CONTEXT.md"
+            checklist_path = stage_dir / "CHECKLIST.md"
+            handoff_path = stage_dir / "handoff.json"
+
+            context_path.write_text("# Preserved context\n", encoding="utf-8")
+            checklist_path.write_text("- [x] Finished\n", encoding="utf-8")
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+            handoff.update({
+                "status": "completed",
+                "outputRefs": ["asset_output_1"],
+                "decisionIds": ["decision_1"],
+                "verification": [{"name": "qa", "passed": True}],
+            })
+            handoff_path.write_text(json.dumps(handoff, indent=2) + "\n", encoding="utf-8")
+
             second = initialize_workspace(root, "tenant-demo", "forest-spirit")
             self.assertEqual(first, second)
             self.assertEqual(len([path for path in second.iterdir() if path.is_dir()]), len(STAGES))
+            self.assertEqual(context_path.read_text(encoding="utf-8"), "# Preserved context\n")
+            self.assertEqual(checklist_path.read_text(encoding="utf-8"), "- [x] Finished\n")
+            preserved = json.loads(handoff_path.read_text(encoding="utf-8"))
+            self.assertEqual(preserved["status"], "completed")
+            self.assertEqual(preserved["outputRefs"], ["asset_output_1"])
+            self.assertEqual(preserved["decisionIds"], ["decision_1"])
+            self.assertEqual(preserved["verification"], [{"name": "qa", "passed": True}])
 
     def test_path_traversal_and_absolute_slugs_are_rejected_before_write(self) -> None:
         bad_values = ("../escape", "tenant/demo", "/absolute", "..", "TenantCaps", "")
