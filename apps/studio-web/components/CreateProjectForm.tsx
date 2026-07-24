@@ -11,10 +11,11 @@ export function CreateProjectForm() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setSubmitting(true);
     setMessage(null);
     setIsError(false);
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     const payload = {
       slug: String(form.get("slug") || ""),
       title: String(form.get("title") || ""),
@@ -35,7 +36,7 @@ export function CreateProjectForm() {
         throw new Error(error.message || "Project could not be created.");
       }
       setMessage(`Project created: ${result.project?.title || result.project?.id || "ready"}`);
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (error) {
       setIsError(true);
       setMessage(error instanceof Error ? error.message : "Project could not be created.");
