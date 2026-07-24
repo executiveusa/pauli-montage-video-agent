@@ -3,7 +3,7 @@
   "phaseId": "03",
   "openspecId": "phase-03-application-services",
   "risk": "medium",
-  "completedAt": "2026-07-24T04:59:30Z",
+  "completedAt": "2026-07-24T04:59:52Z",
   "baselineMainSha": "e9de73ff91731f8e536960537d47967d424073ee",
   "beads": [],
   "pullRequest": {
@@ -17,7 +17,7 @@
   },
   "merge": {
     "sha": "9e292608576dd858058ad579d34dcb29d27329ad",
-    "mergedAt": null
+    "mergedAt": "2026-07-24T04:59:52Z"
   },
   "postMerge": {
     "passed": true,
