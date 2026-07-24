@@ -5,7 +5,14 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from .factory import create_service
-from .mcp_tools import project_create, project_get, project_list, project_validate
+from .mcp_tools import (
+    project_create,
+    project_get,
+    project_list,
+    project_validate,
+    timeline_get,
+    timeline_replace,
+)
 from .service import StudioService
 
 
@@ -14,7 +21,7 @@ def build_mcp(service: StudioService | None = None) -> FastMCP:
     active = service or create_service()
     mcp = FastMCP(
         "YAPPY-CLIPZ",
-        instructions="Create, inspect, list, and validate YAPPY-CLIPZ StudioProject records.",
+        instructions="Create, inspect, edit timelines, and validate YAPPY-CLIPZ StudioProject records.",
         json_response=True,
     )
 
@@ -56,6 +63,27 @@ def build_mcp(service: StudioService | None = None) -> FastMCP:
     def validate_tool(tenant_id: str, project_id: str) -> dict:
         """Revalidate canonical stored StudioProject state."""
         return project_validate(active, tenant_id=tenant_id, project_id=project_id)
+
+    @mcp.tool(name="timeline_get")
+    def timeline_get_tool(tenant_id: str, project_id: str) -> dict:
+        """Get canonical Timeline v1 state."""
+        return timeline_get(active, tenant_id=tenant_id, project_id=project_id)
+
+    @mcp.tool(name="timeline_replace")
+    def timeline_replace_tool(
+        tenant_id: str,
+        project_id: str,
+        expected_version: int,
+        timeline: dict,
+    ) -> dict:
+        """Replace Timeline v1 using optimistic version conflict protection."""
+        return timeline_replace(
+            active,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            expected_version=expected_version,
+            timeline=timeline,
+        )
 
     return mcp
 
