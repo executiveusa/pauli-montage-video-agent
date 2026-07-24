@@ -2,25 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import Any, Protocol
 
 from packages.contracts.validate_contracts import ContractValidationError, validate_project
 
-SAFE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-PROJECT_ID = re.compile(r"^prj_[a-f0-9]{24}$")
-
 
 class RepositoryError(RuntimeError):
     """Base repository error."""
 
 
-class UnsafeIdentifier(RepositoryError):
-    """Raised before unsafe tenant/project identifiers can reach filesystem paths."""
+class InvalidIdentifier(RepositoryError):
+    """Raised for empty/non-string canonical identifiers."""
 
 
 class ProjectNotFound(RepositoryError):
@@ -41,20 +38,16 @@ class ProjectRepository(Protocol):
     def list(self, tenant_id: str) -> list[dict[str, Any]]: ...
 
 
-def validate_slug(value: str, field: str = "slug") -> str:
-    """Accept only URL/filesystem-neutral lowercase slugs."""
-    if not isinstance(value, str) or not SAFE_SLUG.fullmatch(value):
-        raise UnsafeIdentifier(
-            f"{field} must use lowercase letters/numbers with single hyphens; path syntax is forbidden"
-        )
+def validate_identifier(value: str, field: str) -> str:
+    """Preserve opaque contract IDs while rejecting values the contract itself cannot identify."""
+    if not isinstance(value, str) or not value:
+        raise InvalidIdentifier(f"{field} must be a non-empty string")
     return value
 
 
-def validate_project_id(value: str) -> str:
-    """Validate internal project IDs before path construction."""
-    if not isinstance(value, str) or not PROJECT_ID.fullmatch(value):
-        raise UnsafeIdentifier("invalid project id")
-    return value
+def storage_key(value: str) -> str:
+    """Map an opaque canonical ID to a filesystem-neutral deterministic key."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class FileProjectRepository:
@@ -64,16 +57,17 @@ class FileProjectRepository:
         self.root = Path(root).expanduser().resolve()
 
     def _tenant_dir(self, tenant_id: str) -> Path:
-        tenant = validate_slug(tenant_id, "tenant_id")
-        path = (self.root / "tenants" / tenant / "projects").resolve()
+        tenant = validate_identifier(tenant_id, "tenant_id")
+        path = (self.root / "tenants" / storage_key(tenant) / "projects").resolve()
         try:
             path.relative_to(self.root)
         except ValueError as exc:
-            raise UnsafeIdentifier("tenant path escaped project root") from exc
+            raise RepositoryError("tenant storage path escaped project root") from exc
         return path
 
     def _project_path(self, tenant_id: str, project_id: str) -> Path:
-        return self._tenant_dir(tenant_id) / f"{validate_project_id(project_id)}.json"
+        project = validate_identifier(project_id, "project_id")
+        return self._tenant_dir(tenant_id) / f"{storage_key(project)}.json"
 
     @staticmethod
     def _validated_copy(project: dict[str, Any]) -> dict[str, Any]:
@@ -86,10 +80,10 @@ class FileProjectRepository:
 
     def save(self, tenant_id: str, project: dict[str, Any]) -> dict[str, Any]:
         """Validate then atomically persist a complete StudioProject document."""
-        tenant = validate_slug(tenant_id, "tenant_id")
+        tenant = validate_identifier(tenant_id, "tenant_id")
         validated = self._validated_copy(project)
         meta = validated.get("project", {})
-        project_id = validate_project_id(str(meta.get("id", "")))
+        project_id = validate_identifier(meta.get("id"), "project.id")
         if meta.get("tenantId") != tenant:
             raise RepositoryCorruptionError("project tenantId does not match requested tenant")
 
@@ -98,7 +92,7 @@ class FileProjectRepository:
         target = self._project_path(tenant, project_id)
         encoded = json.dumps(validated, indent=2, sort_keys=True) + "\n"
 
-        fd, temporary = tempfile.mkstemp(prefix=f".{project_id}.", suffix=".tmp", dir=directory)
+        fd, temporary = tempfile.mkstemp(prefix=".project.", suffix=".tmp", dir=directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(encoded)
@@ -111,13 +105,9 @@ class FileProjectRepository:
                 os.unlink(temporary)
         return validated
 
-    def get(self, tenant_id: str, project_id: str) -> dict[str, Any]:
-        """Read only from the requested tenant and revalidate stored state."""
-        target = self._project_path(tenant_id, project_id)
-        if not target.is_file():
-            raise ProjectNotFound("project not found")
+    def _read_path(self, tenant_id: str, path: Path) -> dict[str, Any]:
         try:
-            document = json.loads(target.read_text(encoding="utf-8"))
+            document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise RepositoryCorruptionError("stored project is unreadable") from exc
         validated = self._validated_copy(document)
@@ -125,13 +115,29 @@ class FileProjectRepository:
             raise RepositoryCorruptionError("stored project tenant ownership is invalid")
         return validated
 
+    def get(self, tenant_id: str, project_id: str) -> dict[str, Any]:
+        """Read only from the requested tenant and revalidate stored state."""
+        tenant = validate_identifier(tenant_id, "tenant_id")
+        canonical_project_id = validate_identifier(project_id, "project_id")
+        target = self._project_path(tenant, canonical_project_id)
+        if not target.is_file():
+            raise ProjectNotFound("project not found")
+        validated = self._read_path(tenant, target)
+        if validated.get("project", {}).get("id") != canonical_project_id:
+            raise RepositoryCorruptionError("stored project id does not match storage key")
+        return validated
+
     def list(self, tenant_id: str) -> list[dict[str, Any]]:
-        """Return validated projects visible to one tenant only."""
-        directory = self._tenant_dir(tenant_id)
+        """Return validated projects visible to one opaque tenant ID only."""
+        tenant = validate_identifier(tenant_id, "tenant_id")
+        directory = self._tenant_dir(tenant)
         if not directory.exists():
             return []
         projects: list[dict[str, Any]] = []
-        for path in sorted(directory.glob("prj_*.json")):
-            project_id = path.stem
-            projects.append(self.get(tenant_id, project_id))
+        for path in sorted(directory.glob("*.json")):
+            document = self._read_path(tenant, path)
+            expected = self._project_path(tenant, document["project"]["id"])
+            if expected != path:
+                raise RepositoryCorruptionError("stored project filename does not match canonical project id")
+            projects.append(document)
         return projects
