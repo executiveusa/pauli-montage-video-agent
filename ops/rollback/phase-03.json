@@ -1,0 +1,18 @@
+{
+  "phaseId": "03",
+  "openspecId": "phase-03-application-services",
+  "baselineMainSha": "e9de73ff91731f8e536960537d47967d424073ee",
+  "deploymentId": null,
+  "migrations": [],
+  "backups": [],
+  "affectedServices": [
+    "shared StudioService and local project persistence only"
+  ],
+  "featureFlags": [],
+  "rollbackCommands": [],
+  "rollbackStrategy": [
+    "Revert the eventual Phase 03 squash SHA on main.",
+    "Owner-local StudioProject JSON files remain portable data and are not deleted by code rollback."
+  ],
+  "dataLossRisk": "none to production/customer systems; no database migration occurs in Phase 03"
+}
