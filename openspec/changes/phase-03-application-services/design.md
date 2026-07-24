@@ -33,11 +33,12 @@ yappy_clipz/
 Phase 03 uses a sovereign file-backed `ProjectRepository` implementation for proof and owner use.
 
 - root is explicit through `YAPPY_PROJECT_ROOT` or constructor injection;
-- tenant IDs/slugs are validated before path construction;
-- project IDs are generated internally and never accepted as arbitrary filesystem paths;
+- canonical `tenantId` and `project.id` remain opaque strings exactly as allowed by StudioProject v1;
+- opaque IDs are mapped to deterministic SHA-256 filesystem keys, so path-like IDs cannot escape the storage root and public IDs are never narrowed to private filename formats;
+- user-facing project `slug` continues to follow the StudioProject schema pattern;
 - project documents are validated before persistence;
 - writes use temporary files plus atomic `os.replace`;
-- reads validate the stored StudioProject before returning it;
+- reads validate the stored StudioProject and verify that canonical IDs match their deterministic storage keys before returning it;
 - tenant ownership is checked on every lookup;
 - the repository interface is replaceable by a later Supabase/Postgres implementation without changing StudioService or transports.
 
@@ -97,10 +98,12 @@ The MCP SDK is constrained to the stable v1 line (`mcp>=1.27,<2`) so the planned
 ## Verification
 
 - create project through StudioService and validate it against StudioProject v1;
+- save and retrieve the Phase 02 canonical example IDs (`tenant_demo`, `project_demo`) without rewriting them;
+- verify path-like opaque tenant IDs are hashed into storage keys and cannot escape the requested root;
 - list/get return tenant-owned projects only;
 - cross-tenant lookup returns not found;
-- unsafe tenant/project slugs fail before filesystem writes;
 - atomic save never exposes partial JSON;
+- corrupted canonical JSON fails closed;
 - CLI invokes the shared service;
 - API endpoints invoke the shared service and preserve tenant isolation;
 - MCP tool adapter functions invoke the shared service;
