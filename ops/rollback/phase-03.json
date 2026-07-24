@@ -9,9 +9,13 @@
     "shared StudioService and local project persistence only"
   ],
   "featureFlags": [],
-  "rollbackCommands": [],
+  "mergeSha": "9e292608576dd858058ad579d34dcb29d27329ad",
+  "verifiedMainSha": "9e292608576dd858058ad579d34dcb29d27329ad",
+  "rollbackCommands": [
+    "git revert 9e292608576dd858058ad579d34dcb29d27329ad"
+  ],
   "rollbackStrategy": [
-    "Revert the eventual Phase 03 squash SHA on main.",
+    "Revert the verified Phase 03 squash SHA on main.",
     "Owner-local StudioProject JSON files remain portable data and are not deleted by code rollback."
   ],
   "dataLossRisk": "none to production/customer systems; no database migration occurs in Phase 03"
