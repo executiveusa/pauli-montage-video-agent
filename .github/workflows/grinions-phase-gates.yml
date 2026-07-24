@@ -84,7 +84,31 @@ jobs:
         run: npm install
 
       - name: Audit production web dependencies
-        run: npm audit --omit=dev --audit-level=high
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > /tmp/npm-audit.json
+          AUDIT_STATUS=$?
+          node <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('/tmp/npm-audit.json', 'utf8'));
+          const rows = Object.entries(audit.vulnerabilities || {}).map(([name, item]) => ({
+            name,
+            severity: item.severity,
+            range: item.range,
+            fixAvailable: item.fixAvailable,
+            via: (item.via || []).map((entry) => typeof entry === 'string' ? entry : {
+              source: entry.source,
+              name: entry.name,
+              title: entry.title,
+              severity: entry.severity,
+              range: entry.range,
+              url: entry.url,
+            }),
+          }));
+          console.log('NPM_AUDIT_FINDINGS=' + JSON.stringify({ metadata: audit.metadata, vulnerabilities: rows }, null, 2));
+          NODE
+          exit "$AUDIT_STATUS"
 
       - name: Typecheck YAPPY-CLIPZ studio web
         run: npm run typecheck:studio
