@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "01",
+  "openspecId": "phase-01-repo-truth",
+  "risk": "low",
+  "completedAt": "2026-07-22T02:10:46Z",
+  "baselineMainSha": "21e5ce6bf04712d60a7ca0f0b3f4b1ac076981c9",
+  "beads": [],
+  "pullRequest": {
+    "number": 2,
+    "url": null,
+    "headSha": "258e565592df4d23e7f9eed08d90f5dbf534425a"
+  },
+  "judgment": {
+    "passed": true,
+    "unresolvedReviewThreads": 0
+  },
+  "merge": {
+    "sha": "cafc165ca23f41386a680031a2223cbc7c877ca3",
+    "mergedAt": "2026-07-22T02:10:46Z"
+  },
+  "postMerge": {
+    "passed": true,
+    "mainSha": "cafc165ca23f41386a680031a2223cbc7c877ca3"
+  },
+  "rollback": {
+    "baselineCaptured": true,
+    "receiptPath": "ops/rollback/phase-01.json"
+  }
+}

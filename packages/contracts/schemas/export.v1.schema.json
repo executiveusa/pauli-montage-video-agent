@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/export.v1.schema.json",
+  "title": "YAPPY-CLIPZ Export v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "type", "status", "createdAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "type": {"enum": ["master", "platform_variant", "subtitle", "audio", "project_archive", "metadata"]},
+    "status": {"enum": ["queued", "running", "succeeded", "failed", "cancelled"]},
+    "renderId": {"type": ["string", "null"]},
+    "assetId": {"type": ["string", "null"]},
+    "platform": {"type": ["string", "null"]},
+    "preset": {"type": ["string", "null"]},
+    "settings": {"type": "object", "additionalProperties": true},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "finishedAt": {"type": ["string", "null"], "format": "date-time"},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}
