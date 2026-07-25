@@ -1,0 +1,13 @@
+{
+  "phase": "phase-06-production-hardening",
+  "baseline_main_sha": "f709fabf9bac38430035aca5fd54b6ec3225a5c5",
+  "affected_services": ["studio-api", "render-worker", "remotion-renderer", "ci"],
+  "data_migration": false,
+  "feature_flags": [],
+  "rollback_commands": [
+    "git revert <phase-06-squash-sha>",
+    "docker compose down",
+    "redeploy baseline_main_sha"
+  ],
+  "data_loss_risk": "none; named volumes are retained and this phase contains no schema migration"
+}
