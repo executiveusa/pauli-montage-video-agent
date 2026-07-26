@@ -12,6 +12,6 @@
     "typecheck:studio": "npm run typecheck --workspace=@yappyverse/studio-web"
   },
   "overrides": {
-    "postcss": "8.5.14"
+    "postcss": "8.5.23"
   }
 }

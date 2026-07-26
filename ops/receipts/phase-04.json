@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "04",
+  "openspecId": "phase-04-web-studio-shell",
+  "risk": "medium",
+  "completedAt": "2026-07-24T05:44:41Z",
+  "baselineMainSha": "9e292608576dd858058ad579d34dcb29d27329ad",
+  "beads": [],
+  "pullRequest": {
+    "number": 5,
+    "url": null,
+    "headSha": "47a05def7097c5ba9ffb588bdf75c59956ae85d9"
+  },
+  "judgment": {
+    "passed": true,
+    "unresolvedReviewThreads": 0
+  },
+  "merge": {
+    "sha": "f709fabf9bac38430035aca5fd54b6ec3225a5c5",
+    "mergedAt": "2026-07-24T05:44:41Z"
+  },
+  "postMerge": {
+    "passed": true,
+    "mainSha": "f709fabf9bac38430035aca5fd54b6ec3225a5c5"
+  },
+  "deployment": {
+    "projectId": "prj_AjK2uzwmXOPND30f98Zkp6LWJIQb",
+    "deploymentId": "dpl_9b2J4uVgRuFzM27CVpFTU9stV5rP",
+    "state": "READY",
+    "target": "production",
+    "runtime": "nodejs",
+    "bundler": "turbopack"
+  },
+  "rollback": {
+    "baselineCaptured": true,
+    "receiptPath": "ops/rollback/phase-04.json"
+  }
+}
