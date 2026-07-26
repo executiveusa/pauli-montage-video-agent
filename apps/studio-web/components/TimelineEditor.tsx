@@ -232,7 +232,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         </div>
         <div className="form-actions">
           <button className="button secondary" disabled={state === "saving"} onClick={() => void load()} type="button">Reload canonical</button>
-          <button className="button purple" disabled={!canSave || state === "saving"} onClick={() => void save()} type="button">
+          <button className="button purple" disabled={!canSave} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save timeline v${timeline.version}`}
           </button>
         </div>
