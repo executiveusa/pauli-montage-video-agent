@@ -101,13 +101,21 @@ export function ProjectDashboard() {
           ) : projects.length ? (
             <div className="project-list">
               {projects.map((project) => (
-                <div className="project-row" key={project.id}>
+                <Link
+                  aria-label={`Open ${project.title} timeline editor`}
+                  className="project-row project-row-link"
+                  href={`/studio/projects/${encodeURIComponent(project.id)}/edit`}
+                  key={project.id}
+                >
                   <div>
                     <strong>{project.title}</strong>
                     <div className="project-meta">{project.slug} · {project.status}</div>
                   </div>
-                  <div className="project-meta">{project.schemaVersion}</div>
-                </div>
+                  <div className="project-row-action">
+                    <span className="project-meta">{project.schemaVersion}</span>
+                    <span className="status-pill">Edit timeline</span>
+                  </div>
+                </Link>
               ))}
             </div>
           ) : (
