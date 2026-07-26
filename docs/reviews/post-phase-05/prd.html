@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YAPPY-CLIPZ Phase 06 Builder PRD</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c0c10;--panel:#15151c;--line:#2b2b36;--text:#f4f1eb;--muted:#aaa39a;--accent:#9b7cff;--good:#63d297;--warn:#f2c66d}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 Inter,ui-sans-serif,system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:48px 24px 96px}h1{font-size:clamp(2.4rem,6vw,5rem);line-height:1;margin:.2em 0}h2{margin-top:0}a{color:#c7b8ff}.eyebrow{color:var(--accent);text-transform:uppercase;letter-spacing:.12em;font-size:.76rem}.lead{max-width:850px;color:var(--muted);font-size:1.12rem}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;margin:28px 0}.card{grid-column:span 6;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px}.wide{grid-column:1/-1}.step{border-left:3px solid var(--accent)}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 10px;vertical-align:top}th{color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:.08em}code,pre{background:#0a0a0e;border:1px solid var(--line);border-radius:10px}code{padding:.15em .4em}pre{padding:16px;overflow:auto}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-size:.72rem}.good{color:var(--good)}.warn{color:var(--warn)}ul{padding-left:20px}@media(max-width:800px){.card{grid-column:1/-1}}
+  </style>
+</head>
+<body><main>
+<section id="builder-brief">
+  <div class="eyebrow">Builder PRD / planning only</div>
+  <h1>Phase 06 foundation</h1>
+  <p class="lead">Build a universal action and capability contract shared by CLI, API, MCP, A2A, and the web studio; then upgrade ICM from safe scaffolding to a versioned, digest-verified, resumable context and handoff runtime.</p>
+  <p><span class="pill warn">No provider work</span> <span class="pill warn">No production auth deployment</span> <span class="pill warn">No visual redesign</span></p>
+</section>
+
+<section id="file-allowlist" class="grid">
+  <article class="card wide"><h2>File allowlist</h2><pre>packages/contracts/actions/**
+packages/contracts/icm/**
+yappy_clipz/capabilities.py
+yappy_clipz/actions.py
+yappy_clipz/errors.py
+yappy_clipz/cli.py
+yappy_clipz/api.py
+yappy_clipz/mcp_tools.py
+yappy_clipz/mcp_server.py
+icm/**
+tests/studio/**
+tests/icm/**
+docs/contracts/**
+docs/ICM-RUNTIME-ARCHITECTURE.md
+docs/YAPPY-CLIPZ-POST-PHASE-05-ROADMAP.md
+README.md
+AGENTS.md
+PROJECT_CONTEXT.md
+.github/workflows/grinions-phase-gates.yml
+ops/reports/phase-06.md
+ops/rollback/phase-06.json
+ops/receipts/phase-05.json</pre><p>Any additional runtime file requires an OpenSpec design amendment before editing.</p></article>
+</section>
+
+<section id="rollback" class="grid">
+  <article class="card wide"><h2>Rollback plan</h2>
+    <ol>
+      <li>Branch from verified Phase 05 squash <code>13c6b28f28cd808b8df9b2d11c7849c5ab93d3c9</code>.</li>
+      <li>Record Phase 05 production deployment and route evidence.</li>
+      <li>Preserve v1 ICM fixtures and never overwrite v1 evidence during migration.</li>
+      <li>Keep current convenience CLI/API/MCP operations compatible during transition.</li>
+      <li>Squash merge only after exact-head CI/review/preview gates pass.</li>
+      <li>Rollback by reverting the Phase 06 squash and redeploying the verified Phase 05 build.</li>
+    </ol>
+  </article>
+</section>
+
+<section id="gates" class="grid">
+  <article class="card step"><h2>Gate 1 — Contracts</h2><p>Action, result, problem, job, event, capability, registry, and ICM v2 schemas validate offline.</p></article>
+  <article class="card step"><h2>Gate 2 — Registry</h2><p>Every stable action has lifecycle, schemas, scope, risk, execution, idempotency, ICM, and transport mappings.</p></article>
+  <article class="card step"><h2>Gate 3 — Dispatcher</h2><p>All transport calls normalize to one action request and return one result/problem/job contract.</p></article>
+  <article class="card step"><h2>Gate 4 — CLI/API/MCP</h2><p>Discovery and generic action execution exist; current convenience interfaces delegate to the dispatcher.</p></article>
+  <article class="card step"><h2>Gate 5 — ICM v2</h2><p>Runs, stage contracts, manifests, digests, context packages, handoffs, staleness, and resume are implemented.</p></article>
+  <article class="card step"><h2>Gate 6 — Proof</h2><p>Cross-transport parity, migration, path safety, schema snapshots, CI, review, and Vercel preview pass.</p></article>
+</section>
+
+<section id="tasks" class="grid">
+  <article class="card wide"><h2>Builder tasks</h2>
+    <table><thead><tr><th>ID</th><th>Task</th><th>Risk</th><th>Acceptance</th></tr></thead><tbody>
+      <tr><td>P06-001</td><td>Add action/capability/problem/job/event schemas.</td><td>Low</td><td>Offline schema checks and deterministic fixtures pass.</td></tr>
+      <tr><td>P06-002</td><td>Register current project/timeline actions.</td><td>Medium</td><td>No semantic change to Phase 05 behavior.</td></tr>
+      <tr><td>P06-003</td><td>Add shared action dispatcher.</td><td>Medium</td><td>All current transports delegate through it.</td></tr>
+      <tr><td>P06-004</td><td>Add capability discovery to CLI/API/MCP.</td><td>Low</td><td>Agent can list/describe schemas without repository knowledge.</td></tr>
+      <tr><td>P06-005</td><td>Add generic action execution.</td><td>Medium</td><td>Equivalent results/problems across all transports.</td></tr>
+      <tr><td>P06-006</td><td>Add ICM v2 schemas and templates.</td><td>Medium</td><td>All eleven stages have contracts/manifests/handoffs.</td></tr>
+      <tr><td>P06-007</td><td>Add ICM run/stage actions.</td><td>Medium</td><td>Create/prepare/verify/handoff/resume through CLI/API/MCP.</td></tr>
+      <tr><td>P06-008</td><td>Add digests, staleness, and migration.</td><td>Medium</td><td>Changed refs mark output stale; v1 evidence is preserved.</td></tr>
+      <tr><td>P06-009</td><td>Add transport and schema snapshots.</td><td>Low</td><td>Unapproved drift fails CI.</td></tr>
+      <tr><td>P06-010</td><td>Correct stale repository documentation.</td><td>Low</td><td>One canonical ICM hierarchy and current editor/deployment truth.</td></tr>
+    </tbody></table>
+  </article>
+</section>
+
+<section id="acceptance" class="grid">
+  <article class="card wide"><h2>Acceptance criteria</h2>
+    <ul>
+      <li>Registry matrix has no blank CLI/API/MCP mapping for stable public actions.</li>
+      <li>API-created project can be listed through CLI and inspected through MCP.</li>
+      <li>MCP-read timeline can be replaced through CLI and reopened through API.</li>
+      <li>Equivalent invalid, stale, unauthorized, and duplicate requests produce equivalent problem documents.</li>
+      <li>An ICM run created through one transport can be prepared, verified, handed off, and resumed through the others.</li>
+      <li>Another agent can resume from the handoff without original chat history.</li>
+      <li>Remote mode never treats a caller tenant field/header as authoritative identity.</li>
+      <li>No secrets or binaries appear in context packages or snapshots.</li>
+      <li>Existing Phase 00-05 gates remain green.</li>
+      <li>Exact final head passes strict OpenSpec, CI, review, and READY Vercel preview.</li>
+      <li>Phase 06 remains fail closed for hosted project access until Phase 07 authentication/API deployment is approved.</li>
+    </ul>
+  </article>
+</section>
+
+<section class="grid"><article class="card wide"><h2>Human decision</h2><p>Approve this PRD before Phase 06 implementation. Approval authorizes only the Phase 06 allowlist and acceptance contract; it does not authorize paid provider calls, identity/voice work, customer migrations, billing, or production deployment changes.</p></article></section>
+</main></body></html>
