@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -15,8 +17,8 @@ from fastapi.testclient import TestClient
 from yappy_clipz.api import create_app
 from yappy_clipz.cli import main as cli_main
 from yappy_clipz.mcp_tools import timeline_get as mcp_timeline_get
-from yappy_clipz.repository import FileProjectRepository, ProjectNotFound
-from yappy_clipz.service import ServiceValidationError, StudioService, TimelineVersionConflict
+from yappy_clipz.repository import FileProjectRepository, ProjectNotFound, RepositoryBusy
+from yappy_clipz.service import StudioService, TimelineVersionConflict
 
 
 def edited_timeline(base: dict, *, text: str = "Opening title") -> dict:
@@ -158,6 +160,38 @@ class TimelineRoundTripTests(unittest.TestCase):
         current = self.service.get_timeline(tenant_id="tenant_demo", project_id=self.project_id)
         self.assertEqual(current["version"], 2)
         self.assertIn(current["tracks"][0]["items"][0]["text"], {"First writer", "Second writer"})
+
+    def test_aged_lock_owned_by_live_process_is_not_evicted(self) -> None:
+        guarded_repository = FileProjectRepository(
+            self.root,
+            lock_timeout_seconds=0.15,
+            stale_lock_seconds=0.01,
+        )
+        guarded_service = StudioService(guarded_repository)
+        lock_path = guarded_repository._project_path("tenant_demo", self.project_id).with_suffix(".lock")
+        lock_path.write_text(
+            f"pid={os.getpid()} token=live-owner-test time={time.time()}\n",
+            encoding="utf-8",
+        )
+        old = time.time() - 60
+        os.utime(lock_path, (old, old))
+        original = guarded_service.get_timeline(tenant_id="tenant_demo", project_id=self.project_id)
+
+        try:
+            with self.assertRaises(RepositoryBusy):
+                guarded_service.replace_timeline(
+                    tenant_id="tenant_demo",
+                    project_id=self.project_id,
+                    expected_version=1,
+                    timeline=edited_timeline(original, text="Must not save"),
+                )
+            self.assertTrue(lock_path.exists())
+            self.assertEqual(
+                guarded_service.get_timeline(tenant_id="tenant_demo", project_id=self.project_id),
+                original,
+            )
+        finally:
+            lock_path.unlink(missing_ok=True)
 
     def test_api_cli_and_mcp_share_timeline_round_trip(self) -> None:
         client = TestClient(create_app(self.service))
