@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ProjectEnvelope,
   Timeline,
@@ -40,8 +40,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [state, setState] = useState<EditorState>("loading");
   const [message, setMessage] = useState("Loading canonical timeline…");
+  const savingRef = useRef(false);
 
   const load = useCallback(async () => {
+    if (savingRef.current) return;
     setState("loading");
     setMessage("Loading canonical timeline…");
     try {
@@ -72,15 +74,18 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     () => timeline?.tracks.filter((track) => track.type === "text").length ?? 0,
     [timeline],
   );
+  const editingLocked = state === "saving" || state === "conflict" || state === "loading";
+  const canSave = state === "dirty" || (state === "error" && timeline !== null);
 
   function mark(next: Timeline) {
+    if (savingRef.current || state === "conflict") return;
     setTimeline(next);
     setState("dirty");
     setMessage(`Unsaved edits based on timeline v${next.version}.`);
   }
 
   function setDuration(value: number) {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     mark({
       ...timeline,
       canvas: { ...timeline.canvas, durationSeconds: Math.max(0, value) },
@@ -88,7 +93,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function addTextTrack() {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     const track: TimelineTrack = {
       id: nextId("track_text"),
       type: "text",
@@ -102,7 +107,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function removeTrack(trackId: string) {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     mark({
       ...timeline,
       tracks: normalizeTrackOrder(timeline.tracks.filter((track) => track.id !== trackId)),
@@ -110,7 +115,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function moveTrack(trackId: string, delta: number) {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     const tracks = [...timeline.tracks];
     const index = tracks.findIndex((track) => track.id === trackId);
     const nextIndex = index + delta;
@@ -121,7 +126,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function addTextItem(trackId: string) {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     const item: TimelineItem = {
       id: nextId("text"),
       kind: "text",
@@ -144,7 +149,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function updateItem(trackId: string, itemId: string, patch: Partial<TimelineItem>) {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     mark({
       ...timeline,
       tracks: timeline.tracks.map((track) =>
@@ -159,7 +164,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function removeItem(trackId: string, itemId: string) {
-    if (!timeline) return;
+    if (!timeline || editingLocked) return;
     mark({
       ...timeline,
       tracks: timeline.tracks.map((track) =>
@@ -171,15 +176,17 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   async function save() {
-    if (!timeline || state === "saving") return;
+    if (!timeline || savingRef.current || !canSave) return;
     const expectedVersion = timeline.version;
+    const snapshot = timeline;
+    savingRef.current = true;
     setState("saving");
     setMessage(`Saving changes based on timeline v${expectedVersion}…`);
     try {
       const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/timeline`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expected_version: expectedVersion, timeline }),
+        body: JSON.stringify({ expected_version: expectedVersion, timeline: snapshot }),
       });
       const payload = (await response.json()) as TimelineReplaceResult & ErrorPayload;
       if (response.status === 409) {
@@ -194,6 +201,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     } catch (error) {
       setState("error");
       setMessage(error instanceof Error ? error.message : "Timeline could not be saved.");
+    } finally {
+      savingRef.current = false;
     }
   }
 
@@ -205,7 +214,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           <strong>{state === "loading" ? "Loading…" : "Editor locked"}</strong>
           <p>{message}</p>
           <div className="form-actions">
-            <button className="button secondary" onClick={() => void load()} type="button">Retry</button>
+            <button className="button secondary" disabled={state === "loading"} onClick={() => void load()} type="button">Retry</button>
             <Link className="button secondary" href="/studio">Back to projects</Link>
           </div>
         </div>
@@ -222,8 +231,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           <p className="muted">Edit canonical timeline state without a vendor-specific project format.</p>
         </div>
         <div className="form-actions">
-          <button className="button secondary" onClick={() => void load()} type="button">Reload canonical</button>
-          <button className="button purple" disabled={state !== "dirty" && state !== "conflict"} onClick={() => void save()} type="button">
+          <button className="button secondary" disabled={state === "saving"} onClick={() => void load()} type="button">Reload canonical</button>
+          <button className="button purple" disabled={!canSave || state === "saving"} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save timeline v${timeline.version}`}
           </button>
         </div>
@@ -231,67 +240,69 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
       <div className={`notice ${state === "error" || state === "conflict" ? "error" : ""}`}>{message}</div>
 
-      <section className="timeline-meta-grid">
-        <div className="panel timeline-stat"><span>Version</span><strong>v{timeline.version}</strong></div>
-        <div className="panel timeline-stat"><span>Canvas</span><strong>{timeline.canvas.width}×{timeline.canvas.height}</strong></div>
-        <div className="panel timeline-stat"><span>FPS</span><strong>{timeline.canvas.fps}</strong></div>
-        <div className="panel timeline-stat field">
-          <label htmlFor="timeline-duration">Duration / seconds</label>
-          <input id="timeline-duration" min="0" onChange={(event) => setDuration(Number(event.target.value))} step="0.1" type="number" value={duration} />
-        </div>
-      </section>
+      <fieldset aria-busy={state === "saving"} className="timeline-editor-fieldset" disabled={editingLocked}>
+        <section className="timeline-meta-grid">
+          <div className="panel timeline-stat"><span>Version</span><strong>v{timeline.version}</strong></div>
+          <div className="panel timeline-stat"><span>Canvas</span><strong>{timeline.canvas.width}×{timeline.canvas.height}</strong></div>
+          <div className="panel timeline-stat"><span>FPS</span><strong>{timeline.canvas.fps}</strong></div>
+          <div className="panel timeline-stat field">
+            <label htmlFor="timeline-duration">Duration / seconds</label>
+            <input id="timeline-duration" min="0" onChange={(event) => setDuration(Number(event.target.value))} step="0.1" type="number" value={duration} />
+          </div>
+        </section>
 
-      <section className="panel timeline-editor-panel">
-        <div className="panel-head">
-          <div><h2>Tracks</h2><span className="muted">{timeline.tracks.length} tracks · {textTrackCount} editable text tracks</span></div>
-          <button className="button secondary" onClick={addTextTrack} type="button">Add text track</button>
-        </div>
+        <section className="panel timeline-editor-panel">
+          <div className="panel-head">
+            <div><h2>Tracks</h2><span className="muted">{timeline.tracks.length} tracks · {textTrackCount} editable text tracks</span></div>
+            <button className="button secondary" onClick={addTextTrack} type="button">Add text track</button>
+          </div>
 
-        <div className="timeline-track-list">
-          {timeline.tracks.length === 0 ? (
-            <div className="empty">
-              <strong>No tracks yet.</strong>
-              <p>Add a text track to prove the first canonical editor round-trip.</p>
-              <button className="button secondary" onClick={addTextTrack} type="button">Add text track</button>
-            </div>
-          ) : timeline.tracks.map((track, trackIndex) => (
-            <article className="timeline-track" key={track.id}>
-              <div className="timeline-track-head">
-                <div>
-                  <small>{track.type.toUpperCase()} · ORDER {track.order}</small>
-                  <strong>{track.name || track.id}</strong>
-                </div>
-                <div className="timeline-actions">
-                  <button disabled={trackIndex === 0} onClick={() => moveTrack(track.id, -1)} type="button">↑</button>
-                  <button disabled={trackIndex === timeline.tracks.length - 1} onClick={() => moveTrack(track.id, 1)} type="button">↓</button>
-                  {track.type === "text" ? <button onClick={() => addTextItem(track.id)} type="button">+ Text</button> : null}
-                  {track.type === "text" ? <button onClick={() => removeTrack(track.id)} type="button">Remove</button> : null}
-                </div>
+          <div className="timeline-track-list">
+            {timeline.tracks.length === 0 ? (
+              <div className="empty">
+                <strong>No tracks yet.</strong>
+                <p>Add a text track to prove the first canonical editor round-trip.</p>
+                <button className="button secondary" onClick={addTextTrack} type="button">Add text track</button>
               </div>
-
-              <div className="timeline-items">
-                {track.items.length === 0 ? <span className="muted">No items.</span> : track.items.map((item) => (
-                  <div className="timeline-item" key={item.id}>
-                    <div className="timeline-item-main">
-                      <span className="status-pill">{item.kind}</span>
-                      {item.kind === "text" ? (
-                        <input
-                          aria-label="Text content"
-                          onChange={(event) => updateItem(track.id, item.id, { text: event.target.value })}
-                          value={item.text || ""}
-                        />
-                      ) : <strong>{item.assetId || item.id}</strong>}
-                    </div>
-                    <label>Start<input min="0" onChange={(event) => updateItem(track.id, item.id, { startSeconds: Math.max(0, Number(event.target.value)) })} step="0.1" type="number" value={item.startSeconds} /></label>
-                    <label>Duration<input min="0.1" onChange={(event) => updateItem(track.id, item.id, { durationSeconds: Math.max(0.1, Number(event.target.value)) })} step="0.1" type="number" value={item.durationSeconds} /></label>
-                    {track.type === "text" ? <button className="timeline-remove" onClick={() => removeItem(track.id, item.id)} type="button">×</button> : null}
+            ) : timeline.tracks.map((track, trackIndex) => (
+              <article className="timeline-track" key={track.id}>
+                <div className="timeline-track-head">
+                  <div>
+                    <small>{track.type.toUpperCase()} · ORDER {track.order}</small>
+                    <strong>{track.name || track.id}</strong>
                   </div>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+                  <div className="timeline-actions">
+                    <button disabled={trackIndex === 0} onClick={() => moveTrack(track.id, -1)} type="button">↑</button>
+                    <button disabled={trackIndex === timeline.tracks.length - 1} onClick={() => moveTrack(track.id, 1)} type="button">↓</button>
+                    {track.type === "text" ? <button onClick={() => addTextItem(track.id)} type="button">+ Text</button> : null}
+                    {track.type === "text" ? <button onClick={() => removeTrack(track.id)} type="button">Remove</button> : null}
+                  </div>
+                </div>
+
+                <div className="timeline-items">
+                  {track.items.length === 0 ? <span className="muted">No items.</span> : track.items.map((item) => (
+                    <div className="timeline-item" key={item.id}>
+                      <div className="timeline-item-main">
+                        <span className="status-pill">{item.kind}</span>
+                        {item.kind === "text" ? (
+                          <input
+                            aria-label="Text content"
+                            onChange={(event) => updateItem(track.id, item.id, { text: event.target.value })}
+                            value={item.text || ""}
+                          />
+                        ) : <strong>{item.assetId || item.id}</strong>}
+                      </div>
+                      <label>Start<input min="0" onChange={(event) => updateItem(track.id, item.id, { startSeconds: Math.max(0, Number(event.target.value)) })} step="0.1" type="number" value={item.startSeconds} /></label>
+                      <label>Duration<input min="0.1" onChange={(event) => updateItem(track.id, item.id, { durationSeconds: Math.max(0.1, Number(event.target.value)) })} step="0.1" type="number" value={item.durationSeconds} /></label>
+                      {track.type === "text" ? <button className="timeline-remove" onClick={() => removeItem(track.id, item.id)} type="button">×</button> : null}
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </fieldset>
     </>
   );
 }
