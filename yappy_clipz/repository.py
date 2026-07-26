@@ -10,6 +10,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
+from uuid import uuid4
 
 from packages.contracts.validate_contracts import ContractValidationError, validate_project
 
@@ -112,22 +113,67 @@ class FileProjectRepository:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
+    @staticmethod
+    def _pid_is_alive(pid: int) -> bool:
+        """Conservatively determine whether a local lock owner still exists."""
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return True
+        return True
+
+    @staticmethod
+    def _read_lock_metadata(lock_path: Path) -> tuple[int | None, str | None]:
+        try:
+            fields = dict(
+                token.split("=", 1)
+                for token in lock_path.read_text(encoding="utf-8").strip().split()
+                if "=" in token
+            )
+            pid = int(fields["pid"]) if "pid" in fields else None
+            token = fields.get("token")
+            return pid, token
+        except (OSError, ValueError):
+            return None, None
+
     @contextmanager
     def _project_lock(self, target: Path) -> Iterator[None]:
         lock_path = target.with_suffix(".lock")
         deadline = time.monotonic() + self.lock_timeout_seconds
         lock_fd: int | None = None
+        lock_token = uuid4().hex
 
         while lock_fd is None:
             try:
                 lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                os.write(lock_fd, f"pid={os.getpid()} time={time.time()}\n".encode("utf-8"))
-                os.fsync(lock_fd)
+                try:
+                    metadata = f"pid={os.getpid()} token={lock_token} time={time.time()}\n"
+                    os.write(lock_fd, metadata.encode("utf-8"))
+                    os.fsync(lock_fd)
+                except BaseException:
+                    os.close(lock_fd)
+                    lock_fd = None
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    raise
             except FileExistsError:
                 try:
-                    if time.time() - lock_path.stat().st_mtime > self.stale_lock_seconds:
-                        lock_path.unlink()
-                        continue
+                    age = time.time() - lock_path.stat().st_mtime
+                    if age > self.stale_lock_seconds:
+                        owner_pid, observed_token = self._read_lock_metadata(lock_path)
+                        if owner_pid is not None and observed_token and not self._pid_is_alive(owner_pid):
+                            current_pid, current_token = self._read_lock_metadata(lock_path)
+                            if current_pid == owner_pid and current_token == observed_token:
+                                lock_path.unlink()
+                                continue
                 except FileNotFoundError:
                     continue
                 if time.monotonic() >= deadline:
@@ -139,10 +185,12 @@ class FileProjectRepository:
         finally:
             if lock_fd is not None:
                 os.close(lock_fd)
-            try:
-                lock_path.unlink()
-            except FileNotFoundError:
-                pass
+            _, current_token = self._read_lock_metadata(lock_path)
+            if current_token == lock_token:
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    pass
 
     def save(self, tenant_id: str, project: dict[str, Any]) -> dict[str, Any]:
         """Validate then atomically persist a complete StudioProject document."""
