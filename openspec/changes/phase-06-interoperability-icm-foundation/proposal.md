@@ -8,7 +8,7 @@ Adding generation, media, providers, rendering, and customer features before fix
 
 ## Outcome
 
-Create one machine-readable capability and action contract that all transports use, and upgrade ICM into a versioned context/handoff runtime that remains subordinate to StudioProject.
+Create one machine-readable capability and action contract that all transports use, upgrade ICM into a versioned context/handoff runtime subordinate to StudioProject, and prove the extension pattern with a versioned Prompt Locker plus a disabled-by-default fal provider boundary.
 
 At the end of Phase 06, any compatible agent can:
 
@@ -17,7 +17,9 @@ At the end of Phase 06, any compatible agent can:
 3. invoke current actions through CLI, API, or MCP;
 4. receive equivalent results and errors;
 5. create, prepare, verify, hand off, and resume an ICM run;
-6. continue work from a handoff without the original conversation.
+6. compile approved prompt/workflow definitions without contacting a provider;
+7. validate and estimate an allowlisted fal request without exposing credentials or spending money;
+8. continue work from a handoff without the original conversation.
 
 ## Scope
 
@@ -32,6 +34,9 @@ At the end of Phase 06, any compatible agent can:
 - ICM stage actions through CLI/API/MCP;
 - migration path from existing ICM v1 scaffolding;
 - canonical ICM root documentation;
+- versioned Prompt Locker contracts and original Seedance workflow rewrites based on user-supplied research;
+- fal provider/model manifest, request planning, cost-estimate metadata, and queue lifecycle adapter;
+- explicit approval, idempotency, allowlist, URL-validation, credential-redaction, and server execution gates;
 - stale documentation corrections limited to architecture truth established through Phase 05.
 
 ## Out of scope
@@ -39,8 +44,10 @@ At the end of Phase 06, any compatible agent can:
 - Postgres or hosted API deployment;
 - production login/session issuance;
 - object storage/media upload;
-- provider/model generation;
-- durable worker queue implementation beyond defining shared contracts;
+- activation of paid provider execution in production;
+- real provider calls during tests or review;
+- canonical durable job queue and provider reconciliation;
+- automatic provider-result ingestion into StudioProject;
 - billing;
 - voice/avatar/identity migrations;
 - customer-data migrations;
@@ -56,6 +63,8 @@ At the end of Phase 06, any compatible agent can:
 - Current production web shell continues to fail closed while the remote API is not configured.
 - Twick remains outside the public SaaS runtime under the current licensing boundary.
 - Existing ICM path traversal and idempotent initialization protections are preserved.
+- fal credentials remain server-side and paid execution remains disabled unless separately authorized and configured.
+- Prompt compilation cannot silently submit a provider request.
 
 ## File allowlist
 
@@ -64,27 +73,38 @@ Expected implementation paths:
 ```text
 packages/contracts/actions/**
 packages/contracts/icm/**
+packages/contracts/snapshots/**
 yappy_clipz/capabilities.py
 yappy_clipz/actions.py
 yappy_clipz/errors.py
 yappy_clipz/factory.py
+yappy_clipz/settings.py
+yappy_clipz/prompt_locker.py
+yappy_clipz/icm_runtime.py
+yappy_clipz/providers/**
 yappy_clipz/cli.py
 yappy_clipz/api.py
 yappy_clipz/mcp_tools.py
 yappy_clipz/mcp_server.py
+prompt_locker/**
+providers/**
 icm/**
 tests/studio/**
 tests/icm/**
 docs/contracts/**
+docs/providers/**
+docs/PROMPT-LOCKER.md
 docs/ICM-RUNTIME-ARCHITECTURE.md
 docs/YAPPY-CLIPZ-POST-PHASE-05-ROADMAP.md
 README.md
 AGENTS.md
 PROJECT_CONTEXT.md
+requirements-studio.txt
 .github/workflows/grinions-phase-gates.yml
-ops/reports/phase-06.md
+ops/reports/phase-06-foundation.md
 ops/rollback/phase-06.json
-ops/receipts/phase-05.json
+ops/receipts/phase-06-baseline.json
+beads/checkpoints/BD-P06-001.json
 ```
 
 Any additional runtime path requires an explicit design amendment.
@@ -93,16 +113,17 @@ Any additional runtime path requires an explicit design amendment.
 
 Medium.
 
-The phase changes interface plumbing and ICM contracts but does not enable paid providers, identity-sensitive operations, customer migrations, or billing.
+The phase changes interface plumbing and ICM contracts and introduces a provider adapter boundary, but it does not activate paid providers, identity-sensitive operations, customer migrations, or billing.
 
 ## Rollback
 
-- capture Phase 05 squash `13c6b28f28cd808b8df9b2d11c7849c5ab93d3c9` as the baseline;
+- capture planning/baseline commit `39e6b8c34588b3425e4d8a066f0f2e63e1082b56`;
 - preserve v1 ICM migration fixtures;
 - keep current direct service methods during transition;
-- squash merge only after parity and migration tests pass;
-- rollback by reverting the Phase 06 squash and redeploying the verified Phase 05 production build.
+- keep fal execution disabled by default;
+- squash merge only after parity, prompt, provider-boundary, and ICM tests pass;
+- rollback by reverting the Phase 06 squash and redeploying the verified Phase 05-compatible production build.
 
 ## Human approval
 
-Implementation begins only after the planning PR containing the roadmap, universal interface contract, ICM runtime architecture, and this OpenSpec is approved.
+Implementation was authorized after planning PR #8 was reviewed and squash-merged. Paid provider execution, secrets, production auth, migrations, billing, and production deployment changes remain separately gated.

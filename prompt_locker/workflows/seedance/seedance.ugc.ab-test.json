@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "kind": "workflow",
+  "version": "1.0.0",
+  "tags": ["seedance", "workflow", "fal", "approval-required"],
+  "source": {"type":"user_supplied_reference","artifact":"Seedance-2.0-AI-UGC-main.zip","note":"YAPPY-owned rewrite of timing, reference, and A/B workflow concepts; no source code or proprietary provider client imported."},
+  "id": "seedance.ugc.ab-test",
+  "title": "Seedance UGC A/B Test",
+  "description": "Compile four distinct UGC variants from shared approved product, subject, location, and audio references.",
+  "requiredVariables": ["dialogue", "setting", "wardrobe", "tone"],
+  "defaults": {"duration":"8","resolution":"720p","aspect_ratio":"9:16","generate_audio":true,"bitrate_mode":"standard","image_urls":[],"video_urls":[],"audio_urls":[]},
+  "providerId": "fal",
+  "modelId": "bytedance/seedance-2.0/fast/reference-to-video",
+  "executionPolicy": {"mode":"compile_then_approve_each","paidSubmission":"explicit_human_approval","maxParallel":2,"stopOnFailure":false},
+  "steps": [
+    {"id":"podcast-authority","title":"Podcast authority","promptId":"seedance.ugc.podcast-authority","providerInput":{"image_urls":"{{image_urls}}","audio_urls":"{{audio_urls}}","resolution":"{{resolution}}","duration":"{{duration}}","aspect_ratio":"16:9","generate_audio":"{{generate_audio}}","bitrate_mode":"{{bitrate_mode}}"},"requiresApproval":true},
+    {"id":"creator-review","title":"Creator review","promptId":"seedance.ugc.creator-review","providerInput":{"image_urls":"{{image_urls}}","audio_urls":"{{audio_urls}}","resolution":"{{resolution}}","duration":"{{duration}}","aspect_ratio":"9:16","generate_audio":"{{generate_audio}}","bitrate_mode":"{{bitrate_mode}}"},"requiresApproval":true},
+    {"id":"lifestyle-demo","title":"Lifestyle demonstration","promptId":"seedance.ugc.lifestyle-demo","providerInput":{"image_urls":"{{image_urls}}","audio_urls":"{{audio_urls}}","resolution":"{{resolution}}","duration":"{{duration}}","aspect_ratio":"9:16","generate_audio":"{{generate_audio}}","bitrate_mode":"{{bitrate_mode}}"},"requiresApproval":true},
+    {"id":"greenscreen-hook","title":"Greenscreen hook","promptId":"seedance.ugc.greenscreen-hook","providerInput":{"image_urls":"{{image_urls}}","audio_urls":"{{audio_urls}}","resolution":"{{resolution}}","duration":"{{duration}}","aspect_ratio":"9:16","generate_audio":"{{generate_audio}}","bitrate_mode":"{{bitrate_mode}}"},"requiresApproval":true}
+  ]
+}
