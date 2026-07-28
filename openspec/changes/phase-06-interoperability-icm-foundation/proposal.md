@@ -67,6 +67,7 @@ packages/contracts/icm/**
 yappy_clipz/capabilities.py
 yappy_clipz/actions.py
 yappy_clipz/errors.py
+yappy_clipz/factory.py
 yappy_clipz/cli.py
 yappy_clipz/api.py
 yappy_clipz/mcp_tools.py
