@@ -58,16 +58,19 @@ jobs:
       - name: Verify paid execution is disabled by default
         run: |
           python - <<'PY'
-          import json
+          import os
           from pathlib import Path
           from yappy_clipz.settings import Settings
           from yappy_clipz.providers import ProviderCatalog
 
           settings = Settings.from_env()
           assert settings.fal_execution_enabled is False
+          assert os.environ.get(settings.fal_key_env) is None
           manifest = ProviderCatalog(Path('providers')).get('fal')
           assert manifest['executionEnabledByDefault'] is False
-          assert 'FAL_KEY' not in json.dumps(manifest)
+          assert manifest['keyEnvironmentVariable'] == settings.fal_key_env
+          assert 'keyValue' not in manifest
+          assert 'credentialValue' not in manifest
           PY
 
       - name: Run Phase 06 contract and adapter tests
