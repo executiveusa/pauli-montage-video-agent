@@ -8,7 +8,7 @@
   "title": "Seedance UGC A/B Test",
   "description": "Compile four distinct UGC variants from shared approved product, subject, location, and audio references.",
   "requiredVariables": ["dialogue", "setting", "wardrobe", "tone"],
-  "defaults": {"duration":8,"resolution":"720p","aspect_ratio":"9:16","generate_audio":true,"bitrate_mode":"standard","image_urls":[],"video_urls":[],"audio_urls":[]},
+  "defaults": {"duration":"8","resolution":"720p","aspect_ratio":"9:16","generate_audio":true,"bitrate_mode":"standard","image_urls":[],"video_urls":[],"audio_urls":[]},
   "providerId": "fal",
   "modelId": "bytedance/seedance-2.0/fast/reference-to-video",
   "executionPolicy": {"mode":"compile_then_approve_each","paidSubmission":"explicit_human_approval","maxParallel":2,"stopOnFailure":false},
