@@ -94,22 +94,19 @@ def create_app(service: StudioService | None = None, runtime: ApplicationRuntime
         if active_runtime.settings.auth_mode == "local":
             if not tenant_header:
                 raise AuthenticationRequired("X-Yappy-Tenant is required in local mode")
-            now = 0
-            return Principal(tenant_header, "local-api", tuple(active_runtime.auth.DEFAULT_SCOPES), "local", "local", now, 2**31)
+            return Principal(tenant_header, "local-api", tuple(active_runtime.auth.DEFAULT_SCOPES), "local", "local", 0, 2**31)
         return active_runtime.auth.verify_bearer(request.headers.get("authorization"))
+
+    @staticmethod
+    def require(resolved: Principal, *scopes: str) -> Principal:
+        required = set(scopes)
+        if not resolved.allows(required):
+            raise AuthorizationDenied("caller lacks required scopes: " + ", ".join(sorted(required)))
+        return resolved
 
     def context_for(request: Request, tenant_header: str | None, *, approved: bool = False, idempotency_key: str | None = None, correlation_id: str | None = None, causation_id: str | None = None, request_id: str | None = None) -> ActionContext:
         resolved = principal(request, tenant_header)
-        return ActionContext(
-            tenant_id=resolved.tenant_id,
-            actor_id=resolved.actor_id,
-            approved=approved,
-            idempotency_key=idempotency_key,
-            correlation_id=correlation_id,
-            causation_id=causation_id,
-            request_id=request_id,
-            scopes=resolved.scopes,
-        )
+        return ActionContext(tenant_id=resolved.tenant_id, actor_id=resolved.actor_id, approved=approved, idempotency_key=idempotency_key, correlation_id=correlation_id, causation_id=causation_id, request_id=request_id, scopes=resolved.scopes)
 
     @app.get("/healthz")
     def health() -> dict[str, object]:
@@ -134,11 +131,7 @@ def create_app(service: StudioService | None = None, runtime: ApplicationRuntime
     @app.post("/api/v1/tokens", status_code=201)
     def create_token(request: Request, payload: CreateTokenRequest, tenant: OptionalTenantHeader = None, idempotency: OptionalIdempotencyHeader = None) -> dict[str, Any]:
         try:
-            return active_runtime.dispatcher.dispatch(
-                "token.create",
-                {"name":payload.name,"scopes":payload.scopes,"ttlSeconds":payload.ttl_seconds},
-                context=context_for(request, tenant, approved=payload.approved, idempotency_key=idempotency),
-            )["result"]
+            return active_runtime.dispatcher.dispatch("token.create", {"name":payload.name,"scopes":payload.scopes,"ttlSeconds":payload.ttl_seconds}, context=context_for(request, tenant, approved=payload.approved, idempotency_key=idempotency))["result"]
         except ActionProblem as exc:
             raise HTTPException(status_code=exc.status, detail=exc.message) from exc
         except Exception as exc:
@@ -178,14 +171,7 @@ def create_app(service: StudioService | None = None, runtime: ApplicationRuntime
     def run_action(action_id: str, request: Request, payload: RunActionRequest, tenant: OptionalTenantHeader = None, idempotency_header: OptionalIdempotencyHeader = None, correlation_header: OptionalCorrelationHeader = None) -> Any:
         try:
             protected = not action_id.startswith("capabilities.") and not action_id.startswith("system.")
-            action_context = context_for(
-                request, tenant,
-                approved=payload.approved,
-                idempotency_key=payload.idempotency_key or idempotency_header,
-                correlation_id=payload.correlation_id or correlation_header,
-                causation_id=payload.causation_id,
-                request_id=payload.request_id,
-            ) if protected else ActionContext(approved=payload.approved, idempotency_key=payload.idempotency_key or idempotency_header, correlation_id=payload.correlation_id or correlation_header, causation_id=payload.causation_id, request_id=payload.request_id)
+            action_context = context_for(request, tenant, approved=payload.approved, idempotency_key=payload.idempotency_key or idempotency_header, correlation_id=payload.correlation_id or correlation_header, causation_id=payload.causation_id, request_id=payload.request_id) if protected else ActionContext(approved=payload.approved, idempotency_key=payload.idempotency_key or idempotency_header, correlation_id=payload.correlation_id or correlation_header, causation_id=payload.causation_id, request_id=payload.request_id)
             return active_runtime.dispatcher.dispatch(action_id, payload.input, context=action_context)
         except ActionProblem as exc:
             return JSONResponse(status_code=exc.status, content=exc.document(request_id=payload.request_id or "req_api_error", correlation_id=payload.correlation_id or correlation_header or "corr_api_error"))
@@ -195,7 +181,7 @@ def create_app(service: StudioService | None = None, runtime: ApplicationRuntime
     @app.post("/api/v1/projects", status_code=201)
     def create_project(request: Request, payload: CreateProjectRequest, tenant: OptionalTenantHeader = None) -> dict:
         try:
-            p = principal(request, tenant)
+            p = require(principal(request, tenant), "project:write")
             return active.create_project(tenant_id=p.tenant_id, slug=payload.slug, title=payload.title, objective=payload.objective, deliverables=payload.deliverables, audience=payload.audience, constraints=payload.constraints, quality_lane=payload.quality_lane)
         except Exception as exc:
             raise _http_error(exc) from exc
@@ -203,35 +189,40 @@ def create_app(service: StudioService | None = None, runtime: ApplicationRuntime
     @app.get("/api/v1/projects")
     def list_projects(request: Request, tenant: OptionalTenantHeader = None) -> list[dict]:
         try:
-            return active.list_projects(tenant_id=principal(request, tenant).tenant_id)
+            p = require(principal(request, tenant), "project:read")
+            return active.list_projects(tenant_id=p.tenant_id)
         except Exception as exc:
             raise _http_error(exc) from exc
 
     @app.get("/api/v1/projects/{project_id}")
     def get_project(project_id: str, request: Request, tenant: OptionalTenantHeader = None) -> dict:
         try:
-            return active.get_project(tenant_id=principal(request, tenant).tenant_id, project_id=project_id)
+            p = require(principal(request, tenant), "project:read")
+            return active.get_project(tenant_id=p.tenant_id, project_id=project_id)
         except Exception as exc:
             raise _http_error(exc) from exc
 
     @app.post("/api/v1/projects/{project_id}/validate")
     def validate_stored_project(project_id: str, request: Request, tenant: OptionalTenantHeader = None) -> dict:
         try:
-            return active.validate_project(tenant_id=principal(request, tenant).tenant_id, project_id=project_id)
+            p = require(principal(request, tenant), "project:read")
+            return active.validate_project(tenant_id=p.tenant_id, project_id=project_id)
         except Exception as exc:
             raise _http_error(exc) from exc
 
     @app.get("/api/v1/projects/{project_id}/timeline")
     def get_timeline(project_id: str, request: Request, tenant: OptionalTenantHeader = None) -> dict:
         try:
-            return active.get_timeline(tenant_id=principal(request, tenant).tenant_id, project_id=project_id)
+            p = require(principal(request, tenant), "project:read", "timeline:read")
+            return active.get_timeline(tenant_id=p.tenant_id, project_id=project_id)
         except Exception as exc:
             raise _http_error(exc) from exc
 
     @app.put("/api/v1/projects/{project_id}/timeline")
     def replace_timeline(project_id: str, request: Request, payload: ReplaceTimelineRequest, tenant: OptionalTenantHeader = None) -> dict:
         try:
-            return active.replace_timeline(tenant_id=principal(request, tenant).tenant_id, project_id=project_id, expected_version=payload.expected_version, timeline=payload.timeline)
+            p = require(principal(request, tenant), "project:write", "timeline:write")
+            return active.replace_timeline(tenant_id=p.tenant_id, project_id=project_id, expected_version=payload.expected_version, timeline=payload.timeline)
         except Exception as exc:
             raise _http_error(exc) from exc
 
