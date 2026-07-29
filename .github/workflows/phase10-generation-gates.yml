@@ -1,0 +1,19 @@
+name: Phase 10 generation gates
+on:
+ pull_request:
+  paths: ['yappy_clipz/**','providers/**','packages/contracts/generation/**','tests/studio/**','apps/studio-web/**','openspec/changes/phase-10-generation-workbench-providers/**','.github/workflows/phase10-generation-gates.yml']
+ push: {branches: ['phase/**']}
+permissions: {contents: read}
+jobs:
+ generation:
+  runs-on: ubuntu-latest
+  env: {YAPPY_ENABLE_PAID_PROVIDERS: '0',YAPPY_FAL_STORE_IO: '0'}
+  steps:
+   - uses: actions/checkout@v4
+     with: {persist-credentials: false}
+   - uses: actions/setup-python@v5
+     with: {python-version: '3.11'}
+   - run: python -m pip install --disable-pip-version-check -r requirements-studio.txt
+   - run: python -m py_compile yappy_clipz/*.py yappy_clipz/providers/*.py
+   - run: python -m unittest tests/studio/test_phase10_generation.py -v
+   - run: python -m unittest discover -s tests/studio -p 'test_*.py' -v
