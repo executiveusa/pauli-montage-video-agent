@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -95,6 +95,10 @@ def _asset_uri(asset: dict[str, Any]) -> str:
     return f"storage://{key}"
 
 
+def _safe_segment(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+
+
 class RenderService:
     """Build immutable render manifests and execute them through replaceable workers."""
 
@@ -145,18 +149,16 @@ class RenderService:
                 checksum = asset.get("checksum", {}).get("value") if asset.get("checksum") else None
                 if not checksum:
                     warnings.append(f"asset {asset_id} has no verified content checksum")
-                media_items.append(
-                    {
-                        "trackType": track["type"],
-                        "itemId": item["id"],
-                        "assetId": asset_id,
-                        "uri": _asset_uri(asset),
-                        "checksum": checksum,
-                        "startSeconds": item.get("startSeconds", 0),
-                        "durationSeconds": item["durationSeconds"],
-                        "sourceStartSeconds": item.get("sourceStartSeconds") or 0,
-                    }
-                )
+                media_items.append({
+                    "trackType": track["type"],
+                    "itemId": item["id"],
+                    "assetId": asset_id,
+                    "uri": _asset_uri(asset),
+                    "checksum": checksum,
+                    "startSeconds": item.get("startSeconds", 0),
+                    "durationSeconds": item["durationSeconds"],
+                    "sourceStartSeconds": item.get("sourceStartSeconds") or 0,
+                })
         video_items = [item for item in media_items if item["trackType"] == "video"]
         if not video_items:
             raise RenderError("FFmpeg render v1 requires at least one video asset")
@@ -170,8 +172,9 @@ class RenderService:
             "projectVersion": project.get("project", {}).get("updatedAt"),
             "timelineVersion": timeline.get("version"),
             "timelineDigest": _canonical_digest(timeline),
+            "fps": (timeline.get("canvas") or {}).get("fps", 30),
             "mode": mode,
-            "preset": preset.__dict__,
+            "preset": asdict(preset),
             "inputs": media_items,
             "warnings": warnings,
             "engine": "ffmpeg",
@@ -187,8 +190,8 @@ class RenderService:
         argv = [self.ffmpeg_binary, "-hide_banner", "-nostdin", "-y"]
         for row in videos:
             argv.extend(["-ss", str(row["sourceStartSeconds"]), "-t", str(row["durationSeconds"]), "-i", row["uri"]])
-        filters = []
-        labels = []
+        filters: list[str] = []
+        labels: list[str] = []
         for index, _row in enumerate(videos):
             label = f"v{index}"
             filters.append(
@@ -203,25 +206,36 @@ class RenderService:
             map_label = labels[0]
         argv.extend([
             "-filter_complex", ";".join(filters), "-map", map_label,
-            "-r", str(manifest.get("fps") or 30),
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-b:v", preset["video_bitrate"],
+            "-r", str(manifest.get("fps") or 30), "-c:v", "libx264",
+            "-pix_fmt", "yuv420p", "-b:v", preset["video_bitrate"],
             "-movflags", "+faststart", output_path,
         ])
         return argv
+
+    def _materialize_argv(self, argv: list[str], workspace: Path) -> list[str]:
+        input_root = workspace / "inputs"
+        input_root.mkdir(parents=True, exist_ok=True)
+        replacements: dict[str, str] = {}
+        for part in argv:
+            if not part.startswith("storage://"):
+                continue
+            key = part[len("storage://"):]
+            if part not in replacements:
+                suffix = Path(key).suffix or ".bin"
+                target = input_root / f"{len(replacements):04d}{suffix}"
+                target.write_bytes(self.storage.get_bytes(key))
+                replacements[part] = str(target)
+        return [replacements.get(part, part) for part in argv]
 
     def submit(self, *, tenant_id: str, project_id: str, preset_id: str, mode: str, idempotency_key: str, approved: bool) -> dict[str, Any]:
         if mode == "final" and not approved:
             raise RenderPolicyDenied("final render requires explicit approval")
         manifest = self.plan(tenant_id=tenant_id, project_id=project_id, preset_id=preset_id, mode=mode)
         job = self.operations.create_job(
-            tenant_id=tenant_id,
-            project_id=project_id,
-            job_type="render",
+            tenant_id=tenant_id, project_id=project_id, job_type="render",
             capability="render.final" if mode == "final" else "render.preview",
             input_refs=[row["assetId"] for row in manifest["inputs"]],
-            idempotency_key=idempotency_key,
-            correlation_id=None,
-            icm_stage="07_render",
+            idempotency_key=idempotency_key, correlation_id=None, icm_stage="07_render",
         )
         job.setdefault("extensions", {})["renderManifest"] = manifest
         self.operations.store.put_job(job)
@@ -237,37 +251,40 @@ class RenderService:
             job["claimedBy"] = worker_id
             self.operations.store.put_job(job)
         job = self.operations.transition(tenant_id, job_id, "running")
-        workspace = self.workspace_root / job_id
+        workspace = self.workspace_root / _safe_segment(tenant_id) / job_id
         workspace.mkdir(parents=True, exist_ok=True)
         output = workspace / ("preview.mp4" if manifest["mode"] == "preview" else "master.mp4")
         argv = [str(output) if part == "{output}" else part for part in manifest["command"]]
+        argv = self._materialize_argv(argv, workspace)
         evidence = self.runner.run(argv, output_path=output)
         data = output.read_bytes()
-        storage_key = f"renders/{tenant_id}/{job['projectId']}/{job_id}/{output.name}"
+        storage_key = f"renders/{_safe_segment(tenant_id)}/{_safe_segment(job['projectId'])}/{job_id}/{output.name}"
         info = self.storage.put_bytes(storage_key, data, content_type="video/mp4")
         parents = [row["assetId"] for row in manifest["inputs"]]
         asset = self.assets.create_derivative(
-            tenant_id=tenant_id,
-            project_id=job["projectId"],
-            parent_asset_ids=parents,
-            kind="video",
-            role="preview" if manifest["mode"] == "preview" else "master",
-            name=output.name,
-            storage_key=storage_key,
-            mime_type="video/mp4",
-            bytes_count=info.bytes,
-            checksum_sha256=info.checksum_sha256,
+            tenant_id=tenant_id, project_id=job["projectId"], parent_asset_ids=parents,
+            kind="video", role="preview" if manifest["mode"] == "preview" else "master",
+            name=output.name, storage_key=storage_key, mime_type="video/mp4",
+            bytes_count=info.bytes, checksum_sha256=info.checksum_sha256,
             created_by=f"worker:{worker_id}",
         )
-        updated = self.operations.transition(
-            tenant_id, job_id, "succeeded", progress=1, output_refs=[asset["id"]]
-        )
+        updated = self.operations.transition(tenant_id, job_id, "succeeded", progress=1, output_refs=[asset["id"]])
         return {"job": updated, "asset": asset, "evidence": evidence, "manifest": manifest}
 
     def verify(self, *, tenant_id: str, project_id: str, asset_id: str) -> dict[str, Any]:
         asset = self.assets.get(tenant_id=tenant_id, project_id=project_id, asset_id=asset_id)
         storage = asset.get("storage", {})
-        uri = storage.get("url") or f"storage://{storage.get('key')}"
+        workspace = self.workspace_root / _safe_segment(tenant_id) / "verify" / asset_id
+        workspace.mkdir(parents=True, exist_ok=True)
+        if storage.get("url"):
+            uri = str(storage["url"])
+        else:
+            key = storage.get("key")
+            if not key:
+                raise RenderError("rendered asset has no storage reference")
+            target = workspace / (Path(key).name or "asset.bin")
+            target.write_bytes(self.storage.get_bytes(key))
+            uri = str(target)
         report = self.runner.probe([
             self.ffprobe_binary, "-v", "error", "-print_format", "json",
             "-show_format", "-show_streams", uri,
