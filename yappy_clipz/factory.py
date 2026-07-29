@@ -1,24 +1,24 @@
 """Application-service composition root shared by all transports."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from .actions import ActionDispatcher
+from .auth import AuthService, MemoryRevocationStore
 from .capabilities import CapabilityRegistry, default_registry
-from .prompt_locker import PromptLocker
+from .hosted_actions import HostedActionDispatcher, HostedCapabilityRegistry
 from .icm_runtime import IcmRuntime
+from .postgres_auth import PostgresRevocationStore
+from .postgres_repository import PostgresProjectRepository
+from .prompt_locker import PromptLocker
 from .providers import FalProviderAdapter, FalSettings, ProviderCatalog
-from .repository import FileProjectRepository
+from .repository import FileProjectRepository, ProjectRepository
 from .service import StudioService
 from .settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
 class ApplicationRuntime:
-    """Fully composed owner-controlled runtime shared by every transport."""
-
     settings: Settings
     service: StudioService
     capabilities: CapabilityRegistry
@@ -26,13 +26,19 @@ class ApplicationRuntime:
     provider_catalog: ProviderCatalog
     icm: IcmRuntime
     fal: FalProviderAdapter
-    dispatcher: ActionDispatcher
+    auth: AuthService
+    dispatcher: HostedActionDispatcher
+
+
+def create_repository(settings: Settings) -> ProjectRepository:
+    if settings.repository_backend == "postgres":
+        return PostgresProjectRepository(settings.database_url or "")
+    return FileProjectRepository(settings.project_root)
 
 
 def create_service(settings: Settings | None = None) -> StudioService:
-    """Construct the default owner-controlled StudioService."""
     resolved = settings or Settings.from_env()
-    return StudioService(FileProjectRepository(resolved.project_root))
+    return StudioService(create_repository(resolved))
 
 
 def create_runtime(
@@ -41,13 +47,28 @@ def create_runtime(
     service: StudioService | None = None,
     http_client: Any | None = None,
 ) -> ApplicationRuntime:
-    """Create one registry/dispatcher composition shared by CLI, API, and MCP."""
     resolved = settings or Settings.from_env()
     active_service = service or create_service(resolved)
-    capabilities = default_registry()
+    base_capabilities = default_registry()
+    capabilities = HostedCapabilityRegistry(base_capabilities)
     prompt_locker = PromptLocker(resolved.resolved_prompt_root)
     provider_catalog = ProviderCatalog(resolved.resolved_provider_root)
     icm = IcmRuntime(resolved.resolved_icm_runtime_root)
+    revocations = (
+        PostgresRevocationStore(resolved.database_url)
+        if resolved.repository_backend == "postgres" and resolved.database_url
+        else MemoryRevocationStore()
+    )
+    auth = AuthService(
+        mode=resolved.auth_mode,
+        signing_secret_env=resolved.auth_signing_secret_env,
+        owner_username=resolved.auth_owner_username,
+        owner_password_env=resolved.auth_owner_password_env,
+        owner_tenant_id=resolved.auth_owner_tenant_id,
+        session_ttl_seconds=resolved.auth_session_ttl_seconds,
+        service_ttl_seconds=resolved.auth_service_ttl_seconds,
+        revocations=revocations,
+    )
     fal = FalProviderAdapter(
         provider_catalog,
         FalSettings(
@@ -59,13 +80,14 @@ def create_runtime(
         ),
         http_client=http_client,
     )
-    dispatcher = ActionDispatcher(
+    dispatcher = HostedActionDispatcher(
         service=active_service,
         registry=capabilities,
         prompt_locker=prompt_locker,
         provider_catalog=provider_catalog,
         fal=fal,
         icm=icm,
+        auth=auth,
     )
     return ApplicationRuntime(
         settings=resolved,
@@ -75,5 +97,6 @@ def create_runtime(
         provider_catalog=provider_catalog,
         fal=fal,
         icm=icm,
+        auth=auth,
         dispatcher=dispatcher,
     )

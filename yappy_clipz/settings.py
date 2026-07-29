@@ -1,5 +1,4 @@
 """Runtime settings for YAPPY-CLIPZ application services."""
-
 from __future__ import annotations
 
 import os
@@ -14,9 +13,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        value = default
+    return max(minimum, min(value, maximum))
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """Resolved application-service settings without secret values."""
+    """Resolved application-service settings without embedding secret values."""
 
     project_root: Path
     prompt_root: Path | None = None
@@ -27,6 +34,17 @@ class Settings:
     fal_queue_base_url: str = "https://queue.fal.run"
     fal_key_env: str = "FAL_KEY"
     fal_timeout_seconds: float = 30.0
+
+    repository_backend: str = "file"
+    database_url: str | None = None
+    auth_mode: str = "local"
+    auth_signing_secret_env: str = "YAPPY_AUTH_SIGNING_SECRET"
+    auth_owner_username: str = "owner"
+    auth_owner_password_env: str = "YAPPY_OWNER_PASSWORD"
+    auth_owner_tenant_id: str = "tenant_owner"
+    auth_session_ttl_seconds: int = 28_800
+    auth_service_ttl_seconds: int = 2_592_000
+    cors_origins: tuple[str, ...] = ()
 
     @property
     def resolved_prompt_root(self) -> Path:
@@ -42,7 +60,6 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        """Resolve settings while keeping provider credentials server-side."""
         configured = os.environ.get("YAPPY_PROJECT_ROOT", ".yappy-clipz/data")
         prompt_root = os.environ.get("YAPPY_PROMPT_ROOT")
         provider_root = os.environ.get("YAPPY_PROVIDER_ROOT")
@@ -52,6 +69,13 @@ class Settings:
             timeout_seconds = float(timeout)
         except ValueError:
             timeout_seconds = 30.0
+        backend = os.environ.get("YAPPY_REPOSITORY_BACKEND", "file").strip().lower()
+        if backend not in {"file", "postgres"}:
+            backend = "file"
+        auth_mode = os.environ.get("YAPPY_AUTH_MODE", "local").strip().lower()
+        if auth_mode not in {"local", "hosted"}:
+            auth_mode = "local"
+        origins = tuple(value.strip() for value in os.environ.get("YAPPY_CORS_ORIGINS", "").split(",") if value.strip())
         return cls(
             project_root=Path(configured).expanduser().resolve(),
             prompt_root=Path(prompt_root).expanduser().resolve() if prompt_root else None,
@@ -62,4 +86,14 @@ class Settings:
             fal_queue_base_url=os.environ.get("YAPPY_FAL_QUEUE_BASE_URL", "https://queue.fal.run"),
             fal_key_env=os.environ.get("YAPPY_FAL_KEY_ENV", "FAL_KEY"),
             fal_timeout_seconds=max(1.0, min(timeout_seconds, 300.0)),
+            repository_backend=backend,
+            database_url=os.environ.get("YAPPY_DATABASE_URL"),
+            auth_mode=auth_mode,
+            auth_signing_secret_env=os.environ.get("YAPPY_AUTH_SIGNING_SECRET_ENV", "YAPPY_AUTH_SIGNING_SECRET"),
+            auth_owner_username=os.environ.get("YAPPY_OWNER_USERNAME", "owner"),
+            auth_owner_password_env=os.environ.get("YAPPY_OWNER_PASSWORD_ENV", "YAPPY_OWNER_PASSWORD"),
+            auth_owner_tenant_id=os.environ.get("YAPPY_OWNER_TENANT_ID", "tenant_owner"),
+            auth_session_ttl_seconds=_env_int("YAPPY_SESSION_TTL_SECONDS", 28_800, 300, 2_592_000),
+            auth_service_ttl_seconds=_env_int("YAPPY_SERVICE_TOKEN_TTL_SECONDS", 2_592_000, 300, 2_592_000),
+            cors_origins=origins,
         )
