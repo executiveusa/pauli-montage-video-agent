@@ -36,6 +36,8 @@ class GenerationTests(unittest.TestCase):
   for path in (ROOT/"packages/contracts/generation").glob("*.schema.json"):Draft202012Validator.check_schema(json.loads(path.read_text()))
   plan=self.generation.prepare(tenant_id="tenant_gen",project_id=self.project["project"]["id"],capability="image.generate",provider_input={"prompt":"documentary portrait","num_images":1},model_id="fal-ai/flux-pro/kontext/text-to-image",max_cost=.05)
   self.assertEqual(plan["estimatedCost"]["amount"],.04);self.assertTrue(plan["approvalRequired"])
+  with self.assertRaises(GenerationExecutionUnavailable):
+   self.generation.prepare(tenant_id="tenant_gen",project_id=self.project["project"]["id"],capability="image.generate",provider_input={"prompt":"documentary portrait","num_images":2},model_id="fal-ai/flux-pro/kontext/text-to-image",max_cost=.05)
  def test_submit_sync_registers_asset_and_reconciles_cost(self):
   payload={"prompt":"a safe four second documentary shot","resolution":"720p","duration":"4","aspect_ratio":"16:9"}
   with patch.dict(os.environ,{"FAL_KEY":"test-secret"}):
