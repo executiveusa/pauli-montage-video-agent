@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os,tempfile,unittest
 from pathlib import Path
+from uuid import uuid4
 from yappy_clipz.operations import BudgetExceeded,JsonOperationStore,OperationsService,PostgresOperationStore
 from yappy_clipz.providers import ProviderCatalog
 from yappy_clipz.router import OmniRouter
@@ -28,5 +29,6 @@ class PostgresOperationsTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):cls.url=os.environ["PHASE09_DATABASE_URL"];apply_migrations(cls.url,sorted(Path("migrations").glob("*.sql")))
  def test_postgres_idempotency_and_lease(self):
-  service=OperationsService(PostgresOperationStore(self.url));job=service.create_job(tenant_id="phase09",project_id="p",job_type="generation",capability="video.text_to_video",idempotency_key="pg-same");same=service.create_job(tenant_id="phase09",project_id="p",job_type="generation",capability="video.text_to_video",idempotency_key="pg-same");self.assertEqual(job["id"],same["id"]);self.assertEqual(service.claim("phase09","worker",30)["id"],job["id"])
+  suffix=uuid4().hex;tenant=f"phase09-{suffix}";key=f"pg-{suffix}"
+  service=OperationsService(PostgresOperationStore(self.url));job=service.create_job(tenant_id=tenant,project_id="p",job_type="generation",capability="video.text_to_video",idempotency_key=key);same=service.create_job(tenant_id=tenant,project_id="p",job_type="generation",capability="video.text_to_video",idempotency_key=key);self.assertEqual(job["id"],same["id"]);self.assertEqual(service.claim(tenant,"worker",30)["id"],job["id"])
 if __name__=="__main__":unittest.main(verbosity=2)
