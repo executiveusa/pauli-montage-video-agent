@@ -34,7 +34,8 @@ class RevokeTokenRequest(BaseModel): token:str; approved:bool=False
 def _http_error(exc:Exception)->HTTPException:
     if isinstance(exc,(AuthenticationRequired,AuthConfigurationError)): return HTTPException(status_code=401 if isinstance(exc,AuthenticationRequired) else 503,detail=str(exc))
     if isinstance(exc,AuthorizationDenied): return HTTPException(status_code=403,detail=str(exc))
-    if isinstance(exc,(ProjectNotFound,AssetNotFound,ObjectNotFound)): return HTTPException(status_code=404,detail="resource not found")
+    if isinstance(exc,ProjectNotFound): return HTTPException(status_code=404,detail="project not found")
+    if isinstance(exc,(AssetNotFound,ObjectNotFound)): return HTTPException(status_code=404,detail="resource not found")
     if isinstance(exc,TransferInvalid): return HTTPException(status_code=403,detail=str(exc))
     if isinstance(exc,TimelineVersionConflict): return HTTPException(status_code=409,detail={"error":"version_conflict","resource":"timeline","message":str(exc),"expectedVersion":exc.expected_version,"currentVersion":exc.current_version})
     if isinstance(exc,RepositoryBusy): return HTTPException(status_code=503,detail="project is busy; retry the operation")
