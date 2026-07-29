@@ -6,9 +6,10 @@ from typing import Any
 from .assets import AssetService
 from .auth import AuthService,MemoryRevocationStore
 from .capabilities import CapabilityRegistry,default_registry
+from .costing import BudgetedOperationsService
 from .hosted_actions import HostedCapabilityRegistry
 from .icm_runtime import IcmRuntime
-from .operations import JsonOperationStore,OperationsService,PostgresOperationStore
+from .operations import JsonOperationStore,PostgresOperationStore
 from .operations_actions import OperationsActionDispatcher,OperationsCapabilityRegistry
 from .postgres_auth import PostgresRevocationStore
 from .postgres_repository import PostgresProjectRepository
@@ -22,7 +23,7 @@ from .storage import LocalObjectStorage,ObjectStorage,S3ObjectStorage,StorageNot
 
 @dataclass(frozen=True,slots=True)
 class ApplicationRuntime:
- settings:Settings;service:StudioService;capabilities:CapabilityRegistry;prompt_locker:PromptLocker;provider_catalog:ProviderCatalog;icm:IcmRuntime;fal:FalProviderAdapter;auth:AuthService;storage:ObjectStorage;assets:AssetService;operations:OperationsService;router:OmniRouter;dispatcher:OperationsActionDispatcher
+ settings:Settings;service:StudioService;capabilities:CapabilityRegistry;prompt_locker:PromptLocker;provider_catalog:ProviderCatalog;icm:IcmRuntime;fal:FalProviderAdapter;auth:AuthService;storage:ObjectStorage;assets:AssetService;operations:BudgetedOperationsService;router:OmniRouter;dispatcher:OperationsActionDispatcher
 
 def create_repository(settings:Settings)->ProjectRepository:return PostgresProjectRepository(settings.database_url or "") if settings.repository_backend=="postgres" else FileProjectRepository(settings.project_root)
 def create_storage(settings:Settings)->ObjectStorage:return S3ObjectStorage(bucket=settings.storage_bucket or "",region=settings.storage_region,endpoint_url=settings.storage_endpoint_url) if settings.storage_backend=="s3" else LocalObjectStorage(settings.resolved_storage_root)
@@ -37,6 +38,6 @@ def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None
   if resolved.auth_mode=="hosted":raise StorageNotConfigured("hosted storage signing secret is not configured")
   signing_secret="local-owner-development-storage-signing-secret-0001"
  assets=AssetService(active_service.repository,storage,TransferSigner(signing_secret,ttl_seconds=resolved.storage_transfer_ttl_seconds),max_upload_bytes=resolved.max_upload_bytes)
- operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=OperationsService(operation_store);router=OmniRouter(provider_catalog)
+ operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=BudgetedOperationsService(operation_store);router=OmniRouter(provider_catalog)
  dispatcher=OperationsActionDispatcher(service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router)
  return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,storage=storage,assets=assets,operations=operations,router=router,dispatcher=dispatcher)
