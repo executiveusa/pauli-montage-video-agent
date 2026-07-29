@@ -5,8 +5,8 @@ import time
 from typing import Any
 
 from .actions import ActionContext, ActionDispatcher
-from .auth import AuthService, Principal
-from .capabilities import CapabilityRegistry, CapabilityRegistryError
+from .auth import AuthConfigurationError, AuthError, AuthenticationRequired, AuthorizationDenied, AuthService, Principal
+from .capabilities import CapabilityRegistry
 from .errors import ActionProblem
 
 
@@ -59,6 +59,20 @@ class HostedActionDispatcher(ActionDispatcher):
             "token.create": self._token_create,
             "token.revoke": self._token_revoke,
         })
+
+    def dispatch(self, action_id: str, input_payload: dict[str, Any] | None = None, *, context: ActionContext | None = None) -> dict[str, Any]:
+        try:
+            return super().dispatch(action_id, input_payload, context=context)
+        except ActionProblem:
+            raise
+        except AuthenticationRequired as exc:
+            raise ActionProblem("authentication_required", str(exc), 401) from exc
+        except AuthorizationDenied as exc:
+            raise ActionProblem("authorization_denied", str(exc), 403) from exc
+        except AuthConfigurationError as exc:
+            raise ActionProblem("service_not_configured", str(exc), 503) from exc
+        except AuthError as exc:
+            raise ActionProblem("authentication_required", str(exc), 401) from exc
 
     @staticmethod
     def _principal(context: ActionContext) -> Principal:
