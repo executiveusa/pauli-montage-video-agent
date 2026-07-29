@@ -97,7 +97,6 @@ def create_app(service: StudioService | None = None, runtime: ApplicationRuntime
             return Principal(tenant_header, "local-api", tuple(active_runtime.auth.DEFAULT_SCOPES), "local", "local", 0, 2**31)
         return active_runtime.auth.verify_bearer(request.headers.get("authorization"))
 
-    @staticmethod
     def require(resolved: Principal, *scopes: str) -> Principal:
         required = set(scopes)
         if not resolved.allows(required):
