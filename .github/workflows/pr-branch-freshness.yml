@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -25,9 +26,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          behind="$(git rev-list --count "HEAD..origin/${{ github.base_ref }}")"
-          ahead="$(git rev-list --count "origin/${{ github.base_ref }}..HEAD")"
-          echo "PR branch is ${ahead} commit(s) ahead and ${behind} commit(s) behind origin/${{ github.base_ref }}."
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          behind="$(git rev-list --count "${head_sha}..origin/${{ github.base_ref }}")"
+          ahead="$(git rev-list --count "origin/${{ github.base_ref }}..${head_sha}")"
+          echo "PR head ${head_sha} is ${ahead} commit(s) ahead and ${behind} commit(s) behind origin/${{ github.base_ref }}."
           if [ "$behind" -ne 0 ]; then
             echo "::error::This pull request was created from a stale base and must be rebased or rebuilt from the current base branch before review."
             exit 1
