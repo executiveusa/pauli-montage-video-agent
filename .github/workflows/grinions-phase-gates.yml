@@ -85,8 +85,48 @@ jobs:
           npm install --omit=optional
           npm install --no-save @next/swc-linux-x64-gnu@16.2.11
 
-      - name: Audit deployed production web dependencies
-        run: npm audit --omit=dev --omit=optional --audit-level=high
+      - name: Capture deployed production web dependency audit
+        id: deployed_audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --omit=optional --audit-level=high --json > "$RUNNER_TEMP/npm-audit.json"
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python - "$RUNNER_TEMP/npm-audit.json" <<'PY'
+          import json
+          import sys
+
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          metadata = report.get("metadata", {}).get("vulnerabilities", {})
+          print("deployed audit counts:", json.dumps(metadata, sort_keys=True))
+          for name, finding in sorted(report.get("vulnerabilities", {}).items()):
+              if finding.get("severity") not in {"high", "critical"}:
+                  continue
+              print(json.dumps({
+                  "package": name,
+                  "severity": finding.get("severity"),
+                  "range": finding.get("range"),
+                  "via": finding.get("via"),
+                  "effects": finding.get("effects"),
+                  "fixAvailable": finding.get("fixAvailable"),
+              }, sort_keys=True))
+          PY
+          exit 0
+
+      - name: Upload deployed dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-npm-audit-${{ github.sha }}
+          path: ${{ runner.temp }}/npm-audit.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Gate deployed production web dependencies
+        if: always()
+        shell: bash
+        run: test "${{ steps.deployed_audit.outputs.status }}" -eq 0
 
       - name: Typecheck YAPPY-CLIPZ studio web
         run: npm run typecheck:studio

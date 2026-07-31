@@ -1,13 +1,9 @@
 {
-  "phase": "phase-06-production-hardening",
-  "baseline_main_sha": "f709fabf9bac38430035aca5fd54b6ec3225a5c5",
-  "affected_services": ["studio-api", "render-worker", "remotion-renderer", "ci"],
-  "data_migration": false,
-  "feature_flags": [],
-  "rollback_commands": [
-    "git revert <phase-06-squash-sha>",
-    "docker compose down",
-    "redeploy baseline_main_sha"
-  ],
-  "data_loss_risk": "none; named volumes are retained and this phase contains no schema migration"
+  "schemaVersion": 1,
+  "phase": "06",
+  "baselineCommit": "39e6b8c34588b3425e4d8a066f0f2e63e1082b56",
+  "strategy": "Revert the Phase 06 squash commit and redeploy the verified Phase 05-compatible main build.",
+  "dataRisk": "No production migration or provider execution is authorized in this phase.",
+  "secretsTouched": false,
+  "paidCallsMade": false
 }

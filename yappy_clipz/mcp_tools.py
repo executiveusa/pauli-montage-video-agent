@@ -45,3 +45,25 @@ def project_get(service: StudioService, *, tenant_id: str, project_id: str) -> d
 def project_validate(service: StudioService, *, tenant_id: str, project_id: str) -> dict[str, Any]:
     """Validate canonical stored project state through the shared application service."""
     return service.validate_project(tenant_id=tenant_id, project_id=project_id)
+
+
+def timeline_get(service: StudioService, *, tenant_id: str, project_id: str) -> dict[str, Any]:
+    """Get canonical Timeline v1 state through the shared application service."""
+    return service.get_timeline(tenant_id=tenant_id, project_id=project_id)
+
+
+def timeline_replace(
+    service: StudioService,
+    *,
+    tenant_id: str,
+    project_id: str,
+    expected_version: int,
+    timeline: dict[str, Any],
+) -> dict[str, Any]:
+    """Optimistically replace Timeline v1 state through the shared application service."""
+    return service.replace_timeline(
+        tenant_id=tenant_id,
+        project_id=project_id,
+        expected_version=expected_version,
+        timeline=timeline,
+    )
