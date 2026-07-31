@@ -13,16 +13,16 @@ All new implementation pull requests SHALL begin from the current target branch 
 
 ### Requirement: Stale pull-request branches fail closed
 
-The repository SHALL automatically reject a pull request whose head does not contain the current base branch.
+The repository SHALL automatically reject a pull request whose actual head does not contain the current base branch.
 
 #### Scenario: Pull request head is behind base
 
-- **WHEN** `git rev-list --count HEAD..origin/<base>` is greater than zero
+- **WHEN** `git rev-list --count <actual-head-sha>..origin/<base>` is greater than zero
 - **THEN** the branch-freshness gate SHALL fail with an actionable stale-base error.
 
 #### Scenario: Pull request head contains current base
 
-- **WHEN** the head is zero commits behind the current base
+- **WHEN** the actual pull-request head is zero commits behind the current base
 - **THEN** the branch-freshness gate SHALL pass and other review gates MAY continue.
 
 ### Requirement: Completion claims are evidence based
@@ -39,14 +39,19 @@ A phase SHALL NOT be reported complete solely because a branch, pull request, co
 - **WHEN** code is present but required database, storage, provider, worker, or secret configuration is absent
 - **THEN** the ledger SHALL classify the capability as implemented but not activated and SHALL name the blockers.
 
-### Requirement: Opaque project IDs remain addressable through direct API routes
+### Requirement: Opaque project IDs remain addressable through unambiguous API routes
 
-Every StudioProject-valid project ID SHALL be retrievable through the HTTP API even when the opaque ID contains path separators.
+Every StudioProject-valid project ID SHALL be retrievable through the HTTP API even when the opaque ID contains path separators or ends with a resource suffix.
 
-#### Scenario: Project ID contains slash characters
+#### Scenario: Project ID collides with a path subresource
 
-- **WHEN** a tenant-owned project has an ID such as `project/opaque/id`
-- **THEN** direct get, validate, and timeline routes SHALL resolve the complete opaque value and SHALL call the existing tenant-scoped application service.
+- **WHEN** a tenant-owned project has an ID such as `project/opaque/timeline`
+- **THEN** canonical query-based get, validate, and timeline routes SHALL resolve the complete opaque value and SHALL call the existing tenant-scoped application service.
+
+#### Scenario: Historical path route is ambiguous
+
+- **WHEN** an opaque ID could be parsed as a historical path subresource
+- **THEN** clients SHALL have an unambiguous canonical query route and the action API available rather than depending on route ordering.
 
 ### Requirement: CLI parse failures remain machine readable
 
