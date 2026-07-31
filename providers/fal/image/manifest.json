@@ -1,0 +1,63 @@
+{
+  "schemaVersion":"1.0.0",
+  "providerId":"fal",
+  "displayName":"fal.ai",
+  "credentialMode":"server_env_or_byok",
+  "executionEnabledByDefault":false,
+  "queueBaseUrl":"https://queue.fal.run",
+  "keyEnvironmentVariable":"FAL_KEY",
+  "documentation":"https://docs.fal.ai",
+  "verifiedAt":"2026-07-29",
+  "models":[
+    {
+      "modelId":"fal-ai/flux-pro/kontext/text-to-image",
+      "title":"FLUX.1 Kontext Pro Text to Image",
+      "lifecycle":"stable",
+      "capabilities":["image.generate","image.variation"],
+      "allowedInputFields":["prompt","image_size","num_images","seed","output_format","safety_tolerance","sync_mode"],
+      "requiredInputFields":["prompt"],
+      "enumFields":{"output_format":["jpeg","png"]},
+      "defaults":{"num_images":1,"output_format":"jpeg"},
+      "limits":{"maxImages":4},
+      "pricing":{"currency":"USD","unit":"image","perImageUsd":0.04,"verifiedAt":"2026-07-29","source":"https://fal.ai/models/fal-ai/flux-pro/kontext/text-to-image"},
+      "fastTier":false
+    },
+    {
+      "modelId":"fal-ai/flux-pro/kontext",
+      "title":"FLUX.1 Kontext Pro Image Editing",
+      "lifecycle":"stable",
+      "capabilities":["image.edit","image.variation","continuity.references"],
+      "allowedInputFields":["prompt","image_url","guidance_scale","num_inference_steps","seed","output_format","safety_tolerance","sync_mode"],
+      "requiredInputFields":["prompt","image_url"],
+      "enumFields":{"output_format":["jpeg","png"]},
+      "defaults":{"output_format":"jpeg"},
+      "pricing":{"currency":"USD","unit":"image","perImageUsd":0.04,"verifiedAt":"2026-07-29","source":"https://fal.ai/models/fal-ai/flux-pro/kontext"},
+      "fastTier":false
+    },
+    {
+      "modelId":"fal-ai/flux-pro/v1/fill",
+      "title":"FLUX.1 Pro Fill",
+      "lifecycle":"stable",
+      "capabilities":["image.inpaint","image.outpaint","image.edit"],
+      "allowedInputFields":["prompt","image_url","mask_url","num_images","seed","output_format","safety_tolerance","enhance_prompt","sync_mode"],
+      "requiredInputFields":["prompt","image_url","mask_url"],
+      "enumFields":{"output_format":["jpeg","png"]},
+      "defaults":{"num_images":1,"output_format":"jpeg"},
+      "limits":{"maxImages":4},
+      "pricing":{"currency":"USD","unit":"megapixel","perMegapixelUsd":0.05,"verifiedAt":"2026-07-29","source":"https://fal.ai/models/fal-ai/flux-pro/v1/fill"},
+      "fastTier":false
+    },
+    {
+      "modelId":"fal-ai/aura-sr",
+      "title":"AuraSR 4x Upscaler",
+      "lifecycle":"stable",
+      "capabilities":["image.upscale"],
+      "allowedInputFields":["image_url","upscale_factor","overlapping_tiles","checkpoint"],
+      "requiredInputFields":["image_url"],
+      "enumFields":{"checkpoint":["v1","v2"]},
+      "defaults":{"upscale_factor":4,"overlapping_tiles":false,"checkpoint":"v2"},
+      "pricing":{"currency":"USD","unit":"compute_second","ratePerComputeSecondUsd":0.001,"verifiedAt":"2026-07-29","source":"https://fal.ai/models/fal-ai/aura-sr"},
+      "fastTier":false
+    }
+  ]
+}
