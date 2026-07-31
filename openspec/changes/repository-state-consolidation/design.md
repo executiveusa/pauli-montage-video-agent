@@ -12,10 +12,10 @@ The current `main` tree is authoritative. A historical phase branch, PR title, a
 
 ## Stale branch prevention
 
-A new pull-request workflow fetches the current base branch and calculates:
+A new pull-request workflow explicitly checks out and compares `github.event.pull_request.head.sha`, not GitHub's synthetic merge commit. It fetches the current base and calculates:
 
 ```text
-git rev-list --count HEAD..origin/<base>
+git rev-list --count <actual-head-sha>..origin/<base>
 ```
 
 Any nonzero result fails the pull request. This prevents old phase branches from being replayed into a newer product tree without first rebuilding or rebasing from the current base.
@@ -24,15 +24,18 @@ This guard intentionally does not attempt to infer whether a stale branch's tree
 
 ## API correction
 
-StudioProject identifiers are opaque contract values and may contain path syntax. Direct FastAPI routes use Starlette's `path` converter and register specific subresources before the catch-all project route:
+StudioProject identifiers are opaque contract values and may contain path syntax or suffixes that collide with resource names. Route ordering cannot make an arbitrary opaque value unambiguous.
+
+Canonical direct routes therefore carry the full project ID in the `project_id` query parameter:
 
 ```text
-/api/v1/projects/{project_id:path}/validate
-/api/v1/projects/{project_id:path}/timeline
-/api/v1/projects/{project_id:path}
+GET  /api/v1/project?project_id=<opaque-id>
+POST /api/v1/project/validate?project_id=<opaque-id>
+GET  /api/v1/project/timeline?project_id=<opaque-id>
+PUT  /api/v1/project/timeline?project_id=<opaque-id>
 ```
 
-This retains direct-route compatibility while the generic action API remains the preferred agent-safe surface.
+These routes support IDs ending in `/timeline`, `/validate`, or any other path-like value. Historical `/api/v1/projects/{project_id...}` routes remain for compatibility, while the generic action API remains the preferred agent-safe surface.
 
 ## CLI correction
 
