@@ -1,0 +1,1 @@
+{"phase":"07","baselineSha":"264d7d654c1f44dd8389a5dca9bd5ca724e26492","strategy":"revert the Phase 07 squash; retain additive PostgreSQL tables; switch YAPPY_REPOSITORY_BACKEND=file for emergency owner-local recovery","destructiveRollback":false}

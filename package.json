@@ -1,0 +1,17 @@
+{
+  "name": "yappy-clipz",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.4.2",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:studio": "npm run dev --workspace=@yappyverse/studio-web",
+    "build:studio": "npm run build --workspace=@yappyverse/studio-web",
+    "typecheck:studio": "npm run typecheck --workspace=@yappyverse/studio-web"
+  },
+  "overrides": {
+    "postcss": "8.5.23"
+  }
+}

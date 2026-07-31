@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YAPPY-CLIPZ Post-Phase-05 Architecture Audit</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c0c10;--panel:#15151c;--line:#2b2b36;--text:#f4f1eb;--muted:#a9a39a;--accent:#9b7cff;--good:#63d297;--warn:#f2c66d;--bad:#ff7f7f}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 Inter,ui-sans-serif,system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:48px 24px 96px}h1{font-size:clamp(2.3rem,6vw,5rem);line-height:.98;margin:.2em 0}h2{margin-top:0}a{color:#c7b8ff}.eyebrow{color:var(--accent);text-transform:uppercase;letter-spacing:.12em;font-size:.76rem}.lead{max-width:800px;color:var(--muted);font-size:1.14rem}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;margin:28px 0}.card{grid-column:span 4;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px}.wide{grid-column:1/-1}.half{grid-column:span 6}.score{font-size:2rem;font-weight:800}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 10px;vertical-align:top}th{color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:.08em}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-size:.72rem}.p0{color:var(--bad)}.p1{color:var(--warn)}code,pre{background:#0a0a0e;border:1px solid var(--line);border-radius:10px}code{padding:.15em .4em}pre{padding:16px;overflow:auto}.note{border-left:3px solid var(--accent);padding:12px 16px;background:#13121b}.muted{color:var(--muted)}ul{padding-left:20px}@media(max-width:800px){.card,.half{grid-column:1/-1}}
+  </style>
+</head>
+<body><main>
+<section id="executive-summary">
+  <div class="eyebrow">Planning audit / Phase 05 baseline</div>
+  <h1>Architecture audit</h1>
+  <p class="lead">YAPPY-CLIPZ has a strong contract-first base, a shared service layer, three current interfaces, a neutral timeline editor, and a verified production shell. The next risk is not missing features; it is multiplying features before transport parity, hosted identity, durable jobs, and ICM traceability become machine-enforced.</p>
+  <p class="note"><strong>Scope:</strong> architecture, agent interoperability, ICM, security boundaries, and release sequencing. This document makes no visual-design score because no new screenshot-based visual audit was performed.</p>
+</section>
+
+<section id="scoreboard" class="grid">
+  <article class="card"><div class="eyebrow">Canonical project contract</div><div class="score good">8.7</div><p>StudioProject v1 is established and validated.</p></article>
+  <article class="card"><div class="eyebrow">Shared service ownership</div><div class="score good">8.6</div><p>Current transports delegate to StudioService.</p></article>
+  <article class="card"><div class="eyebrow">Interface breadth</div><div class="score warn">5.8</div><p>Only project and timeline operations have CLI/API/MCP coverage.</p></article>
+  <article class="card"><div class="eyebrow">Parity enforcement</div><div class="score bad">4.2</div><p>Mappings are manual; no registry or generated parity matrix exists.</p></article>
+  <article class="card"><div class="eyebrow">ICM runtime maturity</div><div class="score warn">5.0</div><p>Safe scaffolding exists, but canonical refs, digests, runs, traceability, and resume are missing.</p></article>
+  <article class="card"><div class="eyebrow">Hosted production readiness</div><div class="score warn">4.8</div><p>Frontend is READY; persistent authenticated API is intentionally not connected.</p></article>
+</section>
+
+<section id="screenshots" class="grid">
+  <article class="card wide"><h2>Evidence boundary</h2><p>This planning audit is grounded in repository code, merged Phase 05 evidence, production route responses, and the uploaded ICM/design-audit methods. A visual UI audit is deferred to the dedicated product UX phase, where desktop/tablet/mobile screenshots, keyboard checks, link tests, and accessibility evidence are mandatory.</p></article>
+</section>
+
+<section id="krug-laws" class="grid">
+  <article class="card half"><h2>Self-evident agent use</h2><p>An arbitrary agent currently needs repository-specific knowledge to find commands/tools. Capability discovery and exact schemas must make the system self-explanatory.</p></article>
+  <article class="card half"><h2>Obvious next action</h2><p>Agents need stable action IDs, risk, approvals, cost, sync/job behavior, and errors before they execute.</p></article>
+  <article class="card half"><h2>Predictable navigation</h2><p>CLI, API, and MCP should expose the same conceptual action map rather than transport-specific naming drift.</p></article>
+  <article class="card half"><h2>Error recovery</h2><p>Version conflict exists for timelines, but standardized problems, retryability, jobs, cancellation, and resume must become universal.</p></article>
+</section>
+
+<section id="anti-slop" class="grid">
+  <article class="card wide"><h2>Architecture anti-slop findings</h2>
+    <ul>
+      <li>Do not add provider-specific buttons/tools before the neutral action contract.</li>
+      <li>Do not call separate Python functions directly from each transport.</li>
+      <li>Do not use ICM folders as a second database.</li>
+      <li>Do not treat a caller tenant header as hosted authentication.</li>
+      <li>Do not claim “any agent can call it” until discovery and parity tests prove it.</li>
+      <li>Do not build generation before jobs, approvals, costs, provenance, and idempotency.</li>
+    </ul>
+  </article>
+</section>
+
+<section id="functional-tests" class="grid">
+  <article class="card wide"><h2>Verified current behavior</h2>
+    <table><thead><tr><th>Area</th><th>Status</th><th>Evidence</th></tr></thead><tbody>
+      <tr><td>Project create/list/get/validate</td><td><span class="pill good">CLI/API/MCP</span></td><td>Shared StudioService methods and parity tests.</td></tr>
+      <tr><td>Timeline get/replace</td><td><span class="pill good">CLI/API/MCP</span></td><td>Optimistic version conflict and atomic mutation lock.</td></tr>
+      <tr><td>Web production shell</td><td><span class="pill good">READY</span></td><td>Production root and studio return 200.</td></tr>
+      <tr><td>Hosted project access</td><td><span class="pill warn">Fail closed</span></td><td>Remote Studio API is not configured; project proxy returns explicit 503.</td></tr>
+      <tr><td>ICM initialization</td><td><span class="pill good">Safe scaffold</span></td><td>Eleven stages, idempotency, and traversal rejection.</td></tr>
+      <tr><td>Capability discovery</td><td><span class="pill bad">Missing</span></td><td>No capability registry/describe action.</td></tr>
+      <tr><td>Jobs/events/approvals/costs</td><td><span class="pill bad">Missing runtime</span></td><td>Contracts/planning exist; operational service does not.</td></tr>
+    </tbody></table>
+  </article>
+</section>
+
+<section id="prioritized-fixes" class="grid">
+  <article class="card wide"><h2>Prioritized findings</h2>
+    <table><thead><tr><th>Priority</th><th>Finding</th><th>Required correction</th></tr></thead><tbody>
+      <tr><td class="p0">P0</td><td>Future features could drift across three transports.</td><td>Capability Registry + Action Dispatcher before feature expansion.</td></tr>
+      <tr><td class="p0">P0</td><td>Hosted tenant authority is not complete.</td><td>Verified principal/session/token in Phase 07; no raw tenant-header authority.</td></tr>
+      <tr><td class="p1">P1</td><td>ICM handoffs cannot safely resume arbitrary agents.</td><td>Run/stage IDs, refs, digests, action IDs, evidence, approvals, costs, and stale-input checks.</td></tr>
+      <tr><td class="p1">P1</td><td>No durable jobs/events for media/provider work.</td><td>Define contracts in Phase 06; implement runtime in Phase 09.</td></tr>
+      <tr><td class="p1">P1</td><td>Documentation contains stale Phase 02/Vercel/Twick statements.</td><td>Correct only verified architecture truth in Phase 06.</td></tr>
+      <tr><td>P2</td><td>No OpenAPI/MCP/CLI compatibility snapshots.</td><td>Add deterministic snapshots and CI drift gate.</td></tr>
+    </tbody></table>
+  </article>
+</section>
+
+<section class="grid"><article class="card wide"><h2>Audit conclusion</h2><p>Proceed with Phase 06 only after human approval of the universal interface contract, ICM runtime architecture, and remaining roadmap. Do not begin media, provider, GPU, voice, billing, or customer-data implementation before this foundation is merged.</p></article></section>
+</main></body></html>

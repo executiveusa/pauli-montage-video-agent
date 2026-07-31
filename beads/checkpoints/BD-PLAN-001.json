@@ -1,0 +1,29 @@
+{
+  "bead_id": "BD-PLAN-001",
+  "task_name": "Post-Phase-05 architecture, agent interoperability, and ICM roadmap",
+  "status": "closed",
+  "claimed_by": "ArchitectureReviewAgent",
+  "quality_score": 9.0,
+  "scope": [
+    "repository review",
+    "CLI API MCP parity plan",
+    "universal action contract",
+    "ICM runtime architecture",
+    "remaining phase roadmap",
+    "Phase 06 OpenSpec"
+  ],
+  "evidence_files": [
+    "docs/reviews/post-phase-05/audit.html",
+    "docs/reviews/post-phase-05/prd.html",
+    "docs/YAPPY-CLIPZ-POST-PHASE-05-ROADMAP.md",
+    "docs/contracts/UNIVERSAL-AGENT-INTERFACE.md",
+    "docs/ICM-RUNTIME-ARCHITECTURE.md",
+    "openspec/changes/phase-06-interoperability-icm-foundation/proposal.md",
+    "openspec/changes/phase-06-interoperability-icm-foundation/design.md",
+    "openspec/changes/phase-06-interoperability-icm-foundation/tasks.md",
+    "openspec/changes/phase-06-interoperability-icm-foundation/acceptance.md"
+  ],
+  "human_approval_required": true,
+  "next_task": "Approve or amend the Phase 06 planning PR before runtime implementation.",
+  "closed_at": "2026-07-26T00:00:00Z"
+}
