@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "verifiedAt": "2026-07-31T09:40:58Z",
+  "verifiedAt": "2026-07-31T09:59:00Z",
   "repository": "executiveusa/pauli-montage-video-agent",
   "auditedMainSha": "185c2235b388ca23f7f8eeb7bc67c096f2e7a860",
   "canonicalBranch": "main",
@@ -25,10 +25,18 @@
   ],
   "openPullRequests": [
     {
+      "number": 22,
+      "title": "consolidation: recover canonical repository state and retire stale phase replays [GRINION]",
+      "head": "consolidation/repository-state-recovery",
+      "status": "active_consolidation"
+    }
+  ],
+  "supersededPullRequests": [
+    {
       "number": 21,
       "title": "Phase/03 application services",
       "head": "phase/03-application-services",
-      "status": "superseded_stale_replay_do_not_merge"
+      "status": "closed_without_merge_stale_replay"
     }
   ],
   "deployment": {
