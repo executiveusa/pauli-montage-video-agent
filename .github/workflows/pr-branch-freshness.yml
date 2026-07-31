@@ -1,0 +1,34 @@
+name: Pull request branch freshness
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  branch-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch current base branch
+        shell: bash
+        run: git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+
+      - name: Require pull request head to contain current base
+        shell: bash
+        run: |
+          set -euo pipefail
+          behind="$(git rev-list --count "HEAD..origin/${{ github.base_ref }}")"
+          ahead="$(git rev-list --count "origin/${{ github.base_ref }}..HEAD")"
+          echo "PR branch is ${ahead} commit(s) ahead and ${behind} commit(s) behind origin/${{ github.base_ref }}."
+          if [ "$behind" -ne 0 ]; then
+            echo "::error::This pull request was created from a stale base and must be rebased or rebuilt from the current base branch before review."
+            exit 1
+          fi
