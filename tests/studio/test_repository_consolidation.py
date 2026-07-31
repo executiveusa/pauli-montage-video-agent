@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 
@@ -27,7 +26,7 @@ class RepositoryConsolidationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def test_api_round_trips_project_ids_with_path_segments(self) -> None:
+    def test_canonical_api_round_trips_suffix_colliding_opaque_ids(self) -> None:
         project = self.service.create_project(
             tenant_id="tenant_demo",
             slug="opaque-project",
@@ -35,28 +34,30 @@ class RepositoryConsolidationTests(unittest.TestCase):
             objective="Prove every contract-valid opaque ID remains addressable.",
             deliverables=["master"],
         )
-        project_id = "project/opaque/id"
+        project_id = "project/opaque/timeline"
         project["project"]["id"] = project_id
         self.repository.save("tenant_demo", project)
 
         client = TestClient(create_app(self.service))
-        encoded = quote(project_id, safe="")
         headers = {"X-Yappy-Tenant": "tenant_demo"}
+        params = {"project_id": project_id}
 
-        get_response = client.get(f"/api/v1/projects/{encoded}", headers=headers)
+        get_response = client.get("/api/v1/project", headers=headers, params=params)
         self.assertEqual(get_response.status_code, 200, get_response.text)
         self.assertEqual(get_response.json()["project"]["id"], project_id)
 
         validate_response = client.post(
-            f"/api/v1/projects/{encoded}/validate",
+            "/api/v1/project/validate",
             headers=headers,
+            params=params,
         )
         self.assertEqual(validate_response.status_code, 200, validate_response.text)
         self.assertTrue(validate_response.json()["valid"])
 
         timeline_response = client.get(
-            f"/api/v1/projects/{encoded}/timeline",
+            "/api/v1/project/timeline",
             headers=headers,
+            params=params,
         )
         self.assertEqual(timeline_response.status_code, 200, timeline_response.text)
         self.assertEqual(timeline_response.json()["version"], 1)
