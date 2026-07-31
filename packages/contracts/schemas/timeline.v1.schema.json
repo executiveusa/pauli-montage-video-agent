@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/timeline.v1.schema.json",
+  "title": "YAPPY-CLIPZ Timeline v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "canvas", "tracks"],
+  "properties": {
+    "version": {"type": "integer", "minimum": 1},
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "fps"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "fps": {"type": "number", "exclusiveMinimum": 0},
+        "durationSeconds": {"type": ["number", "null"], "minimum": 0},
+        "background": {"type": ["string", "null"]}
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "order", "items"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"enum": ["video", "audio", "text", "overlay", "caption", "data"]},
+          "name": {"type": ["string", "null"]},
+          "order": {"type": "integer", "minimum": 0},
+          "muted": {"type": "boolean"},
+          "locked": {"type": "boolean"},
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "startSeconds", "durationSeconds"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "kind": {"enum": ["asset", "text", "shape", "caption", "composition", "data"]},
+                "assetId": {"type": ["string", "null"]},
+                "shotId": {"type": ["string", "null"]},
+                "startSeconds": {"type": "number", "minimum": 0},
+                "durationSeconds": {"type": "number", "exclusiveMinimum": 0},
+                "sourceStartSeconds": {"type": ["number", "null"], "minimum": 0},
+                "sourceEndSeconds": {"type": ["number", "null"], "minimum": 0},
+                "text": {"type": ["string", "null"]},
+                "transform": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "scaleX": {"type": "number"},
+                    "scaleY": {"type": "number"},
+                    "rotationDegrees": {"type": "number"},
+                    "opacity": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
+                },
+                "effects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type"],
+                    "properties": {
+                      "type": {"type": "string", "minLength": 1},
+                      "parameters": {"type": "object", "additionalProperties": true}
+                    }
+                  }
+                },
+                "extensions": {"type": "object", "additionalProperties": true}
+              }
+            }
+          }
+        }
+      }
+    },
+    "markers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "timeSeconds", "label"],
+        "properties": {
+          "id": {"type": "string"},
+          "timeSeconds": {"type": "number", "minimum": 0},
+          "label": {"type": "string"},
+          "type": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}

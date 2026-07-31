@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "02",
+  "openspecId": "phase-02-studio-project-contracts",
+  "risk": "medium",
+  "completedAt": "2026-07-24T04:37:00Z",
+  "baselineMainSha": "cafc165ca23f41386a680031a2223cbc7c877ca3",
+  "beads": [],
+  "pullRequest": {
+    "number": 3,
+    "url": null,
+    "headSha": "d85fa104821bcecdf3aa3680f35fcc8d15c1545a"
+  },
+  "judgment": {
+    "passed": true,
+    "unresolvedReviewThreads": 0
+  },
+  "merge": {
+    "sha": "e9de73ff91731f8e536960537d47967d424073ee",
+    "mergedAt": null
+  },
+  "postMerge": {
+    "passed": true,
+    "mainSha": "e9de73ff91731f8e536960537d47967d424073ee"
+  },
+  "rollback": {
+    "baselineCaptured": true,
+    "receiptPath": "ops/rollback/phase-02.json"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "bead_id": "BD-P06-001",
+  "task_name": "Universal action, ICM v2, Prompt Locker, and fal provider foundation",
+  "status": "in_review",
+  "claimed_by": "YappyClipzBuildAgent",
+  "quality_score": 8.8,
+  "evidence_files": [
+    "tests/studio/test_phase06_foundation.py",
+    "tests/studio/test_dispatcher_local.py",
+    "packages/contracts/snapshots/capability-registry.v1.json",
+    "ops/reports/phase-06-foundation.md"
+  ],
+  "human_approval_required_for_paid_execution": true
+}

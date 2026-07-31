@@ -9,9 +9,13 @@
     "architecture and dependency policy documentation only"
   ],
   "featureFlags": [],
-  "rollbackCommands": [],
+  "mergeSha": "cafc165ca23f41386a680031a2223cbc7c877ca3",
+  "verifiedMainSha": "cafc165ca23f41386a680031a2223cbc7c877ca3",
+  "rollbackCommands": [
+    "git revert cafc165ca23f41386a680031a2223cbc7c877ca3"
+  ],
   "rollbackStrategy": [
-    "Revert the eventual Phase 01 squash SHA on main."
+    "Revert the verified Phase 01 squash SHA on main."
   ],
   "dataLossRisk": "none; Phase 01 does not change product runtime or customer data"
 }

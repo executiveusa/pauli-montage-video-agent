@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/decision.v1.schema.json",
+  "title": "YAPPY-CLIPZ Decision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "category", "subjectId", "selected", "createdAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "category": {"enum": ["provider", "model", "creative", "license", "cost", "quality", "privacy", "workflow", "publish"]},
+    "subjectId": {"type": "string", "minLength": 1},
+    "selected": {"type": "object", "additionalProperties": true},
+    "alternatives": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "estimatedCost": {"type": ["number", "null"], "minimum": 0},
+    "currency": {"type": ["string", "null"], "minLength": 3, "maxLength": 3},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "createdBy": {"type": ["string", "null"]},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}
