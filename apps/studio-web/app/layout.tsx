@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./timeline.css";
+import "./generation.css";
 
 export const metadata: Metadata = {
   title: "YAPPY-CLIPZ — AI-Native Production Studio",

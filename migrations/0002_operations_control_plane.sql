@@ -1,0 +1,10 @@
+BEGIN;
+CREATE TABLE IF NOT EXISTS yappy_jobs(tenant_id text NOT NULL,project_id text NOT NULL,job_id text PRIMARY KEY,document jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS yappy_jobs_tenant_state_idx ON yappy_jobs(tenant_id,((document->>'state')),created_at);
+CREATE TABLE IF NOT EXISTS yappy_events(sequence bigserial PRIMARY KEY,tenant_id text NOT NULL,project_id text,event_id text UNIQUE NOT NULL,document jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS yappy_events_tenant_sequence_idx ON yappy_events(tenant_id,sequence);
+CREATE TABLE IF NOT EXISTS yappy_approvals(tenant_id text NOT NULL,project_id text NOT NULL,approval_id text PRIMARY KEY,document jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS yappy_cost_ledger(tenant_id text NOT NULL,project_id text NOT NULL,entry_id text PRIMARY KEY,document jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS yappy_cost_project_idx ON yappy_cost_ledger(tenant_id,project_id,created_at);
+CREATE TABLE IF NOT EXISTS yappy_idempotency(tenant_id text NOT NULL,idempotency_key text NOT NULL,document jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,idempotency_key));
+COMMIT;

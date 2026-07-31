@@ -1,0 +1,67 @@
+name: Production hardening
+
+on:
+  pull_request:
+  push:
+    branches: ['phase/**']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            remotion-composer/package-lock.json
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt -r requirements-studio.txt
+      - name: Compile Python
+        run: python -m compileall -q lib tools yappy_clipz tests
+      - name: Run Python tests with timeout
+        run: timeout 15m python -m pytest -q --disable-warnings --maxfail=1
+      - name: Validate pipeline definitions
+        run: python - <<'PY'
+          from pathlib import Path
+          from lib.pipeline_loader import load_pipeline_definition
+          for path in sorted(Path('pipeline_defs').glob('*.yaml')):
+              load_pipeline_definition(path)
+              print('validated', path)
+          PY
+      - name: Install web and renderer dependencies
+        run: |
+          npm ci
+          npm ci --prefix remotion-composer
+      - name: Audit production dependencies
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm audit --prefix remotion-composer --omit=dev --audit-level=high
+      - name: Typecheck studio and Remotion
+        run: |
+          npm run typecheck:studio
+          npx tsc --noEmit -p remotion-composer/tsconfig.json
+      - name: Build studio
+        run: npm run build:studio
+      - name: Verify Remotion browser and bundle
+        run: |
+          npx remotion browser ensure --prefix remotion-composer
+          npx remotion compositions remotion-composer/src/index.tsx --log=error
+      - name: Build production container
+        run: docker build -t yappy-clipz:${{ github.sha }} .
+      - name: Compose configuration validation
+        run: docker compose config --quiet
