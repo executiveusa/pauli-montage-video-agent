@@ -47,11 +47,15 @@ A branch named `phase/12-documentary-clip-factory` survives, but it has no commi
 
 ## Pull requests
 
-### Open
+### Open integration path
 
-PR #21, `Phase/03 application services`, is a stale replay of an old Phase 03 implementation. Its branch is substantially behind the current baseline and its API, CLI, factory, repository, service, and settings files would downgrade newer authenticated, provider, asset, job, and render behavior.
+PR #22, `consolidation: recover canonical repository state and retire stale phase replays [GRINION]`, is the only open integration pull request. It was created directly from the audited current `main` baseline and contains the state ledger, stale-branch prevention, and valid API/CLI review fixes.
 
-It must not be merged. The repository-state consolidation PR supersedes it.
+### Superseded
+
+PR #21, `Phase/03 application services`, was closed without merge on 2026-07-31. It was a stale replay of an old Phase 03 implementation whose API, CLI, factory, repository, service, and settings files would have downgraded newer authenticated, provider, asset, job, and render behavior.
+
+Its two valid review findings were rebuilt against current `main` in PR #22.
 
 ### Historical branches
 
@@ -89,14 +93,13 @@ The only currently visible Supabase project contains unrelated product schemas. 
 
 ## Immediate recovery sequence
 
-1. Merge the repository-state consolidation PR after exact-head tests and review pass.
-2. Close PR #21 as superseded; do not merge any stale phase replay.
-3. Run the full cumulative GRINIONS suite on the consolidation head and merged `main`.
-4. Verify the production Vercel deployment from the merged consolidation SHA.
-5. Select or create the dedicated YAPPY PostgreSQL/Supabase target.
-6. Deploy migrations and the FastAPI/worker service with fail-closed secrets.
-7. Configure Vercel server-only Studio API/session values and verify authenticated project persistence.
-8. Continue product work from current `main`, beginning with the genuinely missing Phase 12 outcome.
+1. Merge PR #22 after exact-head tests and review pass.
+2. Run the full cumulative GRINIONS suite on the merged `main`.
+3. Verify the production Vercel deployment from the merged consolidation SHA.
+4. Select or create the dedicated YAPPY PostgreSQL/Supabase target.
+5. Deploy migrations and the FastAPI/worker service with fail-closed secrets.
+6. Configure Vercel server-only Studio API/session values and verify authenticated project persistence.
+7. Continue product work from current `main`, beginning with the genuinely missing Phase 12 outcome.
 
 ## Operating rule
 
