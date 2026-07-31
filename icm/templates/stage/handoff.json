@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "stage": null,
+  "status": "pending",
+  "inputRefs": [],
+  "outputRefs": [],
+  "decisionIds": [],
+  "approvalIds": [],
+  "blockers": [],
+  "verification": [],
+  "nextContext": []
+}

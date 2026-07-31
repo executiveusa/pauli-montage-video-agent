@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/approval.v1.schema.json",
+  "title": "YAPPY-CLIPZ Approval v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "scopeType", "subjectId", "status", "requestedAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "scopeType": {"enum": ["project", "scene", "shot", "job", "cost", "provider", "identity", "voice", "release", "publish"]},
+    "subjectId": {"type": "string", "minLength": 1},
+    "status": {"enum": ["pending", "approved", "rejected", "expired", "revoked"]},
+    "requestedAt": {"type": "string", "format": "date-time"},
+    "requestedBy": {"type": ["string", "null"]},
+    "resolvedAt": {"type": ["string", "null"], "format": "date-time"},
+    "resolvedBy": {"type": ["string", "null"]},
+    "note": {"type": ["string", "null"]},
+    "evidence": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "expiresAt": {"type": ["string", "null"], "format": "date-time"},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}

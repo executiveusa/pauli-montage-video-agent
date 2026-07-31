@@ -1,0 +1,10 @@
+-r requirements.txt
+
+# YAPPY-CLIPZ application transports; kept separate from OpenMontage core.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+httpx>=0.27,<1
+psycopg[binary]>=3.2,<4
+boto3>=1.35,<2
+# v1 is the current stable MCP Python SDK line; prevent silent v2 breaking upgrade.
+mcp>=1.27,<2

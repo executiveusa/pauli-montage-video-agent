@@ -12,6 +12,13 @@ on:
       - '.github/pull_request_template.md'
       - 'EMERALD_TABLETS.md'
       - 'icm/**'
+      - 'packages/contracts/**'
+      - 'yappy_clipz/**'
+      - 'tests/studio/**'
+      - 'requirements-studio.txt'
+      - 'apps/studio-web/**'
+      - 'package.json'
+      - 'vercel.json'
   push:
     branches:
       - 'phase/**'
@@ -25,6 +32,13 @@ on:
       - '.github/pull_request_template.md'
       - 'EMERALD_TABLETS.md'
       - 'icm/**'
+      - 'packages/contracts/**'
+      - 'yappy_clipz/**'
+      - 'tests/studio/**'
+      - 'requirements-studio.txt'
+      - 'apps/studio-web/**'
+      - 'package.json'
+      - 'vercel.json'
 
 permissions:
   contents: read
@@ -32,7 +46,7 @@ permissions:
 jobs:
   harness:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -57,10 +71,68 @@ jobs:
         with:
           node-version: '22'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install OpenSpec
         run: |
           npm install -g @fission-ai/openspec@1.3.1
           openspec --version
+
+      - name: Install deployed web dependency set
+        run: |
+          npm install --omit=optional
+          npm install --no-save @next/swc-linux-x64-gnu@16.2.11
+
+      - name: Capture deployed production web dependency audit
+        id: deployed_audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --omit=optional --audit-level=high --json > "$RUNNER_TEMP/npm-audit.json"
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python - "$RUNNER_TEMP/npm-audit.json" <<'PY'
+          import json
+          import sys
+
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          metadata = report.get("metadata", {}).get("vulnerabilities", {})
+          print("deployed audit counts:", json.dumps(metadata, sort_keys=True))
+          for name, finding in sorted(report.get("vulnerabilities", {}).items()):
+              if finding.get("severity") not in {"high", "critical"}:
+                  continue
+              print(json.dumps({
+                  "package": name,
+                  "severity": finding.get("severity"),
+                  "range": finding.get("range"),
+                  "via": finding.get("via"),
+                  "effects": finding.get("effects"),
+                  "fixAvailable": finding.get("fixAvailable"),
+              }, sort_keys=True))
+          PY
+          exit 0
+
+      - name: Upload deployed dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-npm-audit-${{ github.sha }}
+          path: ${{ runner.temp }}/npm-audit.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Gate deployed production web dependencies
+        if: always()
+        shell: bash
+        run: test "${{ steps.deployed_audit.outputs.status }}" -eq 0
+
+      - name: Typecheck YAPPY-CLIPZ studio web
+        run: npm run typecheck:studio
+
+      - name: Build YAPPY-CLIPZ studio web
+        run: npm run build:studio
 
       - name: Download pinned Beads release and checksum manifest
         shell: bash
@@ -121,6 +193,20 @@ jobs:
 
       - name: Install control-plane dependencies
         run: npm install --prefix ops/grinions --ignore-scripts
+
+      - name: Install Studio/API/MCP dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-studio.txt
+
+      - name: StudioProject v1 contract tests
+        run: |
+          python packages/contracts/validate_contracts.py
+          python packages/contracts/test_contracts.py
+
+      - name: ICM workspace safety tests
+        run: python icm/test_workspace.py
+
+      - name: Shared StudioService CLI/API/MCP parity tests
+        run: python -m unittest discover -s tests/studio -p 'test_*.py' -v
 
       - name: Install uv and initialize Absurd
         run: |

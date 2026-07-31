@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/event.v1.schema.json",
+  "title": "YAPPY-CLIPZ Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "type", "occurredAt", "payload"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "type": {"type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"},
+    "subjectId": {"type": ["string", "null"]},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "actorId": {"type": ["string", "null"]},
+    "correlationId": {"type": ["string", "null"]},
+    "causationId": {"type": ["string", "null"]},
+    "payload": {"type": "object", "additionalProperties": true},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}

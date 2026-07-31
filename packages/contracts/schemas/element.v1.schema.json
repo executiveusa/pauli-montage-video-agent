@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.studio/schemas/element.v1.schema.json",
+  "title": "YAPPY-CLIPZ Element v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "projectId", "type", "name", "status", "version", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "projectId": {"type": "string", "minLength": 1},
+    "type": {"enum": ["character", "location", "prop", "wardrobe", "product", "style", "voice", "camera", "motion_reference"]},
+    "name": {"type": "string", "minLength": 1},
+    "description": {"type": ["string", "null"]},
+    "status": {"enum": ["draft", "approved", "deprecated", "archived"]},
+    "version": {"type": "integer", "minimum": 1},
+    "referenceAssetIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "identityAnchors": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "negativeConstraints": {"type": "array", "items": {"type": "string"}},
+    "canon": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "traits": {"type": "array", "items": {"type": "string"}},
+        "continuityRules": {"type": "array", "items": {"type": "string"}},
+        "pronunciations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "consistencyProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strictness": {"enum": ["low", "medium", "high", "locked"]},
+        "face": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "wardrobe": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "style": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "voice": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+      }
+    },
+    "providerConditioning": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "consentRecordIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "commercialUse": {"type": ["boolean", "null"]},
+        "syntheticIdentity": {"type": ["boolean", "null"]}
+      }
+    },
+    "createdAt": {"type": "string", "format": "date-time"},
+    "updatedAt": {"type": "string", "format": "date-time"},
+    "extensions": {"type": "object", "additionalProperties": true}
+  }
+}
