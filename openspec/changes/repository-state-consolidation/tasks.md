@@ -1,0 +1,22 @@
+# Repository-state consolidation checklist
+
+- [x] Inventory all open pull requests.
+- [x] Inventory every surviving branch.
+- [x] Compare representative historical branch blobs with current `main`.
+- [x] Verify current Vercel project, deployment, routes, and runtime-error state.
+- [x] Verify whether the connected Supabase estate contains YAPPY migration tables.
+- [x] Create a fresh consolidation branch from current `main`.
+- [x] Repair direct API support for path-like opaque project IDs.
+- [x] Repair CLI parse-error JSON behavior.
+- [x] Add targeted API and CLI regression tests.
+- [x] Add pull-request branch-freshness enforcement.
+- [x] Add human-readable and machine-readable current-state ledgers.
+- [x] Add strict OpenSpec for repository recovery.
+- [x] Open one consolidation pull request.
+- [x] Repair all valid review findings carried from the stale replay PR.
+- [x] Close stale PR #21 as superseded.
+- [ ] Run exact-head targeted and cumulative verification.
+- [ ] Confirm READY Vercel preview for the exact consolidation head.
+- [ ] Squash merge only after all required gates pass.
+- [ ] Verify merged `main`, production deployment, and current-state ledger.
+- [ ] Continue from current `main` with Phase 12, the first genuinely missing runtime phase.

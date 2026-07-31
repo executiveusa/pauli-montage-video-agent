@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-07-31T09:59:00Z",
+  "repository": "executiveusa/pauli-montage-video-agent",
+  "auditedMainSha": "185c2235b388ca23f7f8eeb7bc67c096f2e7a860",
+  "canonicalBranch": "main",
+  "historyWarning": "Phase branch ancestry and PR numbering are not reliable implementation-order evidence because historical branches were replayed after newer work existed.",
+  "phases": [
+    {"id": "00", "outcome": "GRINIONS control plane", "status": "implemented_in_current_tree"},
+    {"id": "01", "outcome": "repository truth and licensing boundaries", "status": "implemented_in_current_tree"},
+    {"id": "02", "outcome": "StudioProject v1 and ICM contracts", "status": "implemented_in_current_tree"},
+    {"id": "03", "outcome": "shared StudioService and CLI/API/MCP", "status": "implemented_in_current_tree"},
+    {"id": "04", "outcome": "deployable web studio", "status": "implemented_in_current_tree"},
+    {"id": "05", "outcome": "neutral timeline editor round trip", "status": "implemented_in_current_tree"},
+    {"id": "06", "outcome": "capability registry, ICM v2, Prompt Locker, fal foundation and deployable worker topology", "status": "implemented_in_current_tree"},
+    {"id": "07", "outcome": "persistent authenticated Studio API code", "status": "implemented_not_activated", "blockers": ["dedicated database", "hosted secrets", "deployed API service"]},
+    {"id": "08", "outcome": "asset registry, signed ingest and provenance", "status": "implemented_not_activated", "blockers": ["approved object storage", "deployed API service"]},
+    {"id": "09", "outcome": "durable jobs, approvals, costs and OmniRouter", "status": "implemented_not_activated", "blockers": ["database migrations", "deployed workers"]},
+    {"id": "10", "outcome": "provider-neutral generation workbench", "status": "implemented_not_activated", "blockers": ["FAL_KEY", "paid-provider execution approval", "deployed control plane"]},
+    {"id": "11", "outcome": "deterministic render, verification and export", "status": "implemented_not_activated", "blockers": ["deployed FFmpeg workers", "approved storage"]},
+    {"id": "12", "outcome": "documentary intelligence and Clip Factory", "status": "not_implemented"},
+    {"id": "13", "outcome": "Elements, canon, continuity and canvas", "status": "not_implemented"},
+    {"id": "14", "outcome": "voice, avatar, lip sync and localization", "status": "not_implemented"},
+    {"id": "15", "outcome": "sovereign/local GPU and LTX execution", "status": "not_implemented"}
+  ],
+  "openPullRequests": [
+    {
+      "number": 22,
+      "title": "consolidation: recover canonical repository state and retire stale phase replays [GRINION]",
+      "head": "consolidation/repository-state-recovery",
+      "status": "active_consolidation"
+    }
+  ],
+  "supersededPullRequests": [
+    {
+      "number": 21,
+      "title": "Phase/03 application services",
+      "head": "phase/03-application-services",
+      "status": "closed_without_merge_stale_replay"
+    }
+  ],
+  "deployment": {
+    "provider": "vercel",
+    "projectId": "prj_AjK2uzwmXOPND30f98Zkp6LWJIQb",
+    "deploymentId": "dpl_EE7AUHKrCjHwvGq7UCpP4SJnW37S",
+    "state": "READY",
+    "commitSha": "185c2235b388ca23f7f8eeb7bc67c096f2e7a860",
+    "rootHttpStatus": 200,
+    "studioHttpStatus": 200,
+    "studioApiStatus": 503,
+    "studioApiCondition": "service_not_connected",
+    "runtimeErrorsLast7Days": 0,
+    "metadataFramework": "python",
+    "actualBuildRuntime": "nextjs_node_turbopack"
+  },
+  "database": {
+    "migrationFilesPresent": true,
+    "approvedProductionTarget": false,
+    "repositoryTablesObservedInConnectedSupabase": false,
+    "action": "select a dedicated YAPPY database before applying migrations"
+  },
+  "nextPhase": "12"
+}

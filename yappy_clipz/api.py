@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Annotated, Any
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from .storage import ObjectNotFound, StorageError, TransferInvalid
 OptionalTenantHeader=Annotated[str|None,Header(alias="X-Yappy-Tenant")]
 OptionalIdempotencyHeader=Annotated[str|None,Header(alias="Idempotency-Key")]
 OptionalCorrelationHeader=Annotated[str|None,Header(alias="X-Correlation-ID")]
+OpaqueProjectQuery=Annotated[str,Query(alias="project_id",min_length=1)]
 
 class CreateProjectRequest(BaseModel):
     slug:str; title:str; objective:str; deliverables:list[str]=Field(min_length=1); audience:list[str]=Field(default_factory=list); constraints:list[str]=Field(default_factory=list); quality_lane:str="premium"
@@ -45,7 +46,7 @@ def _http_error(exc:Exception)->HTTPException:
 
 def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=None)->FastAPI:
     active_runtime=runtime or create_runtime(service=service); active=service or active_runtime.service
-    app=FastAPI(title="YAPPY-CLIPZ Studio API",version="1.2.0")
+    app=FastAPI(title="YAPPY-CLIPZ Studio API",version="1.2.2")
     if active_runtime.settings.cors_origins:
         app.add_middleware(CORSMiddleware,allow_origins=list(active_runtime.settings.cors_origins),allow_credentials=True,allow_methods=["GET","POST","PUT","DELETE","OPTIONS"],allow_headers=["authorization","content-type","content-length","idempotency-key","x-correlation-id"])
 
@@ -124,21 +125,43 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
     def list_projects(request:Request,tenant:OptionalTenantHeader=None):
         try:p=require(principal(request,tenant),"project:read");return active.list_projects(tenant_id=p.tenant_id)
         except Exception as exc:raise _http_error(exc) from exc
-    @app.get("/api/v1/projects/{project_id}")
-    def get_project(project_id:str,request:Request,tenant:OptionalTenantHeader=None):
+
+    # Canonical direct routes use a query parameter so every nonempty opaque ID
+    # remains unambiguous, including IDs ending in /timeline or /validate.
+    @app.get("/api/v1/project")
+    def get_project_by_id(project_id:OpaqueProjectQuery,request:Request,tenant:OptionalTenantHeader=None):
         try:p=require(principal(request,tenant),"project:read");return active.get_project(tenant_id=p.tenant_id,project_id=project_id)
         except Exception as exc:raise _http_error(exc) from exc
-    @app.post("/api/v1/projects/{project_id}/validate")
+    @app.post("/api/v1/project/validate")
+    def validate_project_by_id(project_id:OpaqueProjectQuery,request:Request,tenant:OptionalTenantHeader=None):
+        try:p=require(principal(request,tenant),"project:read");return active.validate_project(tenant_id=p.tenant_id,project_id=project_id)
+        except Exception as exc:raise _http_error(exc) from exc
+    @app.get("/api/v1/project/timeline")
+    def get_timeline_by_id(project_id:OpaqueProjectQuery,request:Request,tenant:OptionalTenantHeader=None):
+        try:p=require(principal(request,tenant),"project:read","timeline:read");return active.get_timeline(tenant_id=p.tenant_id,project_id=project_id)
+        except Exception as exc:raise _http_error(exc) from exc
+    @app.put("/api/v1/project/timeline")
+    def replace_timeline_by_id(project_id:OpaqueProjectQuery,request:Request,payload:ReplaceTimelineRequest,tenant:OptionalTenantHeader=None):
+        try:p=require(principal(request,tenant),"project:write","timeline:write");return active.replace_timeline(tenant_id=p.tenant_id,project_id=project_id,expected_version=payload.expected_version,timeline=payload.timeline)
+        except Exception as exc:raise _http_error(exc) from exc
+
+    # Legacy path routes remain for compatibility with existing IDs. New
+    # clients and agents should use the canonical query routes or action API.
+    @app.post("/api/v1/projects/{project_id:path}/validate")
     def validate_stored_project(project_id:str,request:Request,tenant:OptionalTenantHeader=None):
         try:p=require(principal(request,tenant),"project:read");return active.validate_project(tenant_id=p.tenant_id,project_id=project_id)
         except Exception as exc:raise _http_error(exc) from exc
-    @app.get("/api/v1/projects/{project_id}/timeline")
+    @app.get("/api/v1/projects/{project_id:path}/timeline")
     def get_timeline(project_id:str,request:Request,tenant:OptionalTenantHeader=None):
         try:p=require(principal(request,tenant),"project:read","timeline:read");return active.get_timeline(tenant_id=p.tenant_id,project_id=project_id)
         except Exception as exc:raise _http_error(exc) from exc
-    @app.put("/api/v1/projects/{project_id}/timeline")
+    @app.put("/api/v1/projects/{project_id:path}/timeline")
     def replace_timeline(project_id:str,request:Request,payload:ReplaceTimelineRequest,tenant:OptionalTenantHeader=None):
         try:p=require(principal(request,tenant),"project:write","timeline:write");return active.replace_timeline(tenant_id=p.tenant_id,project_id=project_id,expected_version=payload.expected_version,timeline=payload.timeline)
+        except Exception as exc:raise _http_error(exc) from exc
+    @app.get("/api/v1/projects/{project_id:path}")
+    def get_project(project_id:str,request:Request,tenant:OptionalTenantHeader=None):
+        try:p=require(principal(request,tenant),"project:read");return active.get_project(tenant_id=p.tenant_id,project_id=project_id)
         except Exception as exc:raise _http_error(exc) from exc
     return app
 
