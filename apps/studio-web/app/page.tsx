@@ -1,114 +1,108 @@
 import Link from "next/link";
 
-const lanes = [
+const capabilities = [
   {
-    kicker: "01 — Anime",
-    title: "Character-first worlds",
-    copy: "Design repeatable characters, canon, visual references, scenes, and multi-shot continuity before generation spend begins.",
-    status: "Foundation ready",
+    kicker: "Real footage",
+    title: "Find the story inside the footage.",
+    copy: "Import interviews and source media, work from transcript-aware project state, and keep every editorial decision traceable.",
   },
   {
-    kicker: "02 — Avatars",
-    title: "Performance, not puppets",
-    copy: "A future-ready production lane for voice, identity consent, lip sync, dialogue, multilingual performance, and reusable avatar Elements.",
-    status: "Adapter phase ahead",
+    kicker: "Short-form",
+    title: "Turn one master into many cuts.",
+    copy: "Create vertical versions, captions, hooks, reframes, and campaign derivatives without rebuilding the project from scratch.",
   },
   {
-    kicker: "03 — Documentary",
-    title: "Real footage stays real",
-    copy: "Organize interviews, archives, transcripts, b-roll, evidence, and edit decisions without forcing documentary work through a synthetic-video workflow.",
-    status: "OpenMontage core",
+    kicker: "AI production",
+    title: "Generate without losing continuity.",
+    copy: "Use replaceable image, video, avatar, and voice engines while the project keeps ownership of canon, assets, approvals, and versions.",
   },
   {
-    kicker: "04 — Clip Factory",
-    title: "One master. Many outputs.",
-    copy: "Turn approved long-form work into platform variants, captions, hooks, localized cuts, and campaign assets through one canonical project.",
-    status: "Pipeline foundation",
+    kicker: "Local-first",
+    title: "Use the best engine. Keep the project.",
+    copy: "Run deterministic editing and finishing through owner-controlled tools, with cloud providers available when they actually add value.",
   },
 ];
 
 export default function HomePage() {
   return (
-    <main className="site-shell">
-      <header className="topbar">
-        <Link className="brand" href="/">YAPPY<span>-CLIPZ</span></Link>
-        <nav className="nav" aria-label="Primary">
-          <a href="#studio">Studio</a>
-          <a href="#lanes">Production lanes</a>
-          <a href="#sovereign">Sovereign stack</a>
+    <main className="site-shell landing-light">
+      <header className="topbar product-topbar">
+        <Link className="brand product-brand" href="/">MONTAGE</Link>
+        <nav className="nav product-nav" aria-label="Primary">
+          <a href="#product">Product</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#control">Control</a>
         </nav>
-        <Link className="button secondary" href="/studio">Enter Studio</Link>
+        <Link className="button ink" href="/studio">Open Studio</Link>
       </header>
 
-      <section className="hero">
-        <div className="eyebrow">Yappyverse Studio System / Production OS</div>
-        <h1>Direct. Animate. Edit. <em>Ship.</em></h1>
+      <section className="hero product-hero">
+        <div className="eyebrow dark-eyebrow">AI-native video production, without the software maze</div>
+        <h1>From footage to finished story.</h1>
         <div className="hero-copy">
           <p>
-            An AI-native production studio built for anime, consistent characters, avatars,
-            documentary footage, campaigns, and clips—without handing project truth to one model,
-            editor, or SaaS vendor.
+            Montage gives creators one calm workspace to bring in footage, shape the edit,
+            review changes, and deliver platform-ready video while keeping the project portable.
           </p>
           <div className="hero-actions">
-            <Link className="button purple" href="/studio/new">Start a project</Link>
-            <Link className="button secondary" href="/studio">Open Studio</Link>
+            <Link className="button accent" href="/studio/new">Start a project</Link>
+            <Link className="button ink-outline" href="/studio">See the studio</Link>
           </div>
         </div>
       </section>
 
-      <section className="proof-strip" aria-label="Architecture proof">
-        <div className="proof-cell"><strong>StudioProject v1</strong><span>Neutral, portable project truth</span></div>
-        <div className="proof-cell"><strong>CLI + API + MCP</strong><span>One shared service layer</span></div>
-        <div className="proof-cell"><strong>ICM</strong><span>Context compression without canon loss</span></div>
-        <div className="proof-cell"><strong>Owner-controlled</strong><span>Replace models, workers, and interfaces</span></div>
+      <section className="product-marquee" aria-label="Core promise">
+        <span>CREATE</span><span>EDIT</span><span>REVIEW</span><span>DELIVER</span>
       </section>
 
-      <section className="section" id="studio">
-        <div className="section-header">
-          <h2>A studio, not a prompt box.</h2>
+      <section className="section product-section" id="product">
+        <div className="section-header product-section-header">
+          <h2>One project.<br />Every production engine.</h2>
           <p>
-            Projects move through durable briefs, Elements, scenes, shots, approvals, jobs,
-            timelines, renders, and exports. Agents and humans work on the same project contract.
+            The interface stays understandable even when the production stack underneath it is sophisticated.
+            Engines can change. Project history, approvals, and ownership do not.
           </p>
         </div>
-        <div className="lane-grid" id="lanes">
-          {lanes.map((lane) => (
-            <article className="lane-card" key={lane.title}>
-              <div>
-                <small>{lane.kicker}</small>
-                <h3>{lane.title}</h3>
-                <p>{lane.copy}</p>
-              </div>
-              <div className="lane-footer">
-                <span>{lane.status}</span>
-                <span>YAPPY-CLIPZ →</span>
-              </div>
+        <div className="lane-grid product-card-grid">
+          {capabilities.map((item) => (
+            <article className="lane-card product-card" key={item.title}>
+              <small>{item.kicker}</small>
+              <h3>{item.title}</h3>
+              <p>{item.copy}</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="section" id="sovereign">
-        <div className="section-header">
-          <h2>Keep the brain. Swap the engines.</h2>
-          <p>
-            OpenMontage remains the production brain. StudioProject remains the project truth.
-            Provider models, GPU workers, editors, and specialist agents plug in behind replaceable contracts.
-          </p>
+      <section className="section product-section workflow-section" id="workflow">
+        <div className="section-header product-section-header">
+          <h2>A workflow people can remember.</h2>
+          <p>No architecture vocabulary required. Every project follows the same four visible stages.</p>
         </div>
-        <div className="panel">
-          <div className="proof-strip" style={{ margin: 0 }}>
-            <div className="proof-cell"><strong>OpenMontage</strong><span>Production orchestration</span></div>
-            <div className="proof-cell"><strong>OmniRouter</strong><span>Model/provider policy layer</span></div>
-            <div className="proof-cell"><strong>GRINIONS</strong><span>Build and release control</span></div>
-            <div className="proof-cell"><strong>ICM</strong><span>Durable context handoffs</span></div>
-          </div>
+        <div className="workflow-large">
+          <div><span>01</span><strong>Create</strong><p>Outcome, source material, audience, constraints.</p></div>
+          <div><span>02</span><strong>Edit</strong><p>Transcript, timeline, captions, crop, sound.</p></div>
+          <div><span>03</span><strong>Review</strong><p>Version changes, quality checks, approvals.</p></div>
+          <div><span>04</span><strong>Deliver</strong><p>Verified exports, manifests, reusable assets.</p></div>
         </div>
       </section>
 
-      <footer className="footer">
-        <span>YAPPY-CLIPZ / Yappyverse Studio</span>
-        <span>Built to keep project truth portable.</span>
+      <section className="section product-section control-section" id="control">
+        <div className="control-card">
+          <div>
+            <div className="eyebrow dark-eyebrow">Built to stay yours</div>
+            <h2>Keep the project. Swap the engine.</h2>
+          </div>
+          <p>
+            Montage is designed so local editors, FFmpeg workers, generation providers, transcription engines,
+            and specialist agents can plug in without becoming the owner of your project.
+          </p>
+        </div>
+      </section>
+
+      <footer className="footer product-footer">
+        <span>MONTAGE / Yappyverse Studio</span>
+        <span>Portable project truth. Replaceable engines.</span>
       </footer>
     </main>
   );
