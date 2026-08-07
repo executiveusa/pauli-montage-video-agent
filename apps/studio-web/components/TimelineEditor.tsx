@@ -2,6 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  getLocalProject,
+  getLocalTimeline,
+  isLocalProjectId,
+  LocalTimelineConflictError,
+  replaceLocalTimeline,
+} from "@/lib/local-studio-store";
 import type {
   ProjectEnvelope,
   Timeline,
@@ -39,14 +46,26 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<ProjectEnvelope | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [state, setState] = useState<EditorState>("loading");
-  const [message, setMessage] = useState("Loading canonical timeline…");
+  const [message, setMessage] = useState("Loading project timeline…");
   const savingRef = useRef(false);
+  const localMode = isLocalProjectId(projectId);
 
   const load = useCallback(async () => {
     if (savingRef.current) return;
     setState("loading");
-    setMessage("Loading canonical timeline…");
+    setMessage(localMode ? "Loading browser-local StudioProject…" : "Loading hosted StudioProject…");
     try {
+      if (localMode) {
+        const localProject = getLocalProject(projectId);
+        const localTimeline = getLocalTimeline(projectId);
+        if (!localProject || !localTimeline) throw new Error("This local project is not available in this browser.");
+        setProject(localProject);
+        setTimeline(localTimeline);
+        setState("ready");
+        setMessage(`Local timeline v${localTimeline.version} reopened from this device.`);
+        return;
+      }
+
       const [projectResponse, timelineResponse] = await Promise.all([
         fetch(`/api/studio/projects/${encodeURIComponent(projectId)}`, { cache: "no-store" }),
         fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/timeline`, { cache: "no-store" }),
@@ -58,12 +77,12 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       setProject(projectPayload);
       setTimeline(timelinePayload);
       setState("ready");
-      setMessage(`Timeline v${timelinePayload.version} loaded from StudioProject.`);
+      setMessage(`Timeline v${timelinePayload.version} loaded from hosted StudioProject state.`);
     } catch (error) {
       setState("error");
       setMessage(error instanceof Error ? error.message : "Timeline could not be loaded.");
     }
-  }, [projectId]);
+  }, [localMode, projectId]);
 
   useEffect(() => {
     void load();
@@ -183,6 +202,14 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     setState("saving");
     setMessage(`Saving changes based on timeline v${expectedVersion}…`);
     try {
+      if (localMode) {
+        const payload = replaceLocalTimeline(projectId, expectedVersion, snapshot);
+        setTimeline(payload.timeline);
+        setState("saved");
+        setMessage(`Saved locally as timeline v${payload.timeline.version}. Close and reopen this project to verify persistence.`);
+        return;
+      }
+
       const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/timeline`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -197,10 +224,15 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       if (!response.ok) throw new Error(messageFrom(payload, "Timeline could not be saved."));
       setTimeline(payload.timeline);
       setState("saved");
-      setMessage(`Saved as timeline v${payload.timeline.version}. Reopen will use canonical StudioProject state.`);
+      setMessage(`Saved as timeline v${payload.timeline.version}. Reopen will use hosted StudioProject state.`);
     } catch (error) {
-      setState("error");
-      setMessage(error instanceof Error ? error.message : "Timeline could not be saved.");
+      if (error instanceof LocalTimelineConflictError) {
+        setState("conflict");
+        setMessage(error.message);
+      } else {
+        setState("error");
+        setMessage(error instanceof Error ? error.message : "Timeline could not be saved.");
+      }
     } finally {
       savingRef.current = false;
     }
@@ -226,13 +258,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     <>
       <div className="studio-head">
         <div>
-          <div className="eyebrow">Neutral Timeline v1 / {project.project.slug}</div>
+          <div className="eyebrow">{localMode ? "Local StudioProject" : "Hosted StudioProject"} / {project.project.slug}</div>
           <h1>{project.project.title}</h1>
-          <p className="muted">Edit canonical timeline state without a vendor-specific project format.</p>
+          <p className="muted">Edit portable timeline state without giving an editor vendor ownership of the project.</p>
         </div>
         <div className="form-actions">
-          <button className="button secondary" disabled={state === "saving"} onClick={() => void load()} type="button">Reload canonical</button>
-          <button className="button purple" disabled={!canSave} onClick={() => void save()} type="button">
+          <button className="button secondary" disabled={state === "saving"} onClick={() => void load()} type="button">Reload saved state</button>
+          <button className="button accent" disabled={!canSave} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save timeline v${timeline.version}`}
           </button>
         </div>
@@ -261,7 +293,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             {timeline.tracks.length === 0 ? (
               <div className="empty">
                 <strong>No tracks yet.</strong>
-                <p>Add a text track to prove the first canonical editor round-trip.</p>
+                <p>Add a text track, save it, return to Projects, then reopen this project. The saved timeline should remain intact.</p>
                 <button className="button secondary" onClick={addTextTrack} type="button">Add text track</button>
               </div>
             ) : timeline.tracks.map((track, trackIndex) => (
