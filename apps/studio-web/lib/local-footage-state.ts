@@ -1,6 +1,7 @@
 export type FootageAssetRef = {
   assetId: string;
   filename: string;
+  storageFilename: string;
   sizeBytes: number;
   durationSeconds?: number;
   width?: number;
@@ -58,6 +59,11 @@ export function getFootageState(projectId: string): LocalFootageState {
   try {
     const parsed = JSON.parse(raw) as LocalFootageState;
     if (parsed.projectId !== projectId || !Array.isArray(parsed.beads)) return empty(projectId);
+    // Backward-compatible repair for local projects created before storageFilename existed.
+    if (parsed.source && !parsed.source.storageFilename) {
+      parsed.source.storageFilename = `${parsed.source.assetId}__${parsed.source.filename}`;
+      if (parsed.activeArtifactKind === "assets") parsed.activeArtifact = parsed.source.storageFilename;
+    }
     return parsed;
   } catch {
     return empty(projectId);
@@ -77,7 +83,7 @@ export function registerSource(projectId: string, source: FootageAssetRef): Loca
   return saveFootageState({
     ...state,
     source,
-    activeArtifact: source.filename,
+    activeArtifact: source.storageFilename,
     activeArtifactKind: "assets",
   });
 }
@@ -133,12 +139,13 @@ export function revertLastFootageBead(projectId: string): LocalFootageState {
     .slice(0, index)
     .reverse()
     .find((candidate) => candidate.status === "applied" && candidate.afterActiveArtifact);
-  const activeArtifact = previousApplied?.afterActiveArtifact || state.source?.filename || null;
+  const sourceArtifact = state.source?.storageFilename || null;
+  const activeArtifact = previousApplied?.afterActiveArtifact || sourceArtifact;
   return saveFootageState({
     ...state,
     beads,
     activeArtifact,
-    activeArtifactKind: activeArtifact === state.source?.filename ? "assets" : "outputs",
+    activeArtifactKind: activeArtifact === sourceArtifact ? "assets" : "outputs",
   });
 }
 
