@@ -1,7 +1,7 @@
 export type FootageAssetRef = {
   assetId: string;
   filename: string;
-  storageFilename: string;
+  storageFilename?: string;
   sizeBytes: number;
   durationSeconds?: number;
   width?: number;
@@ -52,6 +52,10 @@ function empty(projectId: string): LocalFootageState {
   return { projectId, beads: [], exports: [], updatedAt: new Date().toISOString() };
 }
 
+function storageName(source: FootageAssetRef): string {
+  return source.storageFilename || `${source.assetId}__${source.filename}`;
+}
+
 export function getFootageState(projectId: string): LocalFootageState {
   if (typeof window === "undefined") return empty(projectId);
   const raw = window.localStorage.getItem(key(projectId));
@@ -59,9 +63,8 @@ export function getFootageState(projectId: string): LocalFootageState {
   try {
     const parsed = JSON.parse(raw) as LocalFootageState;
     if (parsed.projectId !== projectId || !Array.isArray(parsed.beads)) return empty(projectId);
-    // Backward-compatible repair for local projects created before storageFilename existed.
     if (parsed.source && !parsed.source.storageFilename) {
-      parsed.source.storageFilename = `${parsed.source.assetId}__${parsed.source.filename}`;
+      parsed.source.storageFilename = storageName(parsed.source);
       if (parsed.activeArtifactKind === "assets") parsed.activeArtifact = parsed.source.storageFilename;
     }
     return parsed;
@@ -80,10 +83,11 @@ export function saveFootageState(state: LocalFootageState): LocalFootageState {
 
 export function registerSource(projectId: string, source: FootageAssetRef): LocalFootageState {
   const state = getFootageState(projectId);
+  const normalized = { ...source, storageFilename: storageName(source) };
   return saveFootageState({
     ...state,
-    source,
-    activeArtifact: source.storageFilename,
+    source: normalized,
+    activeArtifact: normalized.storageFilename,
     activeArtifactKind: "assets",
   });
 }
@@ -139,7 +143,7 @@ export function revertLastFootageBead(projectId: string): LocalFootageState {
     .slice(0, index)
     .reverse()
     .find((candidate) => candidate.status === "applied" && candidate.afterActiveArtifact);
-  const sourceArtifact = state.source?.storageFilename || null;
+  const sourceArtifact = state.source ? storageName(state.source) : null;
   const activeArtifact = previousApplied?.afterActiveArtifact || sourceArtifact;
   return saveFootageState({
     ...state,
