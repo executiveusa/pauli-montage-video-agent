@@ -14,12 +14,21 @@ class WindowsOnboardingContractTests(unittest.TestCase):
         self.assertIn('Gyan.FFmpeg', setup)
         self.assertIn('Start-Montage.cmd', setup)
 
-    def test_launcher_stays_loopback_only_and_opens_production_studio(self):
+    def test_setup_recovers_when_windows_venv_ensurepip_fails(self):
+        setup = (ROOT / "scripts" / "setup_montage_windows.ps1").read_text(encoding="utf-8")
+        self.assertIn('Remove-Item -Recurse -Force $Venv', setup)
+        self.assertIn('$FallbackPackages', setup)
+        self.assertIn('python-executable.txt', setup)
+        self.assertIn('pip install --upgrade --target $FallbackPackages faster-whisper', setup)
+
+    def test_launcher_stays_loopback_only_and_supports_fallback_runtime(self):
         start = (ROOT / "scripts" / "start_montage_windows.ps1").read_text(encoding="utf-8")
         self.assertIn('127.0.0.1', start)
         self.assertIn('pauli-montage-video-agent.vercel.app/studio', start)
         self.assertIn('MONTAGE_LOCAL_WORKSPACE', start)
         self.assertIn('MONTAGE_MODEL_CACHE', start)
+        self.assertIn('python-executable.txt', start)
+        self.assertIn('PYTHONPATH', start)
 
     def test_quickstart_names_real_asc3nd_source_and_zero_credit_acceptance(self):
         quickstart = (ROOT / "docs" / "ASC3ND_LOCAL_FOOTAGE_QUICKSTART.md").read_text(encoding="utf-8")
