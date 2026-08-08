@@ -19,7 +19,7 @@ class WindowsOnboardingContractTests(unittest.TestCase):
         self.assertIn('Remove-Item -Recurse -Force $Venv', setup)
         self.assertIn('$FallbackPackages', setup)
         self.assertIn('python-executable.txt', setup)
-        self.assertIn('pip install --upgrade --target $FallbackPackages faster-whisper', setup)
+        self.assertIn('"--target", $FallbackPackages, "faster-whisper"', setup)
 
     def test_launcher_stays_loopback_only_and_supports_fallback_runtime(self):
         start = (ROOT / "scripts" / "start_montage_windows.ps1").read_text(encoding="utf-8")
