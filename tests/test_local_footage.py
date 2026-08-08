@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.montage_local_service import LocalWorkspace
 from tools.local_footage import LocalFootageTool, SourceOverwriteError, build_srt
 from tools.synthcut_adapter import SynthCutAdapterTool
 
@@ -89,6 +90,33 @@ class LocalFootageContractTests(unittest.TestCase):
             "2\n00:00:01,250 --> 00:00:03,500\nbecause young people deserve support.\n"
         )
         self.assertEqual(build_srt(transcript), expected)
+
+
+class LocalWorkspaceSourceSelectionTests(unittest.TestCase):
+    def test_operation_can_resolve_active_output_without_arbitrary_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = LocalWorkspace(Path(tmp))
+            project_id = "asc3nd-test"
+            output = workspace.outputs_dir(project_id) / "vertical-1080x1920.mp4"
+            output.write_bytes(b"rendered-output")
+
+            resolved = workspace.resolve_operation_source({
+                "projectId": project_id,
+                "sourceKind": "outputs",
+                "sourceName": output.name,
+            })
+
+            self.assertEqual(resolved, output.resolve())
+
+    def test_output_source_selector_rejects_unknown_kind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = LocalWorkspace(Path(tmp))
+            with self.assertRaises(ValueError):
+                workspace.resolve_operation_source({
+                    "projectId": "asc3nd-test",
+                    "sourceKind": "filesystem",
+                    "sourceName": "/tmp/arbitrary.mp4",
+                })
 
 
 class SynthCutAdapterTests(unittest.TestCase):
