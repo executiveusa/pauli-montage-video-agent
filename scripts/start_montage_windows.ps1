@@ -36,6 +36,8 @@ if (-not (Test-Path $ModelCache)) { New-Item -ItemType Directory -Force -Path $M
 $env:MONTAGE_LOCAL_WORKSPACE = $Workspace
 $env:MONTAGE_MODEL_CACHE = $ModelCache
 $env:HF_HOME = $ModelCache
+$env:HF_HUB_DISABLE_SYMLINKS = "1"
+$env:HF_HUB_DISABLE_SYMLINKS_WARNING = "1"
 
 try {
   $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 1
