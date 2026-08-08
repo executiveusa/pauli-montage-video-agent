@@ -39,6 +39,13 @@ function Ensure-Command([string]$Command, [string]$PackageId, [string]$Label) {
   }
 }
 
+function Invoke-Checked([string]$Exe, [string[]]$CommandArgs, [string]$FailureMessage) {
+  & $Exe @CommandArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "$FailureMessage (exit code $LASTEXITCODE)"
+  }
+}
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Worker = Join-Path $RepoRoot "scripts\montage_local_service.py"
 $Prewarm = Join-Path $RepoRoot "scripts\prewarm_whisper.py"
@@ -61,22 +68,64 @@ if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
   throw "ffprobe is required but was not found after FFmpeg installation. Restart PowerShell and rerun setup."
 }
 
+$PythonCommand = Get-Command python -ErrorAction Stop
+$SystemPython = $PythonCommand.Source
+if (-not $SystemPython) { $SystemPython = "python" }
+Write-Host "Python:     $SystemPython"
+
 $Venv = Join-Path $RuntimeRoot ".venv"
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
-if (-not (Test-Path $VenvPython)) {
-  Write-Step "Creating isolated Python environment on the runtime drive"
-  python -m venv $Venv
+$FallbackPackages = Join-Path $RuntimeRoot "python-packages"
+$RuntimePythonFile = Join-Path $RuntimeRoot "python-executable.txt"
+$UseFallback = $false
+
+function Test-VenvReady {
+  if (-not (Test-Path $VenvPython)) { return $false }
+  & $VenvPython -m pip --version *> $null
+  return ($LASTEXITCODE -eq 0)
 }
 
-Write-Step "Installing local transcription dependency"
-& $VenvPython -m pip install --upgrade pip
-& $VenvPython -m pip install --upgrade faster-whisper
+if (-not (Test-VenvReady)) {
+  if (Test-Path $Venv) {
+    Write-Host "Removing incomplete local virtual environment."
+    Remove-Item -Recurse -Force $Venv
+  }
+  Write-Step "Creating isolated Python environment on the runtime drive"
+  & $SystemPython -m venv $Venv
+  if ($LASTEXITCODE -ne 0 -or -not (Test-VenvReady)) {
+    Write-Warning "Windows venv/ensurepip did not complete. Falling back to an isolated E-drive package directory."
+    if (Test-Path $Venv) {
+      Remove-Item -Recurse -Force $Venv
+    }
+    New-Item -ItemType Directory -Force -Path $FallbackPackages | Out-Null
+    $UseFallback = $true
+  }
+}
+
+if (-not $UseFallback -and (Test-VenvReady)) {
+  $RuntimePython = $VenvPython
+  Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding ASCII
+  Write-Step "Installing local transcription dependency into the virtual environment"
+  Invoke-Checked $RuntimePython @("-m", "pip", "install", "--upgrade", "pip") "Could not upgrade pip in the Montage virtual environment"
+  Invoke-Checked $RuntimePython @("-m", "pip", "install", "--upgrade", "faster-whisper") "Could not install Faster-Whisper in the Montage virtual environment"
+} else {
+  $RuntimePython = $SystemPython
+  New-Item -ItemType Directory -Force -Path $FallbackPackages | Out-Null
+  Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding ASCII
+  Write-Step "Installing local transcription dependency into the E-drive fallback package directory"
+  & $RuntimePython -m pip --version *> $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "The base Python installation does not provide pip. Repair/reinstall Python 3.12 with pip enabled, then rerun setup."
+  }
+  Invoke-Checked $RuntimePython @("-m", "pip", "install", "--upgrade", "--target", $FallbackPackages, "faster-whisper") "Could not install Faster-Whisper into the E-drive fallback package directory"
+  $env:PYTHONPATH = $FallbackPackages
+}
 
 $env:HF_HOME = $ModelCache
 $env:MONTAGE_MODEL_CACHE = $ModelCache
 if (-not $SkipModelDownload) {
   Write-Step "Downloading and prewarming Faster-Whisper '$WhisperModel' on CPU/int8"
-  & $VenvPython $Prewarm --model $WhisperModel --cache $ModelCache
+  Invoke-Checked $RuntimePython @($Prewarm, "--model", $WhisperModel, "--cache", $ModelCache) "Could not prewarm the local Whisper model"
 }
 
 $Launcher = Join-Path $RuntimeRoot "Start-Montage.cmd"
@@ -91,5 +140,7 @@ Write-Step "Setup complete"
 Write-Host "Large footage files stay on this computer and upload directly to the loopback worker; they do not pass through Vercel."
 Write-Host "The worker writes project media beneath: $Workspace"
 Write-Host "Whisper cache: $ModelCache"
+Write-Host "Runtime Python: $RuntimePython"
+if ($UseFallback) { Write-Host "Python packages: $FallbackPackages (venv fallback mode)" }
 Write-Host "Launcher: $Launcher"
 Write-Host "`nNext: double-click Start-Montage.cmd, open/create the ASC3ND project, choose vc(1).mp4 from E:, and click Transcribe locally."
