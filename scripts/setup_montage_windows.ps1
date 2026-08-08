@@ -104,14 +104,14 @@ if (-not (Test-VenvReady)) {
 
 if (-not $UseFallback -and (Test-VenvReady)) {
   $RuntimePython = $VenvPython
-  Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding ASCII
+  Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding utf8
   Write-Step "Installing local transcription dependency into the virtual environment"
   Invoke-Checked $RuntimePython @("-m", "pip", "install", "--upgrade", "pip") "Could not upgrade pip in the Montage virtual environment"
   Invoke-Checked $RuntimePython @("-m", "pip", "install", "--upgrade", "faster-whisper") "Could not install Faster-Whisper in the Montage virtual environment"
 } else {
   $RuntimePython = $SystemPython
   New-Item -ItemType Directory -Force -Path $FallbackPackages | Out-Null
-  Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding ASCII
+  Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding utf8
   Write-Step "Installing local transcription dependency into the E-drive fallback package directory"
   & $RuntimePython -m pip --version *> $null
   if ($LASTEXITCODE -ne 0) {
