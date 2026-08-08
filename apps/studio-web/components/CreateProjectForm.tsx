@@ -44,7 +44,7 @@ export function CreateProjectForm() {
         const error = result as ServiceError;
         if (LOCAL_FALLBACK_ERRORS.has(error.error)) {
           const local = createLocalProject(payload);
-          router.push(`/studio/projects/${encodeURIComponent(local.project.id)}/edit`);
+          router.push(`/studio/projects/${encodeURIComponent(local.project.id)}/footage`);
           router.refresh();
           return;
         }
@@ -72,7 +72,7 @@ export function CreateProjectForm() {
       <div className="field"><label htmlFor="quality_lane">Quality lane</label><select id="quality_lane" name="quality_lane" defaultValue="sovereign"><option value="economy">Economy — optimize cost</option><option value="premium">Premium — optimize quality</option><option value="sovereign">Sovereign — prefer owner-controlled compute</option><option value="owner_private">Owner private — private/restricted tools allowed</option></select></div>
       {message ? <div className={`notice ${isError ? "error" : ""}`}>{message}</div> : null}
       <div className="form-actions"><button className="generation-primary" disabled={submitting} type="submit">{submitting ? "Creating…" : "Create project"}</button><Link className="button secondary" href="/studio">Cancel</Link></div>
-      <p className="muted" style={{ fontSize: ".78rem", lineHeight: 1.5 }}>Montage uses the hosted Studio API when it is connected. If that service is unavailable, the project is created in a browser-local StudioProject workspace so you can keep working without inventing server state or paying for an editor agent.</p>
+      <p className="muted" style={{ fontSize: ".78rem", lineHeight: 1.5 }}>Montage uses the hosted Studio API when it is connected. If that service is unavailable, the project opens directly in the browser-local footage factory so you can start with real media and zero editor-agent credits.</p>
     </form>
   );
 }
