@@ -25,7 +25,7 @@ class WindowsOnboardingContractTests(unittest.TestCase):
     def test_setup_selects_clean_python_outside_activated_agent_venvs(self):
         setup = (ROOT / "scripts" / "setup_montage_windows.ps1").read_text(encoding="utf-8")
         self.assertIn('function Find-CleanPython', setup)
-        self.assertIn('uv python find 3.11', setup)
+        self.assertIn('& $uv.Source python find 3.11', setup)
         self.assertIn('$RuntimePython -match \'\\\\hermes\\\\\'', setup)
         self.assertIn('$RuntimePython -match \'\\\\venv\\\\\'', setup)
         self.assertIn('$env:PYTHONNOUSERSITE = "1"', setup)
