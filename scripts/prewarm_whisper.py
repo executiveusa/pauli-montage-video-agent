@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Download/initialize the configured Faster-Whisper model for Montage local editing."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Prewarm a Faster-Whisper model for Montage.")
+    parser.add_argument("--model", default="base")
+    parser.add_argument("--cache", required=True)
+    args = parser.parse_args()
+
+    cache = Path(args.cache).expanduser().resolve()
+    cache.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as exc:
+        raise SystemExit("faster-whisper is not installed in this Python environment") from exc
+
+    WhisperModel(args.model, device="cpu", compute_type="int8", download_root=str(cache))
+    print(f"Montage Whisper model ready: {args.model}")
+    print(f"Model cache: {cache}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
