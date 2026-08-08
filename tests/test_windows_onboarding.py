@@ -21,6 +21,14 @@ class WindowsOnboardingContractTests(unittest.TestCase):
         self.assertIn('python-executable.txt', setup)
         self.assertIn('"--target", $FallbackPackages, "faster-whisper"', setup)
 
+    def test_whisper_cache_avoids_windows_symlink_requirement(self):
+        setup = (ROOT / "scripts" / "setup_montage_windows.ps1").read_text(encoding="utf-8")
+        start = (ROOT / "scripts" / "start_montage_windows.ps1").read_text(encoding="utf-8")
+        self.assertIn('HF_HUB_DISABLE_SYMLINKS', setup)
+        self.assertIn('HF_HUB_DISABLE_SYMLINKS', start)
+        self.assertIn('HF_HOME', setup)
+        self.assertIn('HF_HOME', start)
+
     def test_launcher_stays_loopback_only_and_supports_fallback_runtime(self):
         start = (ROOT / "scripts" / "start_montage_windows.ps1").read_text(encoding="utf-8")
         self.assertIn('127.0.0.1', start)
