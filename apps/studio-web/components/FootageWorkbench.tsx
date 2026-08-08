@@ -26,6 +26,10 @@ import {
 
 type BusyAction = "connect" | "upload" | "transcribe" | "cut" | "reframe" | "captions" | "verify" | null;
 
+type OperationSource =
+  | { sourceKind: "assets"; sourceAssetId: string }
+  | { sourceKind: "outputs"; sourceName: string };
+
 function seconds(value: string): number {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) throw new Error("Time values must be non-negative numbers.");
@@ -35,6 +39,13 @@ function seconds(value: string): number {
 function activeUrl(projectId: string, state: LocalFootageState): string | null {
   if (!state.activeArtifact || !state.activeArtifactKind) return null;
   return localFileUrl(projectId, state.activeArtifactKind, state.activeArtifact);
+}
+
+function activeOperationSource(state: LocalFootageState, sourceAssetId: string): OperationSource {
+  if (state.activeArtifactKind === "outputs" && state.activeArtifact) {
+    return { sourceKind: "outputs", sourceName: state.activeArtifact };
+  }
+  return { sourceKind: "assets", sourceAssetId };
 }
 
 function formatDuration(value?: number): string {
@@ -123,7 +134,11 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
     setBusy(action);
     setError(null);
     try {
-      const request = { projectId, sourceAssetId: currentSourceId, ...payload };
+      const request = {
+        projectId,
+        ...activeOperationSource(state, currentSourceId),
+        ...payload,
+      };
       const result = await runLocalOperation(request);
       const next = recordFootageBead(
         projectId,
@@ -153,15 +168,16 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
     setBusy("transcribe");
     setError(null);
     try {
-      const result = await runLocalOperation({
+      const request = {
         projectId,
+        sourceKind: "assets" as const,
         sourceAssetId: currentSourceId,
         operation: "transcribe",
         outputName: "transcript.json",
         model: "base",
         compute_type: "int8",
-      });
-      const request = { projectId, sourceAssetId: currentSourceId, operation: "transcribe", model: "base", compute_type: "int8" };
+      };
+      const result = await runLocalOperation(request);
       let next = recordFootageBead(projectId, "transcribe", currentSourceId, request, result.artifacts, result.costUsd, result.success, result.error);
       if (!result.success) {
         setState(next);
@@ -201,6 +217,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
 
   async function writeCaptions() {
     if (!state.transcript?.length) return setError("Transcribe the footage before creating captions.");
+    if (!currentSourceId) return setError("Import source footage first.");
     setBusy("captions");
     setError(null);
     try {
@@ -213,19 +230,20 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       if (!srt.success) throw new Error(srt.error || "Caption file creation failed.");
       let next = saveCaptionArtifact(projectId, srt.artifacts[0] || "captions.srt");
       setState(next);
-      const burned = await runLocalOperation({
+      const burnRequest = {
         projectId,
-        sourceAssetId: currentSourceId,
+        ...activeOperationSource(next, currentSourceId),
         operation: "burn_captions",
         srtName: srt.artifacts[0] || "captions.srt",
         style: captionStyle,
         outputName: "captioned-vertical.mp4",
-      });
+      };
+      const burned = await runLocalOperation(burnRequest);
       next = recordFootageBead(
         projectId,
         "burn_captions",
         currentSourceId,
-        { projectId, sourceAssetId: currentSourceId, operation: "burn_captions", srtName: srt.artifacts[0], style: captionStyle },
+        burnRequest,
         burned.artifacts,
         burned.costUsd,
         burned.success,
@@ -243,13 +261,15 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
   }
 
   async function verify() {
+    const activeArtifact = state.activeArtifact;
+    const activeArtifactKind = state.activeArtifactKind;
     const result = await run("verify", {
       operation: "verify",
-      expected_width: state.activeArtifactKind === "outputs" ? 1080 : undefined,
-      expected_height: state.activeArtifactKind === "outputs" ? 1920 : undefined,
+      expected_width: activeArtifactKind === "outputs" ? 1080 : undefined,
+      expected_height: activeArtifactKind === "outputs" ? 1920 : undefined,
     }, "Media verification passed");
-    if (result?.success && state.activeArtifact && state.activeArtifactKind === "outputs") {
-      setState(registerExport(projectId, state.activeArtifact));
+    if (result?.success && activeArtifact && activeArtifactKind === "outputs") {
+      setState(registerExport(projectId, activeArtifact));
     }
   }
 
