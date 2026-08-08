@@ -15,15 +15,21 @@ def main() -> int:
 
     cache = Path(args.cache).expanduser().resolve()
     cache.mkdir(parents=True, exist_ok=True)
+    model_dir = cache / args.model
 
     try:
         from faster_whisper import WhisperModel
+        from faster_whisper.utils import download_model
     except ImportError as exc:
         raise SystemExit("faster-whisper is not installed in this Python environment") from exc
 
-    WhisperModel(args.model, device="cpu", compute_type="int8", download_root=str(cache))
+    # Use Faster-Whisper's explicit output directory instead of the Hugging Face
+    # blob/snapshot cache. On Windows external drives this avoids symlink creation
+    # entirely and gives Montage one stable local model directory on E:.
+    model_path = Path(download_model(args.model, output_dir=str(model_dir))).resolve()
+    WhisperModel(str(model_path), device="cpu", compute_type="int8")
     print(f"Montage Whisper model ready: {args.model}")
-    print(f"Model cache: {cache}")
+    print(f"Model path: {model_path}")
     return 0
 
 
