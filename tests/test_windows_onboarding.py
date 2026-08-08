@@ -20,6 +20,15 @@ class WindowsOnboardingContractTests(unittest.TestCase):
         self.assertIn('python-executable.txt', setup)
         self.assertIn('"--target", $Packages, "faster-whisper"', setup)
         self.assertIn('Removing obsolete/broken Montage .venv only.', setup)
+        self.assertIn('Refreshing Montage-only Python packages.', setup)
+
+    def test_setup_selects_clean_python_outside_activated_agent_venvs(self):
+        setup = (ROOT / "scripts" / "setup_montage_windows.ps1").read_text(encoding="utf-8")
+        self.assertIn('function Find-CleanPython', setup)
+        self.assertIn('& $uv.Source python find 3.11', setup)
+        self.assertIn('$RuntimePython -match \'\\\\hermes\\\\\'', setup)
+        self.assertIn('$RuntimePython -match \'\\\\venv\\\\\'', setup)
+        self.assertIn('$env:PYTHONNOUSERSITE = "1"', setup)
 
     def test_whisper_model_is_downloaded_to_explicit_local_directory(self):
         prewarm = (ROOT / "scripts" / "prewarm_whisper.py").read_text(encoding="utf-8")
