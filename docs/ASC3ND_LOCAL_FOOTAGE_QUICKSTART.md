@@ -22,7 +22,7 @@ The setup script:
 2. verifies or installs Python 3.12 using winget;
 3. verifies or installs FFmpeg/ffprobe using winget;
 4. tries to create an isolated Python virtual environment on E:;
-5. if Windows `venv/ensurepip` fails, automatically removes the incomplete environment and falls back to an isolated `E:\MONTAGE_RUNTIME\python-packages` directory using the working system Python;
+5. if Windows `venv/ensurepip` fails, automatically removes only the incomplete `E:\MONTAGE_RUNTIME\.venv` directory and falls back to an isolated `E:\MONTAGE_RUNTIME\python-packages` directory using the working system Python;
 6. installs Faster-Whisper;
 7. downloads/prewarms the `base` Whisper model into the E-drive model cache;
 8. creates `E:\MONTAGE_RUNTIME\Start-Montage.cmd`.
@@ -41,7 +41,7 @@ Keep the terminal window open while editing. The launcher opens the production M
 
 ## Troubleshooting a partial virtual environment
 
-Rerun the latest setup script after `git pull origin main`. The installer now detects an incomplete `.venv`, removes only that Montage runtime folder, and retries using the fallback package directory on E:. Do not manually delete source footage.
+Rerun the latest setup script after `git pull origin main`. The installer now detects an incomplete `.venv`, removes only `E:\MONTAGE_RUNTIME\.venv`, preserves the rest of `E:\MONTAGE_RUNTIME`, and retries using the fallback package directory on E:. Do not manually delete source footage.
 
 ## ASC3ND Phase 3 proof
 
