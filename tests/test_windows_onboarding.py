@@ -14,22 +14,21 @@ class WindowsOnboardingContractTests(unittest.TestCase):
         self.assertIn('Gyan.FFmpeg', setup)
         self.assertIn('Start-Montage.cmd', setup)
 
-    def test_setup_recovers_when_windows_venv_ensurepip_fails(self):
+    def test_setup_uses_isolated_target_packages_instead_of_windows_venv(self):
         setup = (ROOT / "scripts" / "setup_montage_windows.ps1").read_text(encoding="utf-8")
-        self.assertIn('Remove-Item -Recurse -Force $Venv', setup)
-        self.assertIn('$FallbackPackages', setup)
+        self.assertIn('$Packages = Join-Path $RuntimeRoot "python-packages"', setup)
         self.assertIn('python-executable.txt', setup)
-        self.assertIn('"--target", $FallbackPackages, "faster-whisper"', setup)
+        self.assertIn('"--target", $Packages, "faster-whisper"', setup)
+        self.assertIn('Removing obsolete/broken Montage .venv only.', setup)
 
-    def test_whisper_cache_avoids_windows_symlink_requirement(self):
-        setup = (ROOT / "scripts" / "setup_montage_windows.ps1").read_text(encoding="utf-8")
+    def test_whisper_model_is_downloaded_to_explicit_local_directory(self):
+        prewarm = (ROOT / "scripts" / "prewarm_whisper.py").read_text(encoding="utf-8")
         start = (ROOT / "scripts" / "start_montage_windows.ps1").read_text(encoding="utf-8")
-        self.assertIn('HF_HUB_DISABLE_SYMLINKS', setup)
-        self.assertIn('HF_HUB_DISABLE_SYMLINKS', start)
-        self.assertIn('HF_HOME', setup)
+        self.assertIn('download_model(args.model, output_dir=str(model_dir))', prewarm)
+        self.assertIn('Set-Location $ModelCache', start)
         self.assertIn('HF_HOME', start)
 
-    def test_launcher_stays_loopback_only_and_supports_fallback_runtime(self):
+    def test_launcher_stays_loopback_only_and_supports_isolated_runtime(self):
         start = (ROOT / "scripts" / "start_montage_windows.ps1").read_text(encoding="utf-8")
         self.assertIn('127.0.0.1', start)
         self.assertIn('pauli-montage-video-agent.vercel.app/studio', start)
