@@ -22,7 +22,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -147,6 +147,25 @@ class LocalWorkspace:
             raise ValueError("unknown file kind")
         return _under(base, base / _safe_filename(filename))
 
+    def resolve_operation_source(self, payload: dict[str, Any]) -> Path:
+        """Resolve a source only from a bounded Montage project namespace.
+
+        Uploaded masters are referenced by opaque asset id. Generated outputs are
+        referenced by filename inside the project's outputs directory. The browser
+        never supplies an arbitrary filesystem path.
+        """
+        project_id = _safe_component(str(payload.get("projectId", "")), "project id")
+        source_kind = str(payload.get("sourceKind") or "assets")
+        if source_kind == "assets":
+            return self.resolve_asset(project_id, str(payload.get("sourceAssetId", "")))
+        if source_kind == "outputs":
+            source_name = _safe_filename(str(payload.get("sourceName") or ""))
+            source = self.file_for_url(project_id, "outputs", source_name)
+            if not source.is_file():
+                raise FileNotFoundError(f"output {source_name!r} was not found")
+            return source
+        raise ValueError("sourceKind must be 'assets' or 'outputs'")
+
     def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         project_id = _safe_component(str(payload.get("projectId", "")), "project id")
         operation = str(payload.get("operation", "")).strip()
@@ -158,7 +177,7 @@ class LocalWorkspace:
                 "output": str(self.transcripts_dir(project_id) / output_name),
             }
         else:
-            source = self.resolve_asset(project_id, str(payload.get("sourceAssetId", "")))
+            source = self.resolve_operation_source(payload)
             inputs: dict[str, Any] = {"operation": operation, "source": str(source)}
             if operation in {"proxy", "cut", "reframe_vertical", "burn_captions"}:
                 output_name = _safe_filename(str(payload.get("outputName") or f"{operation}.mp4"))
