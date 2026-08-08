@@ -46,6 +46,40 @@ function Invoke-Checked([string]$Exe, [string[]]$CommandArgs, [string]$FailureMe
   }
 }
 
+function Find-CleanPython {
+  # Prefer uv's managed base interpreter when available. It is isolated from
+  # activated project environments such as Hermes and is already present on the
+  # owner laptop used for Montage testing.
+  $uv = Get-Command uv -ErrorAction SilentlyContinue
+  if ($uv) {
+    $candidate = (& $uv.Source python find 3.11 2>$null | Select-Object -First 1).Trim()
+    if ($candidate -and (Test-Path $candidate)) { return $candidate }
+  }
+
+  # Otherwise prefer the Windows Python launcher and ask it for a base interpreter.
+  $py = Get-Command py -ErrorAction SilentlyContinue
+  if ($py) {
+    foreach ($version in @("3.12", "3.11", "3")) {
+      $candidate = (& $py.Source "-$version" -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1).Trim()
+      if ($candidate -and (Test-Path $candidate) -and $candidate -notmatch '\\venv\\') { return $candidate }
+    }
+  }
+
+  # Last resort: use python only when it is not an activated virtual environment.
+  $python = Get-Command python -ErrorAction SilentlyContinue
+  if ($python -and $python.Source -and $python.Source -notmatch '\\venv\\') {
+    return $python.Source
+  }
+
+  Require-Winget
+  Write-Step "Installing clean Python 3.12 runtime"
+  winget install --id Python.Python.3.12 -e --accept-package-agreements --accept-source-agreements
+  Refresh-Path
+  $base = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
+  if (Test-Path $base) { return $base }
+  throw "Could not locate a clean base Python runtime after installing Python 3.12."
+}
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Worker = Join-Path $RepoRoot "scripts\montage_local_service.py"
 $Prewarm = Join-Path $RepoRoot "scripts\prewarm_whisper.py"
@@ -64,28 +98,30 @@ $Packages = Join-Path $RuntimeRoot "python-packages"
 $RuntimePythonFile = Join-Path $RuntimeRoot "python-executable.txt"
 $OldVenv = Join-Path $RuntimeRoot ".venv"
 New-Item -ItemType Directory -Force -Path $ModelCache | Out-Null
-New-Item -ItemType Directory -Force -Path $Packages | Out-Null
 
-Ensure-Command "python" "Python.Python.3.12" "Python"
 Ensure-Command "ffmpeg" "Gyan.FFmpeg" "FFmpeg"
 if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
   throw "ffprobe is required but was not found after FFmpeg installation. Restart PowerShell and rerun setup."
 }
 
-$PythonCommand = Get-Command python -ErrorAction Stop
-$RuntimePython = $PythonCommand.Source
-if (-not $RuntimePython) { $RuntimePython = "python" }
+$RuntimePython = Find-CleanPython
 Write-Host "Python:     $RuntimePython"
+if ($RuntimePython -match '\\hermes\\' -or $RuntimePython -match '\\venv\\') {
+  throw "Montage selected an activated project Python instead of a clean base interpreter: $RuntimePython"
+}
 
-# Older installer versions used a venv here. Real owner-machine testing showed
-# ensurepip/setuptools corruption on some Windows/external-drive combinations.
-# Montage does not need a venv: keep dependencies isolated with pip --target on E:.
 if (Test-Path $OldVenv) {
   Write-Host "Removing obsolete/broken Montage .venv only."
   Remove-Item -Recurse -Force $OldVenv
 }
+if (Test-Path $Packages) {
+  Write-Host "Refreshing Montage-only Python packages."
+  Remove-Item -Recurse -Force $Packages
+}
+New-Item -ItemType Directory -Force -Path $Packages | Out-Null
 Set-Content -Path $RuntimePythonFile -Value $RuntimePython -Encoding utf8
 $env:PYTHONPATH = $Packages
+$env:PYTHONNOUSERSITE = "1"
 
 Write-Step "Installing local transcription dependency into the isolated E-drive package directory"
 $previousPreference = $ErrorActionPreference
