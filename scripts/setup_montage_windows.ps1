@@ -123,6 +123,11 @@ if (-not $UseFallback -and (Test-VenvReady)) {
 
 $env:HF_HOME = $ModelCache
 $env:MONTAGE_MODEL_CACHE = $ModelCache
+# Some Windows/external-drive filesystems reject symbolic links even when Hugging Face
+# detects Windows correctly. Force its documented copy-based cache mode so model files
+# stay on the configured media drive without requiring Developer Mode or admin elevation.
+$env:HF_HUB_DISABLE_SYMLINKS = "1"
+$env:HF_HUB_DISABLE_SYMLINKS_WARNING = "1"
 if (-not $SkipModelDownload) {
   Write-Step "Downloading and prewarming Faster-Whisper '$WhisperModel' on CPU/int8"
   Invoke-Checked $RuntimePython @($Prewarm, "--model", $WhisperModel, "--cache", $ModelCache) "Could not prewarm the local Whisper model"
