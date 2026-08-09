@@ -191,7 +191,7 @@ def validate_unique_evidence(records: list[dict]) -> None:
             raise ValueError(f"duplicate completion binding: {'.'.join(field_path)}")
 
 
-def render() -> str:
+def render(*, verify_remote: bool = True) -> str:
     roadmap = load_json(ROADMAP)
     validate_roadmap(roadmap)
     task_ids = {task["id"] for task in roadmap["tasks"]}
@@ -206,8 +206,9 @@ def render() -> str:
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema).validate(evidence)
         validate_evidence(evidence, task_ids)
-        validate_git_evidence(evidence)
-        validate_github_evidence(evidence)
+        if verify_remote:
+            validate_git_evidence(evidence)
+            validate_github_evidence(evidence)
         slice_id = evidence["sliceId"]
         if slice_id in evidence_by_id:
             raise ValueError(f"duplicate evidence for {slice_id}")
@@ -242,7 +243,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail if the generated page is stale")
     args = parser.parse_args()
-    rendered = render()
+    rendered = render(verify_remote=True)
     if args.check:
         if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != rendered:
             print(f"stale generated progress: {OUTPUT.relative_to(ROOT)}", file=sys.stderr)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -45,8 +46,6 @@ class UpgradeGovernanceTests(unittest.TestCase):
         for path in evidence_files:
             evidence = progress.load_json(path)
             progress.validate_evidence(evidence, task_ids)
-            progress.validate_git_evidence(evidence)
-            progress.validate_github_evidence(evidence)
 
     def test_declared_json_schema_accepts_all_evidence(self):
         try:
@@ -79,6 +78,7 @@ class UpgradeGovernanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "merge subject"):
             progress.validate_git_evidence(evidence)
 
+    @unittest.skipUnless(os.environ.get("YAPPY_VERIFY_CANONICAL_REMOTE") == "1", "live canonical remote verification runs in the GRINIONS gate")
     def test_pull_request_head_is_bound_to_canonical_remote(self):
         evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
         evidence["pullRequest"]["headSha"] = "0" * 40
@@ -87,10 +87,21 @@ class UpgradeGovernanceTests(unittest.TestCase):
 
     def test_github_api_binds_merge_identity_and_required_check(self):
         evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
-        progress.validate_github_evidence(evidence)
-        evidence["pullRequest"]["headSha"] = "0" * 40
-        with self.assertRaisesRegex(ValueError, "identity"):
+        pull = {
+            "state": "closed",
+            "merged_at": "2026-08-09T22:25:00Z",
+            "base": {"ref": "main"},
+            "head": {"sha": evidence["pullRequest"]["headSha"]},
+            "merge_commit_sha": evidence["merge"]["sha"],
+            "body": f"<!-- grinions-work-identity: {json.dumps(evidence['identity'], separators=(',', ':'))} -->",
+        }
+        run = {"name": "GRINIONS phase gates", "head_sha": evidence["pullRequest"]["headSha"], "status": "completed", "conclusion": "success"}
+        with mock.patch.object(progress, "github_json", side_effect=[pull, run]):
             progress.validate_github_evidence(evidence)
+        bad_run = {**run, "conclusion": "failure"}
+        with mock.patch.object(progress, "github_json", side_effect=[pull, bad_run]):
+            with self.assertRaisesRegex(ValueError, "required-check"):
+                progress.validate_github_evidence(evidence)
 
     def test_postmerge_command_labels_cannot_claim_success(self):
         roadmap = progress.load_json(ROOT / "ops/upgrade/roadmap.json")
@@ -131,7 +142,7 @@ class UpgradeGovernanceTests(unittest.TestCase):
             progress.validate_unique_evidence([evidence, duplicate])
 
     def test_generated_progress_is_current(self):
-        expected = progress.render()
+        expected = progress.render(verify_remote=False)
         self.assertEqual((ROOT / "docs/YAPPY-UPGRADE-PROGRESS.md").read_text(encoding="utf-8"), expected)
         self.assertIn("Completed: **1/15**", expected)
 

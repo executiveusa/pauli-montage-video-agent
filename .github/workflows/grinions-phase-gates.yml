@@ -235,6 +235,11 @@ jobs:
       - name: Shared StudioService CLI/API/MCP parity tests
         run: python -m unittest discover -s tests/studio -p 'test_*.py' -v
 
+      - name: Verify canonical upgrade evidence against GitHub and origin/main
+        env:
+          YAPPY_VERIFY_CANONICAL_REMOTE: '1'
+        run: python scripts/render_upgrade_progress.py --check
+
       - name: Install uv and initialize Absurd
         run: |
           python -m pip install --disable-pip-version-check uv
