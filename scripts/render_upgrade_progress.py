@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -153,10 +155,15 @@ def validate_git_evidence(evidence: dict) -> None:
         raise ValueError("slice OpenSpec baseline binding is unavailable")
 
 
+@lru_cache(maxsize=128)
 def github_json(url: str) -> dict:
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "yappy-upgrade-evidence/1"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         url,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "yappy-upgrade-evidence/1"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
@@ -180,8 +187,8 @@ def validate_github_evidence(evidence: dict) -> None:
     for run_url in run_urls:
         run_id = run_url.rsplit("/", 1)[-1]
         run = github_json(f"https://api.github.com/repos/executiveusa/pauli-montage-video-agent/actions/runs/{run_id}")
-        if run.get("name") != "GRINIONS phase gates" or run.get("head_sha") != evidence["pullRequest"]["headSha"] or run.get("status") != "completed" or run.get("conclusion") != "success":
-            raise ValueError("canonical GitHub required-check evidence does not match the PR head")
+        if run.get("name") != "GRINIONS phase gates" or run.get("event") != "pull_request" or run.get("head_sha") != evidence["pullRequest"]["headSha"] or run.get("run_attempt", 0) < 2 or run.get("run_started_at", "") <= pull.get("merged_at", "") or run.get("status") != "completed" or run.get("conclusion") != "success":
+            raise ValueError("canonical GitHub post-merge check evidence is invalid")
 
 
 def validate_unique_evidence(records: list[dict]) -> None:
