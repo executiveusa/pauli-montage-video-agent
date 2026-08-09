@@ -106,12 +106,25 @@ class UpgradeGovernanceTests(unittest.TestCase):
             "merge_commit_sha": evidence["merge"]["sha"],
             "body": f"<!-- grinions-work-identity: {json.dumps(evidence['identity'], separators=(',', ':'))} -->",
         }
-        run = {"name": "GRINIONS phase gates", "head_sha": evidence["pullRequest"]["headSha"], "status": "completed", "conclusion": "success"}
+        run = {
+            "name": "GRINIONS phase gates",
+            "event": "pull_request",
+            "head_sha": evidence["pullRequest"]["headSha"],
+            "run_attempt": 2,
+            "run_started_at": "2026-08-09T23:20:00Z",
+            "status": "completed",
+            "conclusion": "success",
+        }
         with mock.patch.object(progress, "github_json", side_effect=[pull, run]):
             progress.validate_github_evidence(evidence)
         bad_run = {**run, "conclusion": "failure"}
         with mock.patch.object(progress, "github_json", side_effect=[pull, bad_run]):
-            with self.assertRaisesRegex(ValueError, "required-check"):
+            with self.assertRaisesRegex(ValueError, "post-merge check"):
+                progress.validate_github_evidence(evidence)
+
+        premerge_run = {**run, "run_attempt": 1, "run_started_at": "2026-08-09T22:20:00Z"}
+        with mock.patch.object(progress, "github_json", side_effect=[pull, premerge_run]):
+            with self.assertRaisesRegex(ValueError, "post-merge check"):
                 progress.validate_github_evidence(evidence)
 
     def test_postmerge_command_labels_cannot_claim_success(self):
