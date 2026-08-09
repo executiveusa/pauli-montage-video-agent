@@ -67,6 +67,7 @@ on:
       - 'vercel.json'
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -237,6 +238,7 @@ jobs:
 
       - name: Verify canonical upgrade evidence against GitHub and origin/main
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           YAPPY_VERIFY_CANONICAL_REMOTE: '1'
         run: python scripts/render_upgrade_progress.py --check
 
