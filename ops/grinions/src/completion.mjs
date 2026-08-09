@@ -96,7 +96,7 @@ export function classifyCompletionEvidence({
     if (Number.isInteger(receipt.pullRequest?.number) && receipt.pullRequest.number !== matchingPr.number) {
       return inconsistent('receipt_pull_request_mismatch', { receipt, pullRequests: exact });
     }
-    if (receipt.pullRequest?.headSha && matchingPr.headRefOid && receipt.pullRequest.headSha !== matchingPr.headRefOid) {
+    if (receipt.pullRequest.headSha !== matchingPr.headRefOid) {
       return inconsistent('receipt_head_sha_mismatch', { receipt, pullRequests: exact });
     }
     if (receipt.merge?.sha && matchingPr.mergeCommit?.oid && receipt.merge.sha !== matchingPr.mergeCommit.oid) {
@@ -117,7 +117,11 @@ export function classifyCompletionEvidence({
 
   const [pr] = exact;
   if (!pr.mergedAt) {
+    if (receipt) {
+      return inconsistent('receipt_with_unmerged_pull_request', { receipt, pullRequest: pr, pullRequests: exact });
+    }
     return inconsistent(pr.state === 'OPEN' ? 'matching_pull_request_open' : 'matching_pull_request_not_merged', {
+      pullRequest: pr,
       pullRequests: exact,
     });
   }

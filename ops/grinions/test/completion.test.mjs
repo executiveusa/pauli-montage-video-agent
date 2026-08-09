@@ -104,6 +104,14 @@ test('receipt contradictions block canonical completion evidence', () => {
     const result = classifyCompletionEvidence({ identity, branch, pullRequests: [canonical], receipt });
     assert.equal(result.status, 'inconsistent');
   }
+  const missingCanonicalHead = classifyCompletionEvidence({
+    identity,
+    branch,
+    pullRequests: [pr({ headRefOid: undefined })],
+    receipt: receipt(),
+  });
+  assert.equal(missingCanonicalHead.status, 'inconsistent');
+  assert.equal(missingCanonicalHead.reason, 'receipt_head_sha_mismatch');
 });
 
 test('a receipt requires a verified post-merge Git ancestry chain', () => {
@@ -121,6 +129,22 @@ test('a receipt requires a verified post-merge Git ancestry chain', () => {
   });
   assert.equal(result.status, 'inconsistent');
   assert.equal(result.reason, 'receipt_post_merge_sha_invalid');
+});
+
+test('an open canonical PR cannot be recovered when a completion receipt exists', () => {
+  const result = classifyCompletionEvidence({
+    identity,
+    branch,
+    pullRequests: [pr({ state: 'OPEN', mergedAt: null, mergeCommit: null, headRefOid: 'phase-head' })],
+    receipt: receipt(),
+    receiptGitEvidence: {
+      postMergeShaValid: true,
+      mergeIntegratedAtPostMerge: true,
+      postMergeIntegratedIntoMain: true,
+    },
+  });
+  assert.equal(result.status, 'inconsistent');
+  assert.equal(result.reason, 'receipt_with_unmerged_pull_request');
 });
 
 test('malformed markers on unrelated branches do not deny every phase', () => {

@@ -51,7 +51,7 @@ export function validatePhaseRequest(request) {
 export async function runPhase(ctx, request, services) {
   const phase = validatePhaseRequest(request);
 
-  const completion = await ctx.step('completed-phase-guard', () => services.classifyPhaseCompletion(phase));
+  const completion = await services.classifyPhaseCompletion(phase);
   if (completion?.status === 'already_completed') {
     return { phaseId: phase.phaseId, status: 'already_completed', completion };
   }

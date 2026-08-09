@@ -58,6 +58,12 @@ else if (args[0] === 'pr' && args[1] === 'create') {
   process.stdout.write('https://github.test/pull/77\\n');
   if (process.env.GRINIONS_TEST_CREATE_FAIL_AFTER_WRITE === '1') process.exit(1);
 }
+else if (args[0] === 'pr' && args[1] === 'view') {
+  const all = JSON.parse(require('node:fs').readFileSync(process.env.GRINIONS_TEST_PRS_FILE, 'utf8'));
+  const viewed = { ...all.find((pr) => String(pr.number) === String(args[2])) };
+  if (process.env.GRINIONS_TEST_MUTATE_VIEW_IDENTITY === '1') viewed.body = '';
+  process.stdout.write(JSON.stringify(viewed));
+}
 else { process.stderr.write('unexpected gh call: ' + args.join(' ')); process.exit(2); }
 `);
   await chmod(gh, 0o755);
@@ -134,6 +140,9 @@ test('shell completion detection works from canonical evidence in a clean checko
     const result = await createShellServices({ repoRoot: repo }).classifyPhaseCompletion(phase);
     assert.equal(result.status, 'already_completed');
     assert.equal(result.mergeSha, stdout.trim());
+    const replay = await createShellServices({ repoRoot: repo }).createOrUpdatePr(phase, { workspace: { path: repo } });
+    assert.equal(replay.alreadyCompleted, true);
+    assert.equal(replay.completion.mergeSha, stdout.trim());
   } finally {
     process.env.PATH = oldPath;
     if (oldPrsFile === undefined) delete process.env.GRINIONS_TEST_PRS_FILE;
@@ -187,6 +196,131 @@ test('shell completion rejects a receipt whose post-merge SHA does not exist', a
     process.env.PATH = oldPath;
     if (oldPrsFile === undefined) delete process.env.GRINIONS_TEST_PRS_FILE;
     else process.env.GRINIONS_TEST_PRS_FILE = oldPrsFile;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('canonical origin/main receipt is visible from a stale worker branch', async () => {
+  const { root, repo, bin, prs } = await fixture();
+  const oldPath = process.env.PATH;
+  const oldPrsFile = process.env.GRINIONS_TEST_PRS_FILE;
+  const updater = join(root, 'receipt-updater');
+  try {
+    process.env.PATH = `${bin}:${oldPath}`;
+    process.env.GRINIONS_TEST_PRS_FILE = prs;
+    const { stdout } = await run('git', ['rev-parse', 'HEAD'], { cwd: repo });
+    const phaseHead = stdout.trim();
+    const identity = {
+      repository: 'executiveusa/pauli-montage-video-agent',
+      initiativeId: phase.initiativeId,
+      openspecId: phase.openspecId,
+    };
+    await writeFile(prs, JSON.stringify([{
+      number: 40,
+      state: 'OPEN',
+      mergedAt: null,
+      mergeCommit: null,
+      headRefName: canonicalPrBranch(identity),
+      headRefOid: phaseHead,
+      baseRefName: 'main',
+      body: workIdentityMarker(identity),
+    }]));
+
+    await run('git', ['clone', join(root, 'remote.git'), updater], { cwd: root });
+    await run('git', ['config', 'user.email', 'receipt@example.test'], { cwd: updater });
+    await run('git', ['config', 'user.name', 'Receipt Updater'], { cwd: updater });
+    await mkdir(join(updater, 'ops', 'receipts'), { recursive: true });
+    await writeFile(join(updater, 'ops', 'receipts', `phase-${phase.phaseId}.json`), JSON.stringify({
+      schemaVersion: 1,
+      phaseId: phase.phaseId,
+      openspecId: phase.openspecId,
+      risk: phase.risk,
+      completedAt: '2026-08-09T12:00:00Z',
+      baselineMainSha: phaseHead,
+      beads: [{ id: 'bead-1', headSha: phaseHead, verified: true, closedStatus: 'closed' }],
+      pullRequest: { number: 40, url: null, headSha: phaseHead },
+      judgment: { passed: true, unresolvedReviewThreads: 0 },
+      merge: { sha: phaseHead, mergedAt: '2026-08-09T12:00:00Z' },
+      postMerge: { passed: true, mainSha: phaseHead },
+      rollback: { baselineCaptured: true, receiptPath: `ops/rollback/phase-${phase.phaseId}.json` },
+    }));
+    await run('git', ['add', '.'], { cwd: updater });
+    await run('git', ['commit', '-m', 'canonical completion receipt'], { cwd: updater });
+    await run('git', ['push', 'origin', 'main'], { cwd: updater });
+
+    await assert.rejects(
+      () => createShellServices({ repoRoot: repo }).createOrUpdatePr(phase, { workspace: { path: repo } }),
+      /PHASE_COMPLETION_INCONSISTENT:upgrade-00:receipt_with_unmerged_pull_request/,
+    );
+  } finally {
+    process.env.PATH = oldPath;
+    if (oldPrsFile === undefined) delete process.env.GRINIONS_TEST_PRS_FILE;
+    else process.env.GRINIONS_TEST_PRS_FILE = oldPrsFile;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('squash merge cannot be redirected away from the canonical PR', async () => {
+  const { root, repo, bin, prs } = await fixture();
+  const oldPath = process.env.PATH;
+  const oldPrsFile = process.env.GRINIONS_TEST_PRS_FILE;
+  try {
+    process.env.PATH = `${bin}:${oldPath}`;
+    process.env.GRINIONS_TEST_PRS_FILE = prs;
+    const { stdout } = await run('git', ['rev-parse', 'HEAD'], { cwd: repo });
+    const headSha = stdout.trim();
+    const identity = {
+      repository: 'executiveusa/pauli-montage-video-agent',
+      initiativeId: phase.initiativeId,
+      openspecId: phase.openspecId,
+    };
+    await writeFile(prs, JSON.stringify([{
+      number: 40,
+      state: 'OPEN',
+      mergedAt: null,
+      mergeCommit: null,
+      headRefName: canonicalPrBranch(identity),
+      headRefOid: headSha,
+      baseRefName: 'main',
+      body: workIdentityMarker(identity),
+    }]));
+    await assert.rejects(
+      () => createShellServices({ repoRoot: repo }).squashMerge(
+        phase,
+        { number: 999 },
+        { judgment: { headRefOid: headSha } },
+      ),
+      /PHASE_MERGE_TARGET_MISMATCH/,
+    );
+    const canonicalCaller = {
+      number: 40,
+      headSha,
+      headRefName: canonicalPrBranch(identity),
+      baseRefName: 'main',
+      identity,
+    };
+    await assert.rejects(
+      () => createShellServices({ repoRoot: repo }).squashMerge(
+        phase,
+        { ...canonicalCaller, headSha: 'wrong-head' },
+        { judgment: { headRefOid: headSha } },
+      ),
+      /PHASE_MERGE_TARGET_MISMATCH/,
+    );
+    process.env.GRINIONS_TEST_MUTATE_VIEW_IDENTITY = '1';
+    await assert.rejects(
+      () => createShellServices({ repoRoot: repo }).squashMerge(
+        phase,
+        canonicalCaller,
+        { judgment: { headRefOid: headSha } },
+      ),
+      /PHASE_MERGE_TARGET_MOVED/,
+    );
+  } finally {
+    process.env.PATH = oldPath;
+    if (oldPrsFile === undefined) delete process.env.GRINIONS_TEST_PRS_FILE;
+    else process.env.GRINIONS_TEST_PRS_FILE = oldPrsFile;
+    delete process.env.GRINIONS_TEST_MUTATE_VIEW_IDENTITY;
     await rm(root, { recursive: true, force: true });
   }
 });

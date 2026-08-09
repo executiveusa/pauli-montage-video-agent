@@ -42,6 +42,20 @@ test('Ralphy refuses a dirty caller worktree before launching', async () => {
   }
 });
 
+test('Ralphy detects untracked files even when git config hides them', async () => {
+  const root = await gitFixture();
+  try {
+    await run('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd: root });
+    await writeFile(join(root, 'untracked.txt'), 'must be detected\n');
+    await assert.rejects(
+      () => runRalphy({ cwd: root, taskFile: 'task.md', baseBranch: 'main' }),
+      /RALPHY_DIRTY_WORKTREE/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('Ralphy fails when the engine leaks an autostash or changes caller state', async () => {
   const root = await gitFixture();
   const fakeRoot = await mkdtemp(join(tmpdir(), 'fake-ralphy-'));

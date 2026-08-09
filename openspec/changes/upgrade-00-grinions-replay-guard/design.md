@@ -24,9 +24,13 @@ GitHub or git inspection failure raises `PHASE_COMPLETION_EVIDENCE_UNAVAILABLE`;
 
 Runner-local and repository receipts can corroborate GitHub history. They cannot independently establish completion. A receipt without a canonical matching PR is inconsistent.
 
+Repository receipt evidence is read from fetched `origin/main`, not the worker's possibly stale checkout. A runner-local receipt may supplement it only when canonical receipt evidence is absent or byte-equivalent in parsed content; disagreement fails closed.
+
+Uncertain-create recovery may adopt an exact open canonical PR only when no completion receipt exists. Any completion receipt paired with an open or otherwise unmerged PR is contradictory and fails closed. Canonical completion evidence itself is the final return evidence for an adopted or newly created PR and is refreshed again at the merge boundary. Merge authority is bound to that canonical PR's exact number, identity, branch, base, and head SHA in both checkpointed caller evidence and a live GitHub read; a caller-supplied or live mismatch cannot redirect the merge.
+
 Only a PR whose head is the deterministic identity reservation branch is canonical. An identity marker copied onto any other branch is ignored as completion evidence. Corroborating receipts must contain a valid risk, verified and closed Beads, PR number and head SHA, zero unresolved review threads, merge and post-merge SHAs, and captured rollback evidence. Git must resolve the receipt's merge and post-merge SHAs, prove the merge is an ancestor of the post-merge SHA, and prove that post-merge SHA is an ancestor of current `origin/main`.
 
-Ralphy integration accepts exactly one `ralphy/*` branch created during the bounded invocation. Its name must begin with the pinned Ralphy slug for the compiled checkbox title, `ralphy/bead-<exact-bead-id>`, its recorded head must descend from the captured phase head, and both refs are rechecked immediately before the single merge.
+Ralphy integration accepts exactly one `ralphy/*` branch created during the bounded invocation. Its name must use the Bead-identity prefix `ralphy/bead-<exact-bead-id>`, its recorded head must descend from the captured phase head, and both refs are rechecked immediately before the single merge.
 
 ## Pre-PR safety
 
@@ -38,7 +42,7 @@ Immediately before the PR side effect, the workflow:
 4. queries all PR states for the head branch and rejects any unexpected state;
 5. repeats the all-state branch query inside PR creation to reduce time-of-check/time-of-use risk.
 
-Same-task checkpoint restart remains valid because the initial `not_completed` result and PR/merge side effects are checkpointed under that task. A different task must reclassify against canonical evidence.
+Same-task checkpoint restart remains valid because PR/merge side effects are checkpointed under that task, while the read-only completion classification is deliberately refreshed on every resume. Every task must reclassify against canonical evidence before hydration.
 
 ## Cross-task identity reservation
 

@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import {
   belongsToPhase,
   boundedBead,
@@ -259,8 +260,21 @@ async function canonicalCompletion(repoRoot, phase, identity) {
       else throw new Error(`git ancestry inspection failed with exit ${ancestry.code}: ${ancestry.stderr}`);
     }
   }
-  const receiptPath = resolve(repoRoot, 'ops', 'receipts', `phase-${phase.phaseId}.json`);
-  const receipt = await readJsonIfExists(receiptPath, null);
+  const receiptRelativePath = `ops/receipts/phase-${phase.phaseId}.json`;
+  const receiptPath = resolve(repoRoot, receiptRelativePath);
+  const localReceipt = await readJsonIfExists(receiptPath, null);
+  const { stdout: listedReceipt } = await run('git', [
+    'ls-tree', '-r', '--name-only', 'origin/main', '--', receiptRelativePath,
+  ], { cwd: repoRoot });
+  let canonicalReceipt = null;
+  if (listedReceipt.trim() === receiptRelativePath) {
+    const { stdout } = await run('git', ['show', `origin/main:${receiptRelativePath}`], { cwd: repoRoot });
+    canonicalReceipt = parseJson(stdout, `canonical phase receipt ${receiptRelativePath}`);
+  }
+  if (localReceipt && canonicalReceipt && !isDeepStrictEqual(localReceipt, canonicalReceipt)) {
+    throw new Error(`PHASE_RECEIPT_CONFLICT:${phase.phaseId}`);
+  }
+  const receipt = canonicalReceipt || localReceipt;
   let receiptGitEvidence = null;
   if (receipt) {
     let receiptValid = true;
@@ -548,6 +562,18 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       const cwd = meta.workspace?.path || repoRoot;
       const repository = await repositoryName(repoRoot);
       const identity = workIdentity({ repository, ...phase });
+      const initialCompletion = await canonicalCompletion(repoRoot, phase, identity);
+      if (initialCompletion.status === 'already_completed') {
+        return {
+          alreadyCompleted: true,
+          completion: initialCompletion,
+          reused: true,
+          headSha: initialCompletion.pullRequest?.headRefOid || null,
+        };
+      }
+      if (initialCompletion.status !== 'not_completed' && initialCompletion.reason !== 'matching_pull_request_open') {
+        throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${initialCompletion.reason}`);
+      }
       const state = await inspectPrCreationState(repoRoot, cwd, phase);
       if (state.pullRequests.length) {
         throw new Error(`PHASE_PR_STATE_CONFLICT:${phase.phaseId}:${state.pullRequests.map((pr) => `${pr.number}:${pr.state}`).join(',')}`);
@@ -561,7 +587,25 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
       const identityPrs = await pullRequestsForBranch(repoRoot, prBranch);
       const adoptable = adoptableOpenPullRequest(identityPrs, identity, { ...phase, branch: prBranch }, state.headSha);
-      if (adoptable) return { number: adoptable.number, url: adoptable.url, reused: true, headSha: state.headSha };
+      if (adoptable) {
+        const recoveryEvidence = await canonicalCompletion(repoRoot, phase, identity);
+        if (recoveryEvidence.reason !== 'matching_pull_request_open') {
+          throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${recoveryEvidence.reason || recoveryEvidence.status}`);
+        }
+        const refreshed = adoptableOpenPullRequest(
+          [recoveryEvidence.pullRequest], identity, { ...phase, branch: prBranch }, state.headSha,
+        );
+        if (!refreshed) throw new Error(`PHASE_PR_RECOVERY_UNVERIFIED:${phase.phaseId}`);
+        return {
+          number: refreshed.number,
+          url: refreshed.url,
+          reused: true,
+          headSha: state.headSha,
+          headRefName: refreshed.headRefName,
+          baseRefName: refreshed.baseRefName,
+          identity,
+        };
+      }
       if (completion.status !== 'not_completed' || identityPrs.length) {
         const reason = completion.reason || identityPrs.map((pr) => `${pr.number}:${pr.state}`).join(',');
         throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${reason}`);
@@ -576,7 +620,23 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       const after = await pullRequestsForBranch(repoRoot, prBranch);
       const verified = adoptableOpenPullRequest(after, identity, { ...phase, branch: prBranch }, state.headSha);
       if (!verified) throw new Error(`PHASE_PR_CREATE_UNVERIFIED:${phase.phaseId}`);
-      return { number: verified.number, url: verified.url || created.stdout.trim(), reused: false, headSha: state.headSha };
+      const createdEvidence = await canonicalCompletion(repoRoot, phase, identity);
+      if (createdEvidence.reason !== 'matching_pull_request_open') {
+        throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${createdEvidence.reason || createdEvidence.status}`);
+      }
+      const finalPr = adoptableOpenPullRequest(
+        [createdEvidence.pullRequest], identity, { ...phase, branch: prBranch }, state.headSha,
+      );
+      if (!finalPr) throw new Error(`PHASE_PR_CREATE_UNVERIFIED:${phase.phaseId}`);
+      return {
+        number: finalPr.number,
+        url: finalPr.url || created.stdout.trim(),
+        reused: false,
+        headSha: state.headSha,
+        headRefName: finalPr.headRefName,
+        baseRefName: finalPr.baseRefName,
+        identity,
+      };
     },
 
     async watchPr(phase, pr) {
@@ -625,11 +685,49 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       throw new Error(`HIGH_RISK_APPROVAL_REQUIRED:${phase.phaseId}`);
     },
 
-    async squashMerge(_phase, pr, { judgment } = {}) {
-      const target = prTarget(pr);
-      const { stdout: viewOut } = await run('gh', ['pr', 'view', target, '--json', 'headRefOid'], { cwd: repoRoot });
-      const headRefOid = judgment?.headRefOid || parseJson(viewOut, 'gh pr view').headRefOid;
-      if (!headRefOid) throw new Error('Missing PR head SHA before merge');
+    async squashMerge(phase, pr, { judgment } = {}) {
+      const repository = await repositoryName(repoRoot);
+      const identity = workIdentity({ repository, ...phase });
+      const completion = await canonicalCompletion(repoRoot, phase, identity);
+      if (completion.reason !== 'matching_pull_request_open') {
+        throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${completion.reason || completion.status}`);
+      }
+      const canonical = adoptableOpenPullRequest(
+        [completion.pullRequest],
+        identity,
+        { ...phase, branch: canonicalPrBranch(identity) },
+        completion.pullRequest?.headRefOid,
+      );
+      if (
+        !canonical
+        || Number(pr?.number) !== canonical.number
+        || pr.headSha !== canonical.headRefOid
+        || pr.headRefName !== canonical.headRefName
+        || pr.baseRefName !== canonical.baseRefName
+        || !sameWorkIdentity(pr.identity, identity)
+      ) {
+        throw new Error(`PHASE_MERGE_TARGET_MISMATCH:${phase.phaseId}`);
+      }
+      if (judgment?.headRefOid && judgment.headRefOid !== canonical.headRefOid) {
+        throw new Error(`PHASE_MERGE_HEAD_MISMATCH:${phase.phaseId}`);
+      }
+      const target = String(canonical.number);
+      const { stdout: viewOut } = await run('gh', [
+        'pr', 'view', target, '--json', 'number,state,mergedAt,body,headRefOid,headRefName,baseRefName',
+      ], { cwd: repoRoot });
+      const viewed = parseJson(viewOut, 'gh pr view');
+      if (
+        viewed.number !== canonical.number
+        || viewed.state !== 'OPEN'
+        || viewed.mergedAt
+        || !sameWorkIdentity(parseWorkIdentity(viewed.body), identity)
+        || viewed.headRefOid !== canonical.headRefOid
+        || viewed.headRefName !== canonical.headRefName
+        || viewed.baseRefName !== canonical.baseRefName
+      ) {
+        throw new Error(`PHASE_MERGE_TARGET_MOVED:${phase.phaseId}`);
+      }
+      const headRefOid = canonical.headRefOid;
 
       await run('gh', ['pr', 'merge', target, '--squash', '--match-head-commit', headRefOid], { cwd: repoRoot });
       const { stdout } = await run('gh', ['pr', 'view', target, '--json', 'mergedAt,mergeCommit'], { cwd: repoRoot });

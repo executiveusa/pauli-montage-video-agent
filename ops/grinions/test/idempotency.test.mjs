@@ -114,6 +114,23 @@ test('replay with persisted checkpoints does not duplicate PR or merge side effe
   assert.deepEqual(counters, { pr: 1, merge: 1 });
 });
 
+test('completion evidence is refreshed on resume instead of restoring cached not_completed', async () => {
+  const persisted = new Map();
+  const counters = { pr: 0, merge: 0 };
+  const svc = services(counters, { closed: false });
+  let classifications = 0;
+  svc.classifyPhaseCompletion = async () => {
+    classifications += 1;
+    return classifications === 1 ? { status: 'not_completed' } : { status: 'already_completed', mergeSha: 'merged' };
+  };
+  await runPhase(new MemoryContext(persisted), phase, svc);
+  const resumed = await runPhase(new MemoryContext(persisted), phase, svc);
+  assert.equal(resumed.status, 'already_completed');
+  assert.equal(classifications, 2);
+  assert.deepEqual(counters, { pr: 1, merge: 1 });
+  assert.equal(persisted.has('completed-phase-guard'), false);
+});
+
 test('a simulated restart resumes after completed Bead checkpoints', async () => {
   const persisted = new Map();
   const counters = { pr: 0, merge: 0 };

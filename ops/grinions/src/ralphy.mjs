@@ -17,7 +17,7 @@ export function buildRalphyArgs({ taskFile, baseBranch, maxRetries = 3, browser 
 export async function runRalphy(options) {
   const bin = process.env.RALPHY_BIN || 'ralphy';
   const [{ stdout: status }, { stdout: branch }, { stdout: head }, { stdout: stashes }] = await Promise.all([
-    run('git', ['status', '--porcelain'], { cwd: options.cwd }),
+    run('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: options.cwd }),
     run('git', ['branch', '--show-current'], { cwd: options.cwd }),
     run('git', ['rev-parse', 'HEAD'], { cwd: options.cwd }),
     run('git', ['stash', 'list', '--format=%H'], { cwd: options.cwd }),
@@ -36,7 +36,7 @@ export async function runRalphy(options) {
   }
 
   const [{ stdout: afterStatus }, { stdout: afterBranch }, { stdout: afterHead }, { stdout: afterStashes }] = await Promise.all([
-    run('git', ['status', '--porcelain'], { cwd: options.cwd }),
+    run('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: options.cwd }),
     run('git', ['branch', '--show-current'], { cwd: options.cwd }),
     run('git', ['rev-parse', 'HEAD'], { cwd: options.cwd }),
     run('git', ['stash', 'list', '--format=%H'], { cwd: options.cwd }),
