@@ -42,8 +42,10 @@ Immediately before the PR side effect, the workflow:
 4. queries all PR states for the head branch and rejects any unexpected state;
 5. repeats the all-state branch query inside PR creation to reduce time-of-check/time-of-use risk.
 
+Identity reservation occurs only after the last canonical completion fetch is followed by a fresh ancestry/tree/head/branch-history inspection. Merge ancestry is inspected only for the deterministic canonical identity branch; copied markers on other branches are ignored before object lookup.
+
 Same-task checkpoint restart remains valid because PR/merge side effects are checkpointed under that task, while the read-only completion classification is deliberately refreshed on every resume. Every task must reclassify against canonical evidence before hydration.
 
 ## Cross-task identity reservation
 
-Inside the PR side effect, GRINIONS derives one remote head branch from the immutable identity and pushes the verified phase head with an empty expected lease, which permits creation only when the remote ref does not exist. A competing descendant cannot fast-forward or otherwise replace that reservation. On rejection, GRINIONS fetches the reservation and permits only an exact-head retry; every other head fails with `PHASE_IDENTITY_RESERVATION_CONFLICT`. Same-head retries may adopt only the exact open PR whose marker, canonical head branch, base, and head SHA match.
+Inside the PR side effect, GRINIONS validates and serializes all local PR inputs before deriving one remote head branch from the immutable identity. It pushes the inspected immutable head SHA with an empty expected lease, which permits creation only when the remote ref does not exist, then fetches and verifies the remote ref even after a successful push. A competing descendant cannot fast-forward or otherwise replace that reservation. On rejection, GRINIONS fetches the reservation and permits only an exact-head retry; every other head fails with `PHASE_IDENTITY_RESERVATION_CONFLICT`. Same-head retries may adopt only the exact open PR whose marker, canonical head branch, base, and head SHA match.

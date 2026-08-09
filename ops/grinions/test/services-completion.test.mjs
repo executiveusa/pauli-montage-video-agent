@@ -358,6 +358,33 @@ test('fatal git ancestry inspection is evidence-unavailable, not ordinary non-an
   }
 });
 
+test('missing merge objects on noncanonical identity branches are ignored', async () => {
+  const { root, repo, bin, prs } = await fixture();
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}:${oldPath}`;
+    process.env.GRINIONS_TEST_PRS_FILE = prs;
+    await writeFile(prs, JSON.stringify([{
+      number: 41,
+      state: 'MERGED',
+      mergedAt: '2026-08-09T12:00:00Z',
+      mergeCommit: { oid: 'missing-noncanonical-object' },
+      headRefName: 'unrelated/copied-marker',
+      body: workIdentityMarker({
+        repository: 'executiveusa/pauli-montage-video-agent',
+        initiativeId: phase.initiativeId,
+        openspecId: phase.openspecId,
+      }),
+    }]));
+    const result = await createShellServices({ repoRoot: repo }).classifyPhaseCompletion(phase);
+    assert.equal(result.status, 'not_completed');
+  } finally {
+    process.env.PATH = oldPath;
+    delete process.env.GRINIONS_TEST_PRS_FILE;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('shell pre-PR guard rejects identical tree and accepts a fresh delta', async () => {
   const { root, repo, bin, prs } = await fixture();
   const oldPath = process.env.PATH;
@@ -376,6 +403,29 @@ test('shell pre-PR guard rejects identical tree and accepts a fresh delta', asyn
     const result = await services.preparePullRequest(phase, { path: repo });
     assert.equal(result.passed, true);
     assert.notEqual(result.headTree, result.mainTree);
+  } finally {
+    process.env.PATH = oldPath;
+    delete process.env.GRINIONS_TEST_PRS_FILE;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('definite local PR input failure leaves no identity reservation', async () => {
+  const { root, repo, bin, prs } = await fixture();
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}:${oldPath}`;
+    process.env.GRINIONS_TEST_PRS_FILE = prs;
+    await rm(join(repo, 'ops', 'reports', `phase-${phase.phaseId}.md`));
+    await writeFile(join(repo, 'change.txt'), 'real delta\n');
+    await run('git', ['add', '.'], { cwd: repo });
+    await run('git', ['commit', '-m', 'real delta'], { cwd: repo });
+    await assert.rejects(
+      () => createShellServices({ repoRoot: repo }).createOrUpdatePr(phase, { workspace: { path: repo } }),
+      /ENOENT/,
+    );
+    const { stdout } = await run('git', ['ls-remote', '--heads', join(root, 'remote.git'), 'refs/heads/grinions/*'], { cwd: root });
+    assert.equal(stdout.trim(), '');
   } finally {
     process.env.PATH = oldPath;
     delete process.env.GRINIONS_TEST_PRS_FILE;

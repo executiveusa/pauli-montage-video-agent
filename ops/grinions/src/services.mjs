@@ -230,20 +230,24 @@ export function canonicalPrBranch(identity) {
 async function reserveIdentityBranch(cwd, phase, identity, headSha) {
   const branch = canonicalPrBranch(identity);
   const pushed = await runResult('git', [
-    'push', `--force-with-lease=refs/heads/${branch}:`, 'origin', `HEAD:refs/heads/${branch}`,
+    'push', `--force-with-lease=refs/heads/${branch}:`, 'origin', `${headSha}:refs/heads/${branch}`,
   ], { cwd });
   if (pushed.code !== 0) {
     const fetched = await runResult('git', ['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd });
     if (fetched.code !== 0) throw new Error(`PHASE_IDENTITY_RESERVATION_UNAVAILABLE:${phase.phaseId}`);
     const { stdout } = await run('git', ['rev-parse', `refs/remotes/origin/${branch}`], { cwd });
-    if (stdout.trim() !== headSha) throw new Error(`PHASE_IDENTITY_RESERVATION_CONFLICT:${phase.phaseId}:${branch}`);
   }
+  const fetched = await runResult('git', ['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd });
+  if (fetched.code !== 0) throw new Error(`PHASE_IDENTITY_RESERVATION_UNAVAILABLE:${phase.phaseId}`);
+  const { stdout } = await run('git', ['rev-parse', `refs/remotes/origin/${branch}`], { cwd });
+  if (stdout.trim() !== headSha) throw new Error(`PHASE_IDENTITY_RESERVATION_CONFLICT:${phase.phaseId}:${branch}`);
   return branch;
 }
 
 async function canonicalCompletion(repoRoot, phase, identity) {
   await run('git', ['fetch', 'origin', 'main'], { cwd: repoRoot });
   const pullRequests = await allPullRequests(repoRoot);
+  const canonicalBranch = canonicalPrBranch(identity);
   for (const pr of pullRequests) {
     const parsed = parseWorkIdentity(pr.body);
     if (
@@ -252,6 +256,7 @@ async function canonicalCompletion(repoRoot, phase, identity) {
       && parsed.repository === identity.repository
       && parsed.initiativeId === identity.initiativeId
       && parsed.openspecId === identity.openspecId
+      && pr.headRefName === canonicalBranch
       && pr.mergeCommit?.oid
     ) {
       const ancestry = await runResult('git', ['merge-base', '--is-ancestor', pr.mergeCommit.oid, 'origin/main'], { cwd: repoRoot });
@@ -321,7 +326,7 @@ async function canonicalCompletion(repoRoot, phase, identity) {
   return classifyCompletionEvidence({
     identity: { ...identity, phaseId: phase.phaseId },
     branch: phase.branch,
-    canonicalBranch: canonicalPrBranch(identity),
+    canonicalBranch,
     pullRequests,
     receipt,
     receiptGitEvidence,
@@ -574,16 +579,37 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
       if (initialCompletion.status !== 'not_completed' && initialCompletion.reason !== 'matching_pull_request_open') {
         throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${initialCompletion.reason}`);
       }
-      const state = await inspectPrCreationState(repoRoot, cwd, phase);
+      let state = await inspectPrCreationState(repoRoot, cwd, phase);
       if (state.pullRequests.length) {
         throw new Error(`PHASE_PR_STATE_CONFLICT:${phase.phaseId}:${state.pullRequests.map((pr) => `${pr.number}:${pr.state}`).join(',')}`);
       }
 
-      const prBranch = await reserveIdentityBranch(cwd, phase, identity, state.headSha);
       const completion = await canonicalCompletion(repoRoot, phase, identity);
       if (completion.status === 'already_completed') {
         return { alreadyCompleted: true, completion, reused: true, headSha: state.headSha };
       }
+      if (completion.status !== 'not_completed' && completion.reason !== 'matching_pull_request_open') {
+        throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${completion.reason}`);
+      }
+      const refreshedState = await inspectPrCreationState(repoRoot, cwd, phase);
+      if (refreshedState.headSha !== state.headSha) {
+        throw new Error(`PHASE_HEAD_CHANGED:${phase.phaseId}`);
+      }
+      if (refreshedState.pullRequests.length) {
+        throw new Error(`PHASE_PR_STATE_CONFLICT:${phase.phaseId}:${refreshedState.pullRequests.map((pr) => `${pr.number}:${pr.state}`).join(',')}`);
+      }
+      state = refreshedState;
+
+      let bodyPath = null;
+      if (completion.status === 'not_completed') {
+        const reportPath = resolve(cwd, 'ops', 'reports', `phase-${phase.phaseId}.md`);
+        const report = await readFile(reportPath, 'utf8');
+        bodyPath = join(tmpdir(), 'grinions-pr-bodies', `${safeSegment(phase.phaseId)}-${safeSegment(phase.openspecId)}.md`);
+        await mkdir(dirname(bodyPath), { recursive: true });
+        await writeFile(bodyPath, `${workIdentityMarker({ repository, ...phase })}\n\n${report}`, 'utf8');
+      }
+
+      const prBranch = await reserveIdentityBranch(cwd, phase, identity, state.headSha);
 
       const identityPrs = await pullRequestsForBranch(repoRoot, prBranch);
       const adoptable = adoptableOpenPullRequest(identityPrs, identity, { ...phase, branch: prBranch }, state.headSha);
@@ -611,11 +637,7 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
         throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${reason}`);
       }
 
-      const reportPath = resolve(cwd, 'ops', 'reports', `phase-${phase.phaseId}.md`);
-      const report = await readFile(reportPath, 'utf8');
-      const bodyPath = join(tmpdir(), 'grinions-pr-bodies', `${safeSegment(phase.phaseId)}-${safeSegment(phase.openspecId)}.md`);
-      await mkdir(dirname(bodyPath), { recursive: true });
-      await writeFile(bodyPath, `${workIdentityMarker({ repository, ...phase })}\n\n${report}`, 'utf8');
+      if (!bodyPath) throw new Error(`PHASE_PR_BODY_UNAVAILABLE:${phase.phaseId}`);
       const created = await run('gh', ['pr', 'create', '--base', 'main', '--head', prBranch, '--title', `phase(${phase.phaseId}): ${phase.openspecId} [GRINION]`, '--body-file', bodyPath], { cwd });
       const after = await pullRequestsForBranch(repoRoot, prBranch);
       const verified = adoptableOpenPullRequest(after, identity, { ...phase, branch: prBranch }, state.headSha);
