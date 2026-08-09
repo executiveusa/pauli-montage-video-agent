@@ -1,0 +1,23 @@
+# Acceptance: GRINIONS replay guard
+
+- A clean clone without runner-local receipts recognizes an exact merged identity already integrated into `main`.
+- A different task ID and working directory cannot create a second PR or merge for completed work.
+- Local-only receipts never produce `already_completed`.
+- Open, closed-unmerged, mismatched, malformed, duplicate, and non-ancestor PR evidence fails closed before hydration.
+- GitHub or git evidence failure blocks execution.
+- Existing same-task checkpoint restart remains idempotent.
+- A branch behind current `main` is rejected.
+- An identical branch tree is rejected with `PHASE_NO_TREE_DELTA` before PR creation.
+- Unexpected PR history for the branch is rejected across all states.
+- An exact open PR created during an uncertain side-effect result is adopted only when identity, branch, base, and head SHA all match.
+- Concurrent tasks using different branches for the same immutable identity cannot create competing PRs; the canonical remote identity reservation accepts only one divergent head.
+- A task descended from the reserved head cannot fast-forward or otherwise take over the immutable identity reservation.
+- Main freshness, ancestry, direct tree delta, and expected head SHA are rechecked inside the PR side effect.
+- Ralphy refuses dirty caller worktrees and fails if branch, head, tree, or stash state is not restored.
+- New PRs contain the immutable repository + initiative + OpenSpec marker.
+- GRINIONS verification and all focused tests pass.
+- Local and post-merge gates clean-install and execute the entire GRINIONS test package, including durable-engine, receipt, and runtime suites.
+- Saturated all-state PR history and receipt/PR/SHA contradictions fail closed.
+- Identity markers on noncanonical branches cannot establish or block completion, and incomplete receipts fail validation.
+- Receipt merge/post-merge/current-main ancestry is proven in Git, and Ralphy cannot select stale, unrelated, ambiguous, moved, or non-descendant task branches.
+- No external provider, database, deployment, or customer-data mutation occurs.

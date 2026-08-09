@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -8,8 +9,16 @@ import {
   isClosed,
   normalizeBdItems,
 } from './beads.mjs';
+import {
+  classifyCompletionEvidence,
+  parseWorkIdentity,
+  sameWorkIdentity,
+  workIdentity,
+  workIdentityMarker,
+} from './completion.mjs';
 import { run } from './process.mjs';
 import { runRalphy } from './ralphy.mjs';
+import { validatePhaseReceipt } from './receipt.mjs';
 
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
@@ -105,6 +114,69 @@ async function readPrChecks(repoRoot, target, required = false) {
   return checks;
 }
 
+async function repositoryName(repoRoot) {
+  const { stdout } = await run('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], { cwd: repoRoot });
+  return stdout.trim().toLowerCase();
+}
+
+async function allPullRequests(repoRoot) {
+  const { stdout } = await run('gh', [
+    'pr', 'list', '--state', 'all', '--limit', '1000',
+    '--json', 'number,url,state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,title,body,closedAt',
+  ], { cwd: repoRoot });
+  const pullRequests = parseJson(stdout, 'gh pr list --state all');
+  if (!Array.isArray(pullRequests)) throw new Error('GitHub pull request history was not an array');
+  if (pullRequests.length >= 1000) throw new Error('PHASE_PR_HISTORY_LIMIT_EXCEEDED');
+  return pullRequests;
+}
+
+async function pullRequestsForBranch(repoRoot, branch) {
+  const { stdout } = await run('gh', [
+    'pr', 'list', '--state', 'all', '--head', branch, '--limit', '100',
+    '--json', 'number,url,state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,title,body,closedAt',
+  ], { cwd: repoRoot });
+  const pullRequests = parseJson(stdout, 'gh pr list --state all --head');
+  if (!Array.isArray(pullRequests)) throw new Error('GitHub branch pull request history was not an array');
+  if (pullRequests.length >= 100) throw new Error('PHASE_PR_HISTORY_LIMIT_EXCEEDED');
+  return pullRequests;
+}
+
+async function inspectPrCreationState(repoRoot, cwd, phase) {
+  await run('git', ['fetch', 'origin', 'main'], { cwd });
+  const current = await runResult('git', ['merge-base', '--is-ancestor', 'origin/main', 'HEAD'], { cwd });
+  if (current.code !== 0) throw new Error(`PHASE_BRANCH_BEHIND_MAIN:${phase.phaseId}`);
+
+  const [{ stdout: headTree }, { stdout: mainTree }, { stdout: headSha }, { stdout: branch }] = await Promise.all([
+    run('git', ['rev-parse', 'HEAD^{tree}'], { cwd }),
+    run('git', ['rev-parse', 'origin/main^{tree}'], { cwd }),
+    run('git', ['rev-parse', 'HEAD'], { cwd }),
+    run('git', ['branch', '--show-current'], { cwd }),
+  ]);
+  if (branch.trim() !== phase.branch) throw new Error(`PHASE_BRANCH_MISMATCH:${phase.phaseId}:${branch.trim()}`);
+  if (headTree.trim() === mainTree.trim()) throw new Error(`PHASE_NO_TREE_DELTA:${phase.phaseId}`);
+
+  return {
+    headTree: headTree.trim(),
+    mainTree: mainTree.trim(),
+    headSha: headSha.trim(),
+    branch: branch.trim(),
+    pullRequests: await pullRequestsForBranch(repoRoot, phase.branch),
+  };
+}
+
+function adoptableOpenPullRequest(pullRequests, identity, phase, headSha) {
+  if (pullRequests.length !== 1) return null;
+  const [pr] = pullRequests;
+  return pr.state === 'OPEN'
+    && !pr.mergedAt
+    && pr.headRefName === phase.branch
+    && pr.baseRefName === 'main'
+    && pr.headRefOid === headSha
+    && sameWorkIdentity(parseWorkIdentity(pr.body), identity)
+    ? pr
+    : null;
+}
+
 function selectedGateChecks(allChecks, requiredChecks, phase) {
   const requiredWorkflows = new Set(['GRINIONS phase gates', ...(phase.requiredWorkflows || [])]);
   const byKey = new Map();
@@ -144,8 +216,129 @@ function executionSummary(result) {
   };
 }
 
+async function installGrinionsDependencies(cwd) {
+  const cache = join(tmpdir(), 'grinions-npm-cache-v1');
+  return run('npm', ['--cache', cache, 'ci', '--prefix', 'ops/grinions', '--ignore-scripts'], { cwd });
+}
+
+export function canonicalPrBranch(identity) {
+  const digest = createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 16);
+  return `grinions/${safeSegment(identity.initiativeId).slice(0, 40)}/${safeSegment(identity.openspecId).slice(0, 60)}-${digest}`;
+}
+
+async function reserveIdentityBranch(cwd, phase, identity, headSha) {
+  const branch = canonicalPrBranch(identity);
+  const pushed = await runResult('git', [
+    'push', `--force-with-lease=refs/heads/${branch}:`, 'origin', `HEAD:refs/heads/${branch}`,
+  ], { cwd });
+  if (pushed.code !== 0) {
+    const fetched = await runResult('git', ['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd });
+    if (fetched.code !== 0) throw new Error(`PHASE_IDENTITY_RESERVATION_UNAVAILABLE:${phase.phaseId}`);
+    const { stdout } = await run('git', ['rev-parse', `refs/remotes/origin/${branch}`], { cwd });
+    if (stdout.trim() !== headSha) throw new Error(`PHASE_IDENTITY_RESERVATION_CONFLICT:${phase.phaseId}:${branch}`);
+  }
+  return branch;
+}
+
+async function canonicalCompletion(repoRoot, phase, identity) {
+  await run('git', ['fetch', 'origin', 'main'], { cwd: repoRoot });
+  const pullRequests = await allPullRequests(repoRoot);
+  for (const pr of pullRequests) {
+    const parsed = parseWorkIdentity(pr.body);
+    if (
+      parsed
+      && !parsed.malformed
+      && parsed.repository === identity.repository
+      && parsed.initiativeId === identity.initiativeId
+      && parsed.openspecId === identity.openspecId
+      && pr.mergeCommit?.oid
+    ) {
+      const ancestry = await runResult('git', ['merge-base', '--is-ancestor', pr.mergeCommit.oid, 'origin/main'], { cwd: repoRoot });
+      if (ancestry.code === 0) pr.integratedIntoMain = true;
+      else if (ancestry.code === 1) pr.integratedIntoMain = false;
+      else throw new Error(`git ancestry inspection failed with exit ${ancestry.code}: ${ancestry.stderr}`);
+    }
+  }
+  const receiptPath = resolve(repoRoot, 'ops', 'receipts', `phase-${phase.phaseId}.json`);
+  const receipt = await readJsonIfExists(receiptPath, null);
+  let receiptGitEvidence = null;
+  if (receipt) {
+    let receiptValid = true;
+    try {
+      validatePhaseReceipt(receipt);
+    } catch {
+      receiptValid = false;
+    }
+    if (receiptValid) {
+      const [postMergeResolved, mergeResolved] = await Promise.all([
+        runResult('git', ['rev-parse', '--verify', `${receipt.postMerge.mainSha}^{commit}`], { cwd: repoRoot }),
+        runResult('git', ['rev-parse', '--verify', `${receipt.merge.sha}^{commit}`], { cwd: repoRoot }),
+      ]);
+      receiptGitEvidence = {
+        postMergeShaValid: postMergeResolved.code === 0,
+        mergeIntegratedAtPostMerge: false,
+        postMergeIntegratedIntoMain: false,
+      };
+      if (postMergeResolved.code !== 0 || mergeResolved.code !== 0) {
+        return classifyCompletionEvidence({
+          identity: { ...identity, phaseId: phase.phaseId },
+          branch: phase.branch,
+          canonicalBranch: canonicalPrBranch(identity),
+          pullRequests,
+          receipt,
+          receiptGitEvidence,
+        });
+      }
+      const mergeAtPostMerge = await runResult('git', [
+        'merge-base', '--is-ancestor', receipt.merge?.sha, receipt.postMerge.mainSha,
+      ], { cwd: repoRoot });
+      const postMergeOnMain = await runResult('git', [
+        'merge-base', '--is-ancestor', receipt.postMerge.mainSha, 'origin/main',
+      ], { cwd: repoRoot });
+      for (const result of [mergeAtPostMerge, postMergeOnMain]) {
+        if (![0, 1].includes(result.code)) {
+          throw new Error(`receipt git ancestry inspection failed with exit ${result.code}: ${result.stderr}`);
+        }
+      }
+      receiptGitEvidence.mergeIntegratedAtPostMerge = mergeAtPostMerge.code === 0;
+      receiptGitEvidence.postMergeIntegratedIntoMain = postMergeOnMain.code === 0;
+    }
+  }
+  return classifyCompletionEvidence({
+    identity: { ...identity, phaseId: phase.phaseId },
+    branch: phase.branch,
+    canonicalBranch: canonicalPrBranch(identity),
+    pullRequests,
+    receipt,
+    receiptGitEvidence,
+  });
+}
+
+export function selectRalphyTaskBranch(before, after, beadId) {
+  const created = [...after].filter((branch) => !before.has(branch) && branch.startsWith('ralphy/'));
+  if (created.length !== 1) throw new Error(`RALPHY_TASK_BRANCH_AMBIGUOUS:${beadId}:${created.length}`);
+  const token = String(beadId).toLowerCase();
+  const normalized = created[0].toLowerCase();
+  const exactPrefix = `ralphy/bead-${token}`;
+  if (normalized !== exactPrefix && !normalized.startsWith(`${exactPrefix}-`) && !normalized.startsWith(`${exactPrefix}/`)) {
+    throw new Error(`RALPHY_TASK_BRANCH_IDENTITY_MISMATCH:${beadId}`);
+  }
+  return created[0];
+}
+
 export function createShellServices({ repoRoot = process.cwd() } = {}) {
   return {
+    async classifyPhaseCompletion(phase) {
+      try {
+        const repository = await repositoryName(repoRoot);
+        const identity = workIdentity({ repository, ...phase });
+        return await canonicalCompletion(repoRoot, phase, identity);
+      } catch (error) {
+        if (String(error.message).startsWith('PHASE_PR_HISTORY_LIMIT_EXCEEDED')) throw error;
+        throw new Error(`PHASE_COMPLETION_EVIDENCE_UNAVAILABLE:${phase.phaseId}:${error.message}`);
+      }
+    },
+
     async hydrateContext(phase) {
       await run('bd', ['prime'], { cwd: repoRoot });
       return { phase, hydratedAt: new Date().toISOString(), repoRoot };
@@ -263,6 +456,8 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
     async executeBead(phase, workspace, bead, packet) {
       const before = await listBranches(workspace.path);
+      const { stdout: baseOut } = await run('git', ['rev-parse', phase.branch], { cwd: workspace.path });
+      const baseHeadSha = baseOut.trim();
       const result = await runRalphy({
         cwd: workspace.path,
         taskFile: packet.taskFile,
@@ -270,24 +465,35 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
         maxRetries: 3,
       });
       const after = await listBranches(workspace.path);
-      const beadToken = bead.id.toLowerCase();
-      const matching = [...after].filter((branch) => branch.startsWith('ralphy/') && branch.toLowerCase().includes(beadToken));
-      const created = [...after].filter((branch) => !before.has(branch) && branch.startsWith('ralphy/'));
-      const taskBranches = matching.length ? matching : created;
-      if (!taskBranches.length) throw new Error(`RALPHY_TASK_BRANCH_NOT_FOUND:${bead.id}`);
-      return { ...executionSummary(result), taskBranches: [...new Set(taskBranches)].sort() };
+      const taskBranch = selectRalphyTaskBranch(before, after, bead.id);
+      const ancestry = await runResult('git', ['merge-base', '--is-ancestor', baseHeadSha, taskBranch], { cwd: workspace.path });
+      if (ancestry.code !== 0) throw new Error(`RALPHY_TASK_BRANCH_NOT_DESCENDANT:${bead.id}`);
+      const { stdout: taskOut } = await run('git', ['rev-parse', taskBranch], { cwd: workspace.path });
+      const taskHeadSha = taskOut.trim();
+      if (taskHeadSha === baseHeadSha) throw new Error(`RALPHY_TASK_BRANCH_EMPTY:${bead.id}`);
+      return { ...executionSummary(result), taskBranches: [taskBranch], taskBranch, baseHeadSha, taskHeadSha };
     },
 
     async integrateBead(phase, workspace, bead, execution) {
-      await run('git', ['checkout', phase.branch], { cwd: workspace.path });
-      const integratedBranches = [];
-      for (const taskBranch of execution.taskBranches) {
-        await run('git', ['merge', '--no-ff', '--no-edit', taskBranch], { cwd: workspace.path });
-        integratedBranches.push(taskBranch);
+      if (!execution?.taskBranch || execution.taskBranches?.length !== 1 || execution.taskBranches[0] !== execution.taskBranch) {
+        throw new Error(`RALPHY_TASK_BRANCH_EVIDENCE_INVALID:${bead.id}`);
       }
+      const [{ stdout: baseOut }, { stdout: taskOut }] = await Promise.all([
+        run('git', ['rev-parse', phase.branch], { cwd: workspace.path }),
+        run('git', ['rev-parse', execution.taskBranch], { cwd: workspace.path }),
+      ]);
+      if (baseOut.trim() !== execution.baseHeadSha || taskOut.trim() !== execution.taskHeadSha) {
+        throw new Error(`RALPHY_TASK_BRANCH_MOVED:${bead.id}`);
+      }
+      const ancestry = await runResult('git', [
+        'merge-base', '--is-ancestor', execution.baseHeadSha, execution.taskHeadSha,
+      ], { cwd: workspace.path });
+      if (ancestry.code !== 0) throw new Error(`RALPHY_TASK_BRANCH_NOT_DESCENDANT:${bead.id}`);
+      await run('git', ['checkout', phase.branch], { cwd: workspace.path });
+      await run('git', ['merge', '--no-ff', '--no-edit', execution.taskBranch], { cwd: workspace.path });
       await run('git', ['push', '--set-upstream', 'origin', phase.branch], { cwd: workspace.path });
       const { stdout } = await run('git', ['rev-parse', 'HEAD'], { cwd: workspace.path });
-      return { beadId: bead.id, branch: phase.branch, headSha: stdout.trim(), integratedBranches };
+      return { beadId: bead.id, branch: phase.branch, headSha: stdout.trim(), integratedBranches: [execution.taskBranch] };
     },
 
     async verifyBead(_phase, workspace, bead, integration) {
@@ -321,19 +527,56 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
     async verifyLocal(_phase, workspace) {
       await run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: workspace.path });
-      return run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs', 'ops/grinions/test/beads.test.mjs'], { cwd: workspace.path });
+      await installGrinionsDependencies(workspace.path);
+      return run('npm', ['test', '--prefix', 'ops/grinions'], { cwd: workspace.path });
     },
 
     async verifyPhase(phase, workspace) {
       return run('openspec', ['validate', phase.openspecId, '--strict', '--no-interactive'], { cwd: workspace.path });
     },
 
+    async preparePullRequest(phase, workspace) {
+      const cwd = workspace?.path || repoRoot;
+      const state = await inspectPrCreationState(repoRoot, cwd, phase);
+      if (state.pullRequests.length) {
+        throw new Error(`PHASE_PR_STATE_CONFLICT:${phase.phaseId}:${state.pullRequests.map((pr) => `${pr.number}:${pr.state}`).join(',')}`);
+      }
+      return { passed: true, headTree: state.headTree, mainTree: state.mainTree, headSha: state.headSha };
+    },
+
     async createOrUpdatePr(phase, meta = {}) {
-      const existing = await run('gh', ['pr', 'list', '--head', phase.branch, '--json', 'number', '--jq', '.[0].number // empty'], { cwd: repoRoot });
-      if (existing.stdout.trim()) return { number: Number(existing.stdout.trim()), reused: true };
       const cwd = meta.workspace?.path || repoRoot;
-      const created = await run('gh', ['pr', 'create', '--base', 'main', '--head', phase.branch, '--title', `phase(${phase.phaseId}): ${phase.openspecId} [GRINION]`, '--body-file', `ops/reports/phase-${phase.phaseId}.md`], { cwd });
-      return { url: created.stdout.trim(), reused: false };
+      const repository = await repositoryName(repoRoot);
+      const identity = workIdentity({ repository, ...phase });
+      const state = await inspectPrCreationState(repoRoot, cwd, phase);
+      if (state.pullRequests.length) {
+        throw new Error(`PHASE_PR_STATE_CONFLICT:${phase.phaseId}:${state.pullRequests.map((pr) => `${pr.number}:${pr.state}`).join(',')}`);
+      }
+
+      const prBranch = await reserveIdentityBranch(cwd, phase, identity, state.headSha);
+      const completion = await canonicalCompletion(repoRoot, phase, identity);
+      if (completion.status === 'already_completed') {
+        return { alreadyCompleted: true, completion, reused: true, headSha: state.headSha };
+      }
+
+      const identityPrs = await pullRequestsForBranch(repoRoot, prBranch);
+      const adoptable = adoptableOpenPullRequest(identityPrs, identity, { ...phase, branch: prBranch }, state.headSha);
+      if (adoptable) return { number: adoptable.number, url: adoptable.url, reused: true, headSha: state.headSha };
+      if (completion.status !== 'not_completed' || identityPrs.length) {
+        const reason = completion.reason || identityPrs.map((pr) => `${pr.number}:${pr.state}`).join(',');
+        throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${reason}`);
+      }
+
+      const reportPath = resolve(cwd, 'ops', 'reports', `phase-${phase.phaseId}.md`);
+      const report = await readFile(reportPath, 'utf8');
+      const bodyPath = join(tmpdir(), 'grinions-pr-bodies', `${safeSegment(phase.phaseId)}-${safeSegment(phase.openspecId)}.md`);
+      await mkdir(dirname(bodyPath), { recursive: true });
+      await writeFile(bodyPath, `${workIdentityMarker({ repository, ...phase })}\n\n${report}`, 'utf8');
+      const created = await run('gh', ['pr', 'create', '--base', 'main', '--head', prBranch, '--title', `phase(${phase.phaseId}): ${phase.openspecId} [GRINION]`, '--body-file', bodyPath], { cwd });
+      const after = await pullRequestsForBranch(repoRoot, prBranch);
+      const verified = adoptableOpenPullRequest(after, identity, { ...phase, branch: prBranch }, state.headSha);
+      if (!verified) throw new Error(`PHASE_PR_CREATE_UNVERIFIED:${phase.phaseId}`);
+      return { number: verified.number, url: verified.url || created.stdout.trim(), reused: false, headSha: state.headSha };
     },
 
     async watchPr(phase, pr) {
@@ -409,7 +652,8 @@ export function createShellServices({ repoRoot = process.cwd() } = {}) {
 
       try {
         await run('node', ['ops/grinions/scripts/verify.mjs'], { cwd: verifyPath });
-        await run('node', ['--test', 'ops/grinions/test/idempotency.test.mjs', 'ops/grinions/test/ralphy.test.mjs', 'ops/grinions/test/process.test.mjs', 'ops/grinions/test/beads.test.mjs'], { cwd: verifyPath });
+        await installGrinionsDependencies(verifyPath);
+        await run('npm', ['test', '--prefix', 'ops/grinions'], { cwd: verifyPath });
         await run('openspec', ['validate', phase.openspecId, '--strict', '--no-interactive'], { cwd: verifyPath });
       } finally {
         await removeWorktree(repoRoot, verifyPath);

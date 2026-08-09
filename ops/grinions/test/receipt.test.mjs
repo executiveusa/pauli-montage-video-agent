@@ -35,7 +35,7 @@ test('buildPhaseReceipt emits a stable versioned evidence contract', () => {
 
 test('receipt validation rejects unverified or incomplete completion evidence', () => {
   assert.throws(
-    () => buildPhaseReceipt(phase, { ...evidence, judgment: { passed: false } }),
+    () => buildPhaseReceipt(phase, { ...evidence, judgment: { ...evidence.judgment, passed: false } }),
     /passed judgment/,
   );
   assert.throws(
@@ -46,4 +46,15 @@ test('receipt validation rejects unverified or incomplete completion evidence', 
     () => validatePhaseReceipt({ schemaVersion: 99 }),
     /unsupported phase receipt schemaVersion/,
   );
+  const valid = buildPhaseReceipt(phase, evidence, '2026-07-22T01:00:00Z');
+  const invalidReceipts = [
+    { ...valid, risk: 'catastrophic' },
+    { ...valid, beads: [{ ...valid.beads[0], verified: false }] },
+    { ...valid, beads: [{ ...valid.beads[0], closedStatus: 'open' }] },
+    { ...valid, pullRequest: { ...valid.pullRequest, number: null } },
+    { ...valid, pullRequest: { ...valid.pullRequest, headSha: null } },
+    { ...valid, judgment: { ...valid.judgment, unresolvedReviewThreads: 1 } },
+    { ...valid, rollback: { ...valid.rollback, baselineCaptured: false } },
+  ];
+  for (const candidate of invalidReceipts) assert.throws(() => validatePhaseReceipt(candidate));
 });

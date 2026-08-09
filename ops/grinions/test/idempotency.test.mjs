@@ -25,6 +25,7 @@ const phase = {
 
 function services(counters, beadState = { closed: false }) {
   return {
+    classifyPhaseCompletion: async () => ({ status: 'not_completed' }),
     hydrateContext: async () => true,
     validateSpec: async () => true,
     captureBaseline: async () => ({ mainSha: 'base' }),
@@ -43,6 +44,7 @@ function services(counters, beadState = { closed: false }) {
     },
     verifyLocal: async () => true,
     verifyPhase: async () => true,
+    preparePullRequest: async () => ({ passed: true }),
     createOrUpdatePr: async (_phase, meta) => {
       counters.pr += 1;
       assert.match(meta.idempotencyKey, /create-or-update-pr/);
@@ -60,6 +62,47 @@ function services(counters, beadState = { closed: false }) {
     attest: async () => true,
   };
 }
+
+test('a different task returns already_completed before hydration or mutation', async () => {
+  const counters = { pr: 0, merge: 0 };
+  const svc = services(counters);
+  let hydrated = false;
+  svc.classifyPhaseCompletion = async () => ({ status: 'already_completed', mergeSha: 'merged' });
+  svc.hydrateContext = async () => { hydrated = true; };
+  const result = await runPhase(new MemoryContext(), phase, svc);
+  assert.equal(result.status, 'already_completed');
+  assert.equal(hydrated, false);
+  assert.deepEqual(counters, { pr: 0, merge: 0 });
+});
+
+test('inconsistent or unavailable completion evidence fails before hydration', async () => {
+  const counters = { pr: 0, merge: 0 };
+  const svc = services(counters);
+  let hydrated = false;
+  svc.classifyPhaseCompletion = async () => ({ status: 'inconsistent', reason: 'matching_pull_request_open' });
+  svc.hydrateContext = async () => { hydrated = true; };
+  await assert.rejects(() => runPhase(new MemoryContext(), phase, svc), /PHASE_COMPLETION_INCONSISTENT/);
+  assert.equal(hydrated, false);
+});
+
+test('canonical evidence lookup failure is fail-closed before hydration', async () => {
+  const counters = { pr: 0, merge: 0 };
+  const svc = services(counters);
+  let hydrated = false;
+  svc.classifyPhaseCompletion = async () => { throw new Error('PHASE_COMPLETION_EVIDENCE_UNAVAILABLE:00:offline'); };
+  svc.hydrateContext = async () => { hydrated = true; };
+  await assert.rejects(() => runPhase(new MemoryContext(), phase, svc), /PHASE_COMPLETION_EVIDENCE_UNAVAILABLE/);
+  assert.equal(hydrated, false);
+  assert.deepEqual(counters, { pr: 0, merge: 0 });
+});
+
+test('pre-PR safety failure prevents PR creation', async () => {
+  const counters = { pr: 0, merge: 0 };
+  const svc = services(counters);
+  svc.preparePullRequest = async () => { throw new Error('PHASE_NO_TREE_DELTA:00'); };
+  await assert.rejects(() => runPhase(new MemoryContext(), phase, svc), /PHASE_NO_TREE_DELTA/);
+  assert.deepEqual(counters, { pr: 0, merge: 0 });
+});
 
 test('replay with persisted checkpoints does not duplicate PR or merge side effects', async () => {
   const persisted = new Map();

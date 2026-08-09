@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Durable GRINIONS build/release control plane for YAPPY-CLIPZ.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "verify": "node scripts/verify.mjs",
@@ -13,5 +15,10 @@
   },
   "dependencies": {
     "absurd-sdk": "0.4.0"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "1.8.0",
+    "@openai/codex": "0.147.0",
+    "ralphy-cli": "4.7.2"
   }
 }
