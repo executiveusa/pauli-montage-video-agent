@@ -12,6 +12,7 @@ commands:
 boundaries:
   never_touch:
     - ".env*"
+    - "ops/upgrade/roadmap.json"
     - "ops/upgrade/evidence/**/*.json"
     - "docs/YAPPY-UPGRADE-PROGRESS.md"
     - ".ralphy/progress.txt"
