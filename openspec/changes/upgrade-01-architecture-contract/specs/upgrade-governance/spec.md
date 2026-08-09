@@ -33,6 +33,8 @@ Every external reference SHALL have a pinned commit, verified license finding, p
 
 PopeBot SHALL remain a control surface over canonical typed actions and Composio SHALL remain a scoped source connector; StudioProject, StudioService, owned asset storage, and canonical provenance SHALL retain durable authority.
 
+All typed actions, durable project state, and engine or adapter interfaces SHALL use an explicitly versioned `StudioProject` contract. Internal engine schemas SHALL NOT become public API contracts, and Slice 02 SHALL define serialization and migration behavior before extending canonical project state.
+
 #### Scenario: A connector is revoked or replaced
 
 - **WHEN** source access is revoked or a provider adapter is removed
