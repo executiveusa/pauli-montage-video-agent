@@ -32,7 +32,10 @@ test('pinned Ralphy parser accepts only supported repository config while runtim
   assert.equal(config.includes('base_branch:'), false);
   const parsed = await run(join(packageRoot, 'node_modules', '.bin', 'ralphy'), ['--config'], { cwd: repoRoot });
   assert.match(parsed.stdout, /Test:\s+npm test --prefix ops\/grinions/);
+  assert.match(parsed.stdout, /Lint:\s+python scripts\/render_upgrade_progress\.py --check/);
+  assert.match(parsed.stdout, /Build:\s+python scripts\/validate_active_openspecs\.py && npm run typecheck:studio && npm run build:studio/);
   assert.match(parsed.stdout, /Never Touch:/);
+  assert.match(parsed.stdout, /ops\/upgrade\/roadmap\.json/);
   assert.match(parsed.stdout, /Language:\s+Python and TypeScript/);
 });
 
