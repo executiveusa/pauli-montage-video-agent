@@ -197,18 +197,7 @@ jobs:
           "$RUNNER_TEMP/bin/bd" version
 
       - name: Validate all active OpenSpec changes strictly
-        shell: bash
-        run: |
-          set -euo pipefail
-          found=0
-          for change_dir in openspec/changes/*; do
-            [ -d "$change_dir" ] || continue
-            change="$(basename "$change_dir")"
-            [ "$change" = "archive" ] && continue
-            openspec validate "$change" --strict --no-interactive
-            found=1
-          done
-          test "$found" -eq 1
+        run: python scripts/validate_active_openspecs.py
 
       - name: Verify Beads agent bootstrap contract
         run: |
