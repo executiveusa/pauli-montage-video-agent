@@ -69,14 +69,25 @@ class UpgradeGovernanceTests(unittest.TestCase):
     def test_fabricated_git_evidence_is_rejected(self):
         evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
         evidence["merge"]["treeSha"] = "0" * 40
-        with self.assertRaisesRegex(ValueError, "merge tree"):
-            progress.validate_git_evidence(evidence)
+        with mock.patch.object(progress, "git", side_effect=[evidence["merge"]["sha"], "f" * 40]):
+            with self.assertRaisesRegex(ValueError, "merge tree"):
+                progress.validate_git_evidence(evidence)
 
     def test_pull_request_number_is_bound_to_merge_subject(self):
         evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
         evidence["pullRequest"]["number"] = 999
-        with self.assertRaisesRegex(ValueError, "merge subject"):
-            progress.validate_git_evidence(evidence)
+        with mock.patch.object(
+            progress,
+            "git",
+            side_effect=[
+                evidence["merge"]["sha"],
+                evidence["merge"]["treeSha"],
+                evidence["rollback"]["baselineSha"],
+                "phase(upgrade-00): prevent completed GRINIONS replay (#35)",
+            ],
+        ):
+            with self.assertRaisesRegex(ValueError, "merge subject"):
+                progress.validate_git_evidence(evidence)
 
     @unittest.skipUnless(os.environ.get("YAPPY_VERIFY_CANONICAL_REMOTE") == "1", "live canonical remote verification runs in the GRINIONS gate")
     def test_pull_request_head_is_bound_to_canonical_remote(self):
