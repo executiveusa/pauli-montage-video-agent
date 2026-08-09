@@ -114,6 +114,14 @@ def git(*args: str) -> str:
 def validate_git_evidence(evidence: dict) -> None:
     merge_sha = evidence["merge"]["sha"]
     baseline_sha = evidence["rollback"]["baselineSha"]
+    number = evidence["pullRequest"]["number"]
+    git(
+        "fetch",
+        "--no-tags",
+        "origin",
+        "+refs/heads/main:refs/remotes/origin/main",
+        f"+refs/pull/{number}/head:refs/remotes/origin/pr/{number}",
+    )
     if git("rev-parse", "--verify", f"{merge_sha}^{{commit}}") != merge_sha:
         raise ValueError("merge commit cannot be resolved exactly")
     if git("rev-parse", f"{merge_sha}^{{tree}}") != evidence["merge"]["treeSha"]:
@@ -136,8 +144,7 @@ def validate_git_evidence(evidence: dict) -> None:
         raise ValueError("origin/main is not fresh against the canonical remote")
     if remote_refs.get(f"refs/pull/{evidence['pullRequest']['number']}/head") != evidence["pullRequest"]["headSha"]:
         raise ValueError("canonical pull-request head does not match evidence")
-    git("fetch", "--no-tags", "origin", evidence["pullRequest"]["headSha"])
-    if git("rev-parse", f"{evidence['pullRequest']['headSha']}^{{tree}}") != evidence["merge"]["treeSha"]:
+    if git("rev-parse", f"refs/remotes/origin/pr/{number}^{{tree}}") != evidence["merge"]["treeSha"]:
         raise ValueError("verified pull-request head tree differs from merged tree")
     git("merge-base", "--is-ancestor", merge_sha, origin_main)
     spec_path = f"openspec/changes/{evidence['sliceId']}/proposal.md"
