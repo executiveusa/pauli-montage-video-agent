@@ -15,6 +15,11 @@ SPEC = importlib.util.spec_from_file_location("render_upgrade_progress", SCRIPT)
 progress = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(progress)
+ACTIVE_SCRIPT = ROOT / "scripts/validate_active_openspecs.py"
+ACTIVE_SPEC = importlib.util.spec_from_file_location("validate_active_openspecs", ACTIVE_SCRIPT)
+active_specs = importlib.util.module_from_spec(ACTIVE_SPEC)
+assert ACTIVE_SPEC.loader
+ACTIVE_SPEC.loader.exec_module(active_specs)
 
 
 class UpgradeGovernanceTests(unittest.TestCase):
@@ -69,7 +74,7 @@ class UpgradeGovernanceTests(unittest.TestCase):
     def test_fabricated_git_evidence_is_rejected(self):
         evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
         evidence["merge"]["treeSha"] = "0" * 40
-        with mock.patch.object(progress, "git", side_effect=[evidence["merge"]["sha"], "f" * 40]):
+        with mock.patch.object(progress, "git", side_effect=["", evidence["merge"]["sha"], "f" * 40]):
             with self.assertRaisesRegex(ValueError, "merge tree"):
                 progress.validate_git_evidence(evidence)
 
@@ -80,6 +85,7 @@ class UpgradeGovernanceTests(unittest.TestCase):
             progress,
             "git",
             side_effect=[
+                "",
                 evidence["merge"]["sha"],
                 evidence["merge"]["treeSha"],
                 evidence["rollback"]["baselineSha"],
@@ -182,6 +188,41 @@ class UpgradeGovernanceTests(unittest.TestCase):
         self.assertEqual(tools["Ralphy"]["version"], "4.7.2")
         self.assertIn("506eea0e7d72c8eeb96dd2f697363bef396add34", tools["Ralphy"]["source"])
         self.assertEqual(tools["OpenSpec"]["version"], "1.3.1")
+
+    def test_active_openspec_names_reject_options(self):
+        original = active_specs.CHANGES
+        try:
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as directory:
+                changes = Path(directory)
+                (changes / "--help").mkdir()
+                active_specs.CHANGES = changes
+                with self.assertRaisesRegex(ValueError, "option-like"):
+                    active_specs.active_changes()
+        finally:
+            active_specs.CHANGES = original
+
+    def test_active_openspec_uses_exact_pinned_executable(self):
+        original = active_specs.CHANGES
+        try:
+            import subprocess
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as directory:
+                changes = Path(directory)
+                (changes / "upgrade-test").mkdir()
+                active_specs.CHANGES = changes
+                responses = [
+                    subprocess.CompletedProcess([], 0, stdout="1.3.1\n", stderr=""),
+                    subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+                ]
+                with mock.patch.object(active_specs.shutil, "which", return_value="/trusted/bin/openspec"), mock.patch.object(active_specs.subprocess, "run", side_effect=responses) as invoked:
+                    self.assertEqual(active_specs.main(), 0)
+                self.assertEqual(invoked.call_args_list[0].args[0], ["/trusted/bin/openspec", "--version"])
+                self.assertEqual(invoked.call_args_list[1].args[0][:3], ["/trusted/bin/openspec", "validate", "upgrade-test"])
+        finally:
+            active_specs.CHANGES = original
 
     def test_global_ralphy_commands_are_slice_neutral(self):
         config = (ROOT / ".ralphy/config.yaml").read_text(encoding="utf-8")
