@@ -1,0 +1,170 @@
+"""Contract tests for the PopeBot + Composio upgrade authority chain."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts/render_upgrade_progress.py"
+SPEC = importlib.util.spec_from_file_location("render_upgrade_progress", SCRIPT)
+progress = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader
+SPEC.loader.exec_module(progress)
+
+
+class UpgradeGovernanceTests(unittest.TestCase):
+    def test_roadmap_has_exact_unique_immutable_slices(self):
+        roadmap = progress.load_json(ROOT / "ops/upgrade/roadmap.json")
+        progress.validate_roadmap(roadmap)
+        self.assertEqual([task["order"] for task in roadmap["tasks"]], list(range(15)))
+        self.assertEqual(roadmap["authority"]["taskSource"], "ops/upgrade/roadmap.json")
+
+    def test_roadmap_redefinition_is_rejected(self):
+        original = progress.ROADMAP
+        try:
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as directory:
+                changed = Path(directory) / "roadmap.json"
+                changed.write_text(original.read_text(encoding="utf-8").replace("Architecture and delivery contract", "Renamed authority"), encoding="utf-8")
+                progress.ROADMAP = changed
+                with self.assertRaisesRegex(ValueError, "canonical|bootstrap"):
+                    progress.validate_roadmap(progress.load_json(changed))
+        finally:
+            progress.ROADMAP = original
+
+    def test_all_completion_evidence_is_strict_and_canonical(self):
+        roadmap = progress.load_json(ROOT / "ops/upgrade/roadmap.json")
+        task_ids = {task["id"] for task in roadmap["tasks"]}
+        evidence_files = sorted((ROOT / "ops/upgrade/evidence").glob("*.json"))
+        self.assertTrue(evidence_files)
+        for path in evidence_files:
+            evidence = progress.load_json(path)
+            progress.validate_evidence(evidence, task_ids)
+            progress.validate_git_evidence(evidence)
+            progress.validate_github_evidence(evidence)
+
+    def test_declared_json_schema_accepts_all_evidence(self):
+        try:
+            from jsonschema import Draft202012Validator
+        except ModuleNotFoundError:
+            self.skipTest("jsonschema is installed by requirements-studio.txt")
+        schema = progress.load_json(ROOT / "ops/upgrade/schemas/slice-evidence.schema.json")
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+        for path in sorted((ROOT / "ops/upgrade/evidence").glob("*.json")):
+            validator.validate(progress.load_json(path))
+
+    def test_false_completion_claim_is_rejected(self):
+        roadmap = progress.load_json(ROOT / "ops/upgrade/roadmap.json")
+        task_ids = {task["id"] for task in roadmap["tasks"]}
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        evidence["postMerge"]["passed"] = False
+        with self.assertRaisesRegex(ValueError, "post-merge evidence"):
+            progress.validate_evidence(evidence, task_ids)
+
+    def test_fabricated_git_evidence_is_rejected(self):
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        evidence["merge"]["treeSha"] = "0" * 40
+        with self.assertRaisesRegex(ValueError, "merge tree"):
+            progress.validate_git_evidence(evidence)
+
+    def test_pull_request_number_is_bound_to_merge_subject(self):
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        evidence["pullRequest"]["number"] = 999
+        with self.assertRaisesRegex(ValueError, "merge subject"):
+            progress.validate_git_evidence(evidence)
+
+    def test_pull_request_head_is_bound_to_canonical_remote(self):
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        evidence["pullRequest"]["headSha"] = "0" * 40
+        with self.assertRaisesRegex(ValueError, "pull-request head"):
+            progress.validate_git_evidence(evidence)
+
+    def test_github_api_binds_merge_identity_and_required_check(self):
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        progress.validate_github_evidence(evidence)
+        evidence["pullRequest"]["headSha"] = "0" * 40
+        with self.assertRaisesRegex(ValueError, "identity"):
+            progress.validate_github_evidence(evidence)
+
+    def test_postmerge_command_labels_cannot_claim_success(self):
+        roadmap = progress.load_json(ROOT / "ops/upgrade/roadmap.json")
+        task_ids = {task["id"] for task in roadmap["tasks"]}
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        evidence["postMerge"]["treeChecks"][0]["command"] = "echo fabricated success"
+        with self.assertRaisesRegex(ValueError, "check binding"):
+            progress.validate_evidence(evidence, task_ids)
+
+    def test_coordinated_roadmap_hash_tamper_is_rejected_against_origin_main(self):
+        original_path, original_hash = progress.ROADMAP, progress.ROADMAP_SHA256
+        try:
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as directory:
+                changed = Path(directory) / "roadmap.json"
+                changed.write_text(original_path.read_text(encoding="utf-8").replace("Architecture and delivery contract", "Coordinated tamper"), encoding="utf-8")
+                progress.ROADMAP = changed
+                progress.ROADMAP_SHA256 = __import__("hashlib").sha256(changed.read_bytes()).hexdigest()
+                baseline_result = progress.subprocess.CompletedProcess([], 0, stdout=original_path.read_bytes(), stderr=b"")
+                with mock.patch.object(progress.subprocess, "run", return_value=baseline_result):
+                    with self.assertRaisesRegex(ValueError, "canonical"):
+                        progress.validate_roadmap(progress.load_json(changed))
+        finally:
+            progress.ROADMAP, progress.ROADMAP_SHA256 = original_path, original_hash
+
+    def test_evidence_cannot_be_relabelled_to_another_slice(self):
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        evidence["sliceId"] = "upgrade-14-production-pilot"
+        with self.assertRaisesRegex(ValueError, "merge subject|git evidence check"):
+            progress.validate_git_evidence(evidence)
+
+    def test_completion_bindings_are_globally_unique(self):
+        evidence = progress.load_json(ROOT / "ops/upgrade/evidence/upgrade-00-grinions-replay-guard.json")
+        duplicate = json.loads(json.dumps(evidence))
+        duplicate["sliceId"] = "upgrade-01-architecture-contract"
+        with self.assertRaisesRegex(ValueError, "duplicate completion binding"):
+            progress.validate_unique_evidence([evidence, duplicate])
+
+    def test_generated_progress_is_current(self):
+        expected = progress.render()
+        self.assertEqual((ROOT / "docs/YAPPY-UPGRADE-PROGRESS.md").read_text(encoding="utf-8"), expected)
+        self.assertIn("Completed: **1/15**", expected)
+
+    def test_unlicensed_sources_are_excluded_from_copying(self):
+        register = (ROOT / "docs/SOURCE-LICENSE-REGISTER.md").read_text(encoding="utf-8")
+        for source in ("Bomx/super-video-maker-skill", "ytx-readings/design-ui-ux"):
+            row = next(line for line in register.splitlines() if source in line)
+            self.assertIn("REJECT COPY", row)
+
+    def test_execution_toolchain_is_pinned(self):
+        toolchain = progress.load_json(ROOT / "ops/upgrade/toolchain.json")
+        tools = {item["name"]: item for item in toolchain["tools"]}
+        self.assertEqual(tools["Ralphy"]["version"], "4.7.2")
+        self.assertIn("506eea0e7d72c8eeb96dd2f697363bef396add34", tools["Ralphy"]["source"])
+        self.assertEqual(tools["OpenSpec"]["version"], "1.3.1")
+
+    def test_global_ralphy_commands_are_slice_neutral(self):
+        config = (ROOT / ".ralphy/config.yaml").read_text(encoding="utf-8")
+        for unsupported in ("base_branch:", "execution:", "capabilities:"):
+            self.assertNotIn(unsupported, config)
+        self.assertIn("validate_active_openspecs.py", config)
+        self.assertNotIn("upgrade-01-architecture-contract --strict", config)
+
+    def test_context_documents_disclaim_upgrade_authority(self):
+        for relative in (
+            "docs/ARCHITECTURE.md",
+            "docs/CURRENT-STATE.md",
+            "docs/YAPPY-CLIPZ-MASTER-PLAN.md",
+            "docs/YAPPY-CLIPZ-VOICE-CLOUD-STUDIO-PRD.md",
+        ):
+            content = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertRegex(content, r"(?i)not (?:a |execution or )?(?:live )?(?:completion|execution).*authority|not execution or completion authority|inventory only")
+
+
+if __name__ == "__main__":
+    unittest.main()

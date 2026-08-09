@@ -1,2 +1,9 @@
-# All files require review from @calesthio
+# All files require review from @calesthio.
 * @calesthio
+
+# Upgrade authority also requires explicit owner review at bootstrap and for gate changes.
+/ops/upgrade/roadmap.json @calesthio @executiveusa
+/scripts/render_upgrade_progress.py @calesthio @executiveusa
+/scripts/validate_active_openspecs.py @calesthio @executiveusa
+/.ralphy/config.yaml @calesthio @executiveusa
+/.github/workflows/grinions-phase-gates.yml @calesthio @executiveusa

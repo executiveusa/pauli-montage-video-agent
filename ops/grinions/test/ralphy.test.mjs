@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { run } from '../src/process.mjs';
 import { buildRalphyArgs, runRalphy } from '../src/ralphy.mjs';
@@ -11,11 +12,28 @@ test('Ralphy is always isolated from merge authority', () => {
   assert.equal(args.includes('--codex'), true);
   assert.equal(args.includes('--branch-per-task'), true);
   assert.equal(args.includes('--no-merge'), true);
+  assert.equal(args.includes('--parallel'), false);
+  assert.deepEqual(args.slice(args.indexOf('--base-branch'), args.indexOf('--base-branch') + 2), ['--base-branch', 'phase/00']);
+  assert.deepEqual(args.slice(args.indexOf('--max-retries'), args.indexOf('--max-retries') + 2), ['--max-retries', '3']);
+  assert.equal(args.includes('--no-browser'), true);
   assert.deepEqual(args.slice(args.indexOf('--max-iterations'), args.indexOf('--max-iterations') + 2), ['--max-iterations', '1']);
   assert.equal(args.includes('--create-pr'), false);
   assert.equal(args.includes('--fast'), false);
   assert.equal(args.includes('--no-tests'), false);
   assert.equal(args.includes('--no-lint'), false);
+});
+
+test('pinned Ralphy parser accepts only supported repository config while runtime flags stay in wrapper', async () => {
+  const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const repoRoot = resolve(packageRoot, '..', '..');
+  const config = await readFile(join(repoRoot, '.ralphy', 'config.yaml'), 'utf8');
+  assert.equal(config.includes('\nexecution:'), false);
+  assert.equal(config.includes('\ncapabilities:'), false);
+  assert.equal(config.includes('base_branch:'), false);
+  const parsed = await run(join(packageRoot, 'node_modules', '.bin', 'ralphy'), ['--config'], { cwd: repoRoot });
+  assert.match(parsed.stdout, /Test:\s+npm test --prefix ops\/grinions/);
+  assert.match(parsed.stdout, /Never Touch:/);
+  assert.match(parsed.stdout, /Language:\s+Python and TypeScript/);
 });
 
 async function gitFixture() {

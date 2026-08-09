@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yappyverse.example/schemas/upgrade-slice-evidence.v1.json",
+  "title": "YAPPY upgrade slice evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "initiativeId", "sliceId", "identity", "status", "pullRequest", "judgment", "merge", "postMerge", "rollback"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "initiativeId": {"const": "yappy-upgrade"},
+    "sliceId": {"type": "string", "pattern": "^upgrade-(0[0-9]|1[0-4])-[a-z0-9-]+$"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "initiativeId", "openspecId"],
+      "properties": {
+        "repository": {"const": "executiveusa/pauli-montage-video-agent"},
+        "initiativeId": {"const": "yappy-upgrade"},
+        "openspecId": {"type": "string", "pattern": "^upgrade-(0[0-9]|1[0-4])-[a-z0-9-]+$"}
+      }
+    },
+    "status": {"enum": ["completed"]},
+    "pullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "url", "headSha"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "url": {"type": "string", "pattern": "^https://github\\.com/executiveusa/pauli-montage-video-agent/pull/[0-9]+$"},
+        "headSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "judgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "unresolvedReviewThreads"],
+      "properties": {
+        "verdict": {"const": "OURS WINS"},
+        "unresolvedReviewThreads": {"const": 0}
+      }
+    },
+    "merge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha", "treeSha"],
+      "properties": {
+        "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "treeSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "postMerge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "mainSha", "treeChecks"],
+      "properties": {
+        "passed": {"const": true},
+        "mainSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "treeChecks": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "command", "status", "subjectSha", "evidenceUrl"],
+            "properties": {
+              "name": {"enum": ["cumulative-tests", "structure", "openspec"]},
+              "command": {"type": "string", "minLength": 1},
+              "status": {"const": "passed"},
+              "subjectSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+              "evidenceUrl": {"type": "string", "pattern": "^https://github\\.com/executiveusa/pauli-montage-video-agent/actions/runs/[0-9]+$"}
+            }
+          }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baselineSha", "strategy"],
+      "properties": {
+        "baselineSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "strategy": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
