@@ -9,7 +9,7 @@ This map assigns each desired behavior to one canonical YAPPY owner. “Parity�
 | Google Drive connection and browsing | Composio | SourceConnector adapter | 5 | Composio-owned project/media state |
 | OneDrive connection and browsing | Composio | SourceConnector adapter | 6 | Provider-specific project schema |
 | Durable owned media | Connector import outcome | Asset registry + approved object storage | 4–6 | Chat/data-URL media transport |
-| Transcript, elements, candidates, edits | Existing product plans and references | StudioProject canonical contracts | 2 | Adapter-native timeline state |
+| Transcript, elements, candidates, edits | Existing product plans and references | Versioned StudioProject canonical contract used by every interface and engine | 2 | Adapter-native timeline state or exposed internal engine schemas |
 | Documentary assembly | OpenMontage/VideoAgent concepts | Documentary service + canonical timeline | 7 | Second clip project/runtime |
 | Candidate discovery | Local analysis and OpusClip | Candidate adapter contract | 8–9 | OpusClip as editor/source of truth |
 | Paid generation | Kie, Fal, local routes | OmniRouter + jobs/approvals/costs | 10 | Direct UI provider calls |
