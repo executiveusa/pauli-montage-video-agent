@@ -51,6 +51,15 @@ export function validatePhaseRequest(request) {
 export async function runPhase(ctx, request, services) {
   const phase = validatePhaseRequest(request);
 
+  const completion = await services.classifyPhaseCompletion(phase);
+  if (completion?.status === 'already_completed') {
+    return { phaseId: phase.phaseId, status: 'already_completed', completion };
+  }
+  if (completion?.status !== 'not_completed') {
+    const reason = completion?.reason || 'unclassified_completion_evidence';
+    throw new Error(`PHASE_COMPLETION_INCONSISTENT:${phase.phaseId}:${reason}`);
+  }
+
   const hydrated = await ctx.step('hydrate-context', () => services.hydrateContext(phase));
   await ctx.step('validate-spec', () => services.validateSpec(phase, hydrated));
   const baseline = await ctx.step('capture-baseline', () => services.captureBaseline(phase));
@@ -106,10 +115,14 @@ export async function runPhase(ctx, request, services) {
 
   await ctx.step('local-verification', () => services.verifyLocal(phase, workspace, beads));
   await ctx.step('phase-verification', () => services.verifyPhase(phase, workspace));
+  await ctx.step('pre-pr-safety', () => services.preparePullRequest(phase, workspace));
 
   const pr = await checkpointedSideEffect(ctx, 'create-or-update-pr', (idempotencyKey) =>
     services.createOrUpdatePr(phase, { idempotencyKey, baseline, rollback, workspace, beads }),
   );
+  if (pr?.alreadyCompleted) {
+    return { phaseId: phase.phaseId, status: 'already_completed', completion: pr.completion, baseline, rollback, workspace, beads };
+  }
 
   await ctx.step('pr-watch', () => services.watchPr(phase, pr));
   const judgment = await ctx.step('judge', () => services.judge(phase, pr));

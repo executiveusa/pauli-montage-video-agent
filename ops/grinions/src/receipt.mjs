@@ -66,13 +66,35 @@ export function validatePhaseReceipt(receipt) {
   }
   requiredString(receipt.phaseId, 'phaseId');
   requiredString(receipt.openspecId, 'openspecId');
-  requiredString(receipt.risk, 'risk');
+  const risk = requiredString(receipt.risk, 'risk');
+  if (!['low', 'medium', 'high'].includes(risk)) throw new TypeError(`phase receipt has invalid risk: ${risk}`);
   requiredString(receipt.completedAt, 'completedAt');
   requiredString(receipt.baselineMainSha, 'baselineMainSha');
-  if (!Array.isArray(receipt.beads)) throw new TypeError('phase receipt requires beads array');
+  if (!Array.isArray(receipt.beads) || receipt.beads.length === 0) {
+    throw new TypeError('phase receipt requires at least one Bead');
+  }
+  for (const bead of receipt.beads) {
+    requiredString(bead?.id, 'beads[].id');
+    requiredString(bead?.headSha, 'beads[].headSha');
+    if (bead?.verified !== true) throw new TypeError('phase receipt requires every Bead to be verified');
+    if (requiredString(bead?.closedStatus, 'beads[].closedStatus').toLowerCase() !== 'closed') {
+      throw new TypeError('phase receipt requires every Bead to be closed');
+    }
+  }
+  if (!Number.isInteger(receipt.pullRequest?.number) || receipt.pullRequest.number <= 0) {
+    throw new TypeError('phase receipt requires pullRequest.number');
+  }
+  requiredString(receipt.pullRequest?.headSha, 'pullRequest.headSha');
   if (receipt.judgment?.passed !== true) throw new TypeError('phase receipt requires a passed judgment');
+  if (receipt.judgment?.unresolvedReviewThreads !== 0) {
+    throw new TypeError('phase receipt requires zero unresolved review threads');
+  }
   if (receipt.postMerge?.passed !== true) throw new TypeError('phase receipt requires passed postMerge verification');
   requiredString(receipt.merge?.sha, 'merge.sha');
   requiredString(receipt.postMerge?.mainSha, 'postMerge.mainSha');
+  if (receipt.rollback?.baselineCaptured !== true) {
+    throw new TypeError('phase receipt requires captured rollback evidence');
+  }
+  requiredString(receipt.rollback?.receiptPath, 'rollback.receiptPath');
   return receipt;
 }
