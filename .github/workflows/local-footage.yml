@@ -112,3 +112,16 @@ jobs:
             cat /tmp/montage-worker.log
             exit 1
           }
+      - name: Upload browser gauntlet evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: montage-browser-gauntlet-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            /tmp/montage-studio.log
+            /tmp/montage-worker.log
+            /tmp/fixture.log
+            /tmp/montage-browser-failure.png
+            /tmp/montage-browser-trace.zip
+            /tmp/montage-browser-media/**/outputs/*.mp4
