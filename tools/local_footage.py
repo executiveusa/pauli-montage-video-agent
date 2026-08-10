@@ -88,9 +88,23 @@ def _escape_subtitle_path(path: Path) -> str:
     return value.replace("[", r"\[").replace("]", r"\]").replace(",", r"\,")
 
 
+def _escape_drawtext(value: str) -> str:
+    """Escape user-visible text for FFmpeg drawtext filter arguments."""
+    return (
+        value.replace("\\", r"\\")
+        .replace("'", r"\'")
+        .replace(":", r"\:")
+        .replace("%", r"\%")
+        .replace(",", r"\,")
+        .replace("[", r"\[")
+        .replace("]", r"\]")
+        .replace("\n", r"\n")
+    )
+
+
 class LocalFootageTool(BaseTool):
     name = "local_footage"
-    version = "0.1.0"
+    version = "0.2.0"
     tier = ToolTier.CORE
     stability = ToolStability.BETA
     determinism = Determinism.DETERMINISTIC
@@ -104,6 +118,7 @@ class LocalFootageTool(BaseTool):
         "proxy",
         "cut",
         "reframe_vertical",
+        "overlay_text",
         "burn_captions",
         "write_srt",
         "verify",
@@ -251,6 +266,53 @@ class LocalFootageTool(BaseTool):
         ]
         self.run_command(command, timeout=int(inputs.get("timeout", 7200)))
         return {"source": str(source), "srt": str(srt), "output": str(output), "command": command}, [str(output)]
+
+    def _op_overlay_text(self, inputs: dict[str, Any]):
+        source = _require_source(inputs.get("source"))
+        output = _output_path(inputs.get("output"), source)
+        overlays = inputs.get("overlays")
+        if not isinstance(overlays, list) or not overlays:
+            raise ValueError("overlays must contain at least one timed text layer")
+        filters: list[str] = []
+        normalized: list[dict[str, Any]] = []
+        role_defaults = {
+            "caption": {"fontsize": 48, "x": "(w-text_w)/2", "y": "h-300", "box": True},
+            "lower_third": {"fontsize": 44, "x": "70", "y": "h-360", "box": True},
+            "episode_marker": {"fontsize": 38, "x": "(w-text_w)/2", "y": "130", "box": True},
+            "title": {"fontsize": 70, "x": "(w-text_w)/2", "y": "h*0.20", "box": True},
+        }
+        for index, overlay in enumerate(overlays, start=1):
+            if not isinstance(overlay, dict):
+                raise ValueError(f"overlay {index} must be an object")
+            text = str(overlay.get("text", "")).strip()
+            if not text:
+                raise ValueError(f"overlay {index} text is empty")
+            start = _seconds(overlay.get("start", 0))
+            end = _seconds(overlay.get("end", 0))
+            if end <= start:
+                raise ValueError(f"overlay {index} end must be after start")
+            role = str(overlay.get("role", "title")).strip() or "title"
+            defaults = role_defaults.get(role, role_defaults["title"])
+            fontsize = int(overlay.get("fontsize", defaults["fontsize"]))
+            x = str(overlay.get("x", defaults["x"]))
+            y = str(overlay.get("y", defaults["y"]))
+            escaped = _escape_drawtext(text)
+            box = bool(overlay.get("box", defaults["box"]))
+            box_clause = ":box=1:boxcolor=black@0.48:boxborderw=16" if box else ""
+            filter_value = (
+                f"drawtext=text='{escaped}':fontcolor=white:fontsize={fontsize}:"
+                f"x={x}:y={y}{box_clause}:enable='between(t,{start},{end})'"
+            )
+            filters.append(filter_value)
+            normalized.append({"text": text, "start": start, "end": end, "role": role})
+        vf = ",".join(filters)
+        command = [
+            "ffmpeg", "-y", "-i", str(source), "-vf", vf,
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-c:a", "copy", "-movflags", "+faststart", str(output),
+        ]
+        self.run_command(command, timeout=int(inputs.get("timeout", 7200)))
+        return {"source": str(source), "output": str(output), "overlays": normalized, "command": command}, [str(output)]
 
     def _op_verify(self, inputs: dict[str, Any]):
         source = _require_source(inputs.get("source"))
