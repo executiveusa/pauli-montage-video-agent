@@ -82,12 +82,18 @@ jobs:
       - name: Run source-to-review browser gauntlet
         env:
           MONTAGE_STUDIO_TEST_URL: http://127.0.0.1:3000
-          MONTAGE_STUDIO_TEST_FIXTURE: /tmp/montage-browser-source.mp4
+          MONTAGE_STUDIO_TEST_FIXTURE: /tmp/montage-browser-source.webm
         run: |
+          # Playwright's bundled Chromium intentionally omits proprietary H.264/AAC.
+          # Use Chromium-native VP8/Opus here so this gate proves the product's real
+          # HTMLVideoElement playback clock instead of testing the CI image's codec pack.
+          # H.264/M4V remains a separate production-representative source test.
           ffmpeg -y \
             -f lavfi -i testsrc=size=640x360:rate=30 \
             -f lavfi -i sine=frequency=440:sample_rate=48000 \
-            -t 1.8 -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 96k \
+            -t 1.8 -shortest \
+            -c:v libvpx -deadline realtime -cpu-used 8 -b:v 900k \
+            -c:a libopus -b:a 96k \
             "$MONTAGE_STUDIO_TEST_FIXTURE" >/tmp/fixture.log 2>&1
           python scripts/montage_local_service.py --workspace /tmp/montage-browser-media >/tmp/montage-worker.log 2>&1 &
           WORKER_PID=$!
