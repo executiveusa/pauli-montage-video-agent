@@ -142,6 +142,13 @@ function sourceExtensions(asset: LocalStudioAsset): Record<string, unknown> {
   };
 }
 
+function timelineItemEnd(timeline: Timeline): number {
+  return timeline.tracks.reduce(
+    (maximum, track) => track.items.reduce((trackMaximum, item) => Math.max(trackMaximum, item.startSeconds + item.durationSeconds), maximum),
+    0,
+  );
+}
+
 function timelineWithSource(timeline: Timeline, asset: LocalStudioAsset): Timeline {
   const duration = Math.max(0.1, Number(asset.durationSeconds) || 30);
   const existingTrack = timeline.tracks.find((track) => track.type === "video");
@@ -203,6 +210,56 @@ function timelineWithSource(timeline: Timeline, asset: LocalStudioAsset): Timeli
       canonicalSourceAssetId: asset.id,
     },
   };
+}
+
+function timelineWithSourceMetadata(timeline: Timeline, asset: LocalStudioAsset): Timeline {
+  const matching = timeline.tracks.flatMap((track) => track.items).filter((item) => item.assetId === asset.id);
+  if (!matching.length) return timelineWithSource(timeline, asset);
+
+  const pristine = matching.length === 1 &&
+    matching[0].startSeconds === 0 &&
+    Number(matching[0].sourceStartSeconds ?? 0) === 0 &&
+    matching[0].extensions?.role === "source-master";
+  const duration = Math.max(0.1, Number(asset.durationSeconds) || matching[0].durationSeconds || 30);
+
+  const tracks = timeline.tracks.map((track) => ({
+    ...track,
+    items: track.items.map((item) => {
+      if (item.assetId !== asset.id) return item;
+      const next: TimelineItem = {
+        ...item,
+        extensions: {
+          ...(item.extensions || {}),
+          ...sourceExtensions(asset),
+        },
+      };
+      if (pristine) {
+        next.durationSeconds = duration;
+        next.sourceStartSeconds = 0;
+        next.sourceEndSeconds = asset.durationSeconds || duration;
+      }
+      return next;
+    }),
+  }));
+
+  const next: Timeline = {
+    ...timeline,
+    version: timeline.version + 1,
+    tracks,
+    extensions: {
+      ...(timeline.extensions || {}),
+      persistence: "browser-local",
+      sourceImmutable: true,
+      canonicalSourceAssetId: asset.id,
+    },
+  };
+  if (pristine) {
+    next.canvas = {
+      ...timeline.canvas,
+      durationSeconds: Math.max(duration, timelineItemEnd({ ...next, canvas: { ...next.canvas, durationSeconds: 0 } })),
+    };
+  }
+  return next;
 }
 
 function mutateProject(projectId: string, mutate: (record: LocalStudioProject) => LocalStudioProject): LocalStudioProject {
@@ -319,7 +376,7 @@ export function updateLocalSource(
     if (!source) throw new Error("Canonical source asset could not be found.");
     updated = { ...source, ...patch, id: source.id, role: "source-master", immutable: true };
     const assets = current.assets.map((asset) => (asset.id === source.id ? updated! : asset));
-    const timeline = timelineWithSource(current.timeline, updated!);
+    const timeline = timelineWithSourceMetadata(current.timeline, updated!);
     return { ...current, assets, timeline };
   });
   if (!updated) throw new Error("Canonical source asset could not be updated.");
