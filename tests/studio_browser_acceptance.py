@@ -58,12 +58,12 @@ def main() -> int:
             # Prove this is not a decorative preview: the real media element must
             # decode/play and advance the canonical timeline playhead.
             playhead = page.get_by_label("Playhead")
-            page.get_by_role("button", name="Play").click()
+            page.get_by_role("button", name="Play", exact=True).click()
             page.wait_for_timeout(450)
             playback_value = float(playhead.input_value())
             if playback_value <= 0.05:
                 raise AssertionError(f"source playback did not advance timeline playhead: {playback_value}")
-            page.get_by_role("button", name="Pause").click()
+            page.get_by_role("button", name="Pause", exact=True).click()
 
             timeline_clips = page.locator('button[class*="timelineClip"]')
             expect(timeline_clips).to_have_count(1)
