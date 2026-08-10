@@ -48,36 +48,6 @@ async function parseJson<T>(response: Response): Promise<T> {
   return payload;
 }
 
-function prepareLocalOperationPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  if (payload.operation !== "overlay_text" || !Array.isArray(payload.overlays)) return payload;
-
-  const overlays = payload.overlays.map((candidate) => {
-    if (!candidate || typeof candidate !== "object") return candidate;
-    const overlay = candidate as Record<string, unknown>;
-    if (overlay.role !== "lower_third" || typeof overlay.text !== "string") return overlay;
-
-    const text = overlay.text.trim();
-    if (!text || text.includes("\n") || !text.includes(" — ")) return overlay;
-
-    const [name, ...roleParts] = text.split(" — ");
-    const role = roleParts.join(" — ").trim();
-    if (!name.trim() || !role) return overlay;
-
-    // Keep canonical timeline text untouched. This is a render-only presentation
-    // transform so long Name — Role, Organization lower thirds stay inside a
-    // 1080px-wide vertical safe area instead of clipping at the right edge.
-    return {
-      ...overlay,
-      text: `${name.trim()}\n${role}`,
-      fontsize: typeof overlay.fontsize === "number" ? Math.min(overlay.fontsize, 34) : 34,
-      x: overlay.x ?? "60",
-      y: overlay.y ?? "h-430",
-    };
-  });
-
-  return { ...payload, overlays };
-}
-
 export function localEngineBaseUrl(): string {
   return baseUrl();
 }
@@ -115,11 +85,10 @@ export async function listLocalAssets(projectId: string): Promise<LocalAsset[]> 
 }
 
 export async function runLocalOperation(payload: Record<string, unknown>): Promise<LocalOperationResponse> {
-  const preparedPayload = prepareLocalOperationPayload(payload);
   const response = await fetch(`${baseUrl()}/operations`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(preparedPayload),
+    body: JSON.stringify(payload),
   });
   const result = (await response.json()) as LocalOperationResponse & { message?: string };
   if (!response.ok && !result.error) {

@@ -330,6 +330,9 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       startSeconds: splitAt,
       durationSeconds: rightDuration,
       sourceStartSeconds: sourceSplit ?? item.sourceStartSeconds ?? null,
+      extensions: item.extensions?.role === "source-master"
+        ? { ...item.extensions, role: "source-fragment" }
+        : item.extensions,
     };
     const items = track.items.flatMap((candidate) => (candidate.id === item.id ? [first, second] : [candidate]));
     mark(
@@ -434,8 +437,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   function seekPlayhead(next: number) {
     const bounded = clamp(next, 0, duration);
     setPlayhead(bounded);
-    if (!activePreview || !previewUrl || !videoRef.current) return;
-    const target = sourceTimeFor(activePreview.item, bounded);
+    if (!timeline || !previewUrl || !videoRef.current) return;
+    const targetPreview = previewForPlayhead(timeline, bounded, selected);
+    if (!targetPreview) return;
+    const target = sourceTimeFor(targetPreview.item, bounded);
     if (Math.abs(videoRef.current.currentTime - target) > 0.12) {
       videoRef.current.currentTime = target;
     }

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import urllib.request
 from pathlib import Path
 
+from PIL import Image, ImageChops
 from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = os.environ.get("MONTAGE_STUDIO_TEST_URL", "http://127.0.0.1:3000")
@@ -158,6 +160,34 @@ def main() -> int:
                 payload = response.read(64)
                 if response.status != 200 or len(payload) == 0:
                     raise AssertionError("verified review MP4 was not retrievable from local worker")
+
+            # Decode a frame where the title has ended and the founder lower third
+            # is still active, then compare it with the pre-overlay vertical base.
+            # Thresholding ignores H.264 re-encode noise while proving the actual
+            # drawn pixels remain inside a 60px right-side 9:16 safe margin.
+            vertical_url = re.sub(r"-review-1080x1920\.mp4$", "-vertical-base.mp4", review_url)
+            if vertical_url == review_url:
+                raise AssertionError(f"could not derive vertical-base artifact from {review_url}")
+            review_file = Path("/tmp/montage-browser-review.mp4")
+            vertical_file = Path("/tmp/montage-browser-vertical-base.mp4")
+            review_frame = Path("/tmp/montage-browser-review-frame.png")
+            vertical_frame = Path("/tmp/montage-browser-vertical-frame.png")
+            urllib.request.urlretrieve(review_url, review_file)
+            urllib.request.urlretrieve(vertical_url, vertical_file)
+            for source_file, frame_file in ((review_file, review_frame), (vertical_file, vertical_frame)):
+                subprocess.run([
+                    "ffmpeg", "-y", "-ss", "0.55", "-i", str(source_file),
+                    "-frames:v", "1", str(frame_file),
+                ], check=True, capture_output=True, text=True, timeout=30)
+            with Image.open(review_frame) as rendered, Image.open(vertical_frame) as baseline:
+                difference = ImageChops.difference(rendered.convert("RGB"), baseline.convert("RGB")).convert("L")
+                significant = difference.point(lambda value: 255 if value >= 64 else 0)
+                bounds = significant.getbbox()
+            if bounds is None:
+                raise AssertionError("decoded review frame contained no visible lower-third overlay")
+            left, _top, right, _bottom = bounds
+            if left < 40 or right > 1020:
+                raise AssertionError(f"decoded lower-third pixels exceed 9:16 horizontal safe bounds: {bounds}")
 
             if page_errors:
                 raise AssertionError(f"uncaught browser errors: {page_errors}")

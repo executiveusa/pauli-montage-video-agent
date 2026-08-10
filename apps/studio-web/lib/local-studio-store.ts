@@ -178,56 +178,73 @@ function timelineItemEnd(timeline: Timeline): number {
 
 function timelineWithSource(timeline: Timeline, asset: LocalStudioAsset): Timeline {
   const duration = Math.max(0.1, Number(asset.durationSeconds) || 30);
-  const existingTrack = timeline.tracks.find((track) => track.type === "video");
-  const trackId = existingTrack?.id || "track_video_primary";
-  const existingItem = existingTrack?.items.find((item) => item.extensions?.role === "source-master");
-  const item: TimelineItem = {
-    id: existingItem?.id || "source_master_primary",
-    kind: "asset",
-    assetId: asset.id,
-    shotId: null,
-    startSeconds: existingItem?.startSeconds ?? 0,
-    durationSeconds: duration,
-    sourceStartSeconds: 0,
-    sourceEndSeconds: asset.durationSeconds || duration,
-    effects: existingItem?.effects || [],
-    extensions: {
-      ...(existingItem?.extensions || {}),
-      ...sourceExtensions(asset),
-    },
-  };
+  const previousSourceAssetId = typeof timeline.extensions?.canonicalSourceAssetId === "string"
+    ? timeline.extensions.canonicalSourceAssetId
+    : null;
+  const matchesPreviousSource = (item: TimelineItem): boolean => previousSourceAssetId
+    ? item.assetId === previousSourceAssetId
+    : item.extensions?.role === "source-master";
+  const previousItems = timeline.tracks.flatMap((track) => track.items.filter(matchesPreviousSource));
+  const primaryItem = previousItems[0] || null;
   let tracks: TimelineTrack[];
-  if (existingTrack) {
-    tracks = timeline.tracks.map((track) =>
-      track.id === trackId
-        ? {
-            ...track,
-            items: existingItem
-              ? track.items.map((candidate) => (candidate.id === existingItem.id ? item : candidate))
-              : [...track.items, item],
-          }
-        : track,
-    );
+
+  if (previousItems.length) {
+    tracks = timeline.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((candidate) => {
+        if (!matchesPreviousSource(candidate)) return candidate;
+        const role = candidate.id === primaryItem?.id ? "source-master" : "source-fragment";
+        return {
+          ...candidate,
+          assetId: asset.id,
+          extensions: {
+            ...(candidate.extensions || {}),
+            ...sourceExtensions(asset),
+            role,
+          },
+        };
+      }),
+    }));
   } else {
-    tracks = [
-      ...timeline.tracks,
-      {
-        id: trackId,
-        type: "video",
-        name: "Source video",
-        order: timeline.tracks.length,
-        muted: false,
-        locked: false,
-        items: [item],
-      },
-    ];
+    const existingTrack = timeline.tracks.find((track) => track.type === "video");
+    const trackId = existingTrack?.id || "track_video_primary";
+    const item: TimelineItem = {
+      id: "source_master_primary",
+      kind: "asset",
+      assetId: asset.id,
+      shotId: null,
+      startSeconds: 0,
+      durationSeconds: duration,
+      sourceStartSeconds: 0,
+      sourceEndSeconds: asset.durationSeconds || duration,
+      effects: [],
+      extensions: sourceExtensions(asset),
+    };
+    tracks = existingTrack
+      ? timeline.tracks.map((track) => track.id === trackId ? { ...track, items: [...track.items, item] } : track)
+      : [
+          ...timeline.tracks,
+          {
+            id: trackId,
+            type: "video",
+            name: "Source video",
+            order: timeline.tracks.length,
+            muted: false,
+            locked: false,
+            items: [item],
+          },
+        ];
   }
+
+  const renderedDuration = previousItems.length
+    ? timelineItemEnd({ ...timeline, tracks, canvas: { ...timeline.canvas, durationSeconds: 0 } })
+    : duration;
   return {
     ...timeline,
     version: timeline.version + 1,
     canvas: {
       ...timeline.canvas,
-      durationSeconds: Math.max(Number(timeline.canvas.durationSeconds) || 0, duration),
+      durationSeconds: Math.max(Number(timeline.canvas.durationSeconds) || 0, renderedDuration),
     },
     tracks,
     extensions: {
@@ -258,6 +275,7 @@ function timelineWithSourceMetadata(timeline: Timeline, asset: LocalStudioAsset)
         extensions: {
           ...(item.extensions || {}),
           ...sourceExtensions(asset),
+          role: item.extensions?.role === "source-fragment" ? "source-fragment" : "source-master",
         },
       };
       if (pristine) {

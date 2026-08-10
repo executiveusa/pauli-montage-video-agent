@@ -114,6 +114,11 @@ Before: tests verified command strings but not an actual media round trip.
 After: CI test conditionally creates a real synthetic video+audio fixture and executes cut -> 1080x1920 reframe -> text overlay -> ffprobe verify.  
 File: `tests/test_local_footage.py`.
 
+### FIX-015 — Long founder lower thirds could clip or render escaped newlines incorrectly
+Before: the functional render path passed while a long `Name — Role, Organization` lower third could exceed the 9:16 safe area, and one escape revision rendered a literal `n` instead of a real line break.
+After: canonical Timeline text remains exact, the render boundary projects founder lower thirds into a bounded two-line treatment, FFmpeg uses an explicit local font, and browser acceptance decodes a real rendered frame to prove changed pixels remain inside the horizontal safe margin.
+Proof: `tests/studio_browser_acceptance.py` decoded-frame comparison plus `tests/test_local_footage.py` real multiline/colon FFmpeg integration.
+Files: `local-review-render.ts`, `tools/local_footage.py`, `tests/studio_browser_acceptance.py`, `tests/test_local_footage.py`.
 ## Current architecture
 
 `StudioProject -> canonical Asset metadata -> canonical Timeline -> browser preview / local render projection`

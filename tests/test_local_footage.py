@@ -62,7 +62,8 @@ class LocalFootageContractTests(unittest.TestCase):
                 {"text": "WHY WE STARTED", "start": 1.0, "end": 3.0, "role": "title"},
                 {"text": "Founder: ASC3ND", "start": 3.0, "end": 5.0, "role": "lower_third"},
             ]
-            with patch.object(self.tool, "run_command") as run:
+            with patch("tools.local_footage._resolve_drawtext_font", return_value=Path("/tmp/DejaVuSans.ttf")), \
+                 patch.object(self.tool, "run_command") as run:
                 run.return_value.stdout = ""
                 run.return_value.stderr = ""
                 result = self.tool.execute({
@@ -79,6 +80,29 @@ class LocalFootageContractTests(unittest.TestCase):
             self.assertIn("between(t,1.0,3.0)", filter_value)
             self.assertIn("Founder\\: ASC3ND", filter_value)
             self.assertEqual(result.cost_usd, 0.0)
+
+    def test_overlay_rejects_filter_option_injection_in_coordinates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "vertical.mp4"
+            output = Path(tmp) / "review.mp4"
+            source.write_bytes(b"fixture")
+            with patch("tools.local_footage._resolve_drawtext_font", return_value=Path("/tmp/DejaVuSans.ttf")), \
+                 patch.object(self.tool, "run_command") as run:
+                result = self.tool.execute({
+                    "operation": "overlay_text",
+                    "source": str(source),
+                    "output": str(output),
+                    "overlays": [{
+                        "text": "Founder",
+                        "start": 0,
+                        "end": 1,
+                        "role": "lower_third",
+                        "x": "10:fontfile=/etc/passwd:fontcolor=red",
+                    }],
+                })
+            self.assertFalse(result.success)
+            self.assertIn("unsupported drawtext expression", result.error or "")
+            run.assert_not_called()
 
     def test_cut_validates_ranges(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -225,6 +249,15 @@ class LocalMediaIntegrationTests(unittest.TestCase):
                 "overlays": [
                     {"text": "WHY WE STARTED", "start": 0.05, "end": 0.55, "role": "title"},
                     {"text": "01 / 04", "start": 0.05, "end": 0.75, "role": "episode_marker"},
+                    {
+                        "text": "Otha Minnifield\nFounder: ASC3ND Collective",
+                        "start": 0.20,
+                        "end": 0.75,
+                        "role": "lower_third",
+                        "fontsize": 34,
+                        "x": "60",
+                        "y": "h-430",
+                    },
                 ],
                 "timeout": 120,
             })

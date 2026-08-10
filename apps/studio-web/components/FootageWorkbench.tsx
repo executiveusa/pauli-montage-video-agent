@@ -66,7 +66,7 @@ function formatDuration(value?: number | null): string {
 function friendlyWorkerError(reason: unknown): string {
   const raw = reason instanceof Error ? reason.message : String(reason || "");
   if (/failed to fetch|networkerror|load failed|network request failed|abort/i.test(raw)) {
-    return "Montage Local Engine is not running on this computer yet.";
+    return "Montage Local Engine is not reachable. Start it on this computer; if your browser asks for Local Network access, choose Allow.";
   }
   return raw || "Montage Local Engine is not reachable on this computer.";
 }
@@ -80,9 +80,10 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
   const [health, setHealth] = useState<LocalEngineHealth | null>(null);
   const [engineState, setEngineState] = useState<EngineState>("checking");
   const [engineUrl, setEngineUrl] = useState(DEFAULT_LOCAL_ENGINE_URL);
-  const [source, setSource] = useState<LocalStudioAsset | null>(() => localMode ? getLocalSourceAsset(projectId) : null);
+  const [source, setSource] = useState<LocalStudioAsset | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [state, setState] = useState<LocalFootageState>(() => getFootageState(projectId));
+  const [transientPreviewUrl, setTransientPreviewUrl] = useState<string | null>(null);
+  const [state, setState] = useState<LocalFootageState>({ projectId, beads: [], exports: [], updatedAt: "" });
   const [busy, setBusy] = useState<BusyAction>(null);
   const [message, setMessage] = useState("Choose footage now. Local processing can connect separately.");
   const [error, setError] = useState<string | null>(null);
@@ -96,13 +97,16 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
   }, [localMode, projectId]);
 
   async function uploadAndBind(file: File, canonicalAssetId: string) {
+    if (!localMode) {
+      setError("Hosted source registration is not connected yet. Use a browser-local project for this local media path.");
+      return null;
+    }
     setBusy("upload");
     setError(null);
     try {
       const workerAsset = await uploadLocalAsset(projectId, file);
       const storageFilename = workerStorageFilename(workerAsset.assetId, workerAsset.filename);
       const stablePreview = localFileUrl(projectId, "assets", storageFilename);
-      if (!localMode) throw new Error("Hosted source registration is not connected yet. Use a browser-local project for this local media path.");
       const next = updateLocalSource(projectId, canonicalAssetId, {
         filename: workerAsset.filename,
         sizeBytes: workerAsset.sizeBytes,
@@ -116,6 +120,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       });
       setSource(next.asset);
       setPendingFile(null);
+      setTransientPreviewUrl(null);
       if (workerAsset.probe?.duration_seconds) {
         setCutEnd(String(Math.min(30, Number(workerAsset.probe.duration_seconds)).toFixed(2)));
       }
@@ -175,6 +180,12 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   useEffect(() => {
+    return () => {
+      if (transientPreviewUrl) URL.revokeObjectURL(transientPreviewUrl);
+    };
+  }, [transientPreviewUrl]);
+
+  useEffect(() => {
     if (!localMode || source) return;
     const legacy = getFootageState(projectId).source;
     if (!legacy?.assetId) return;
@@ -195,7 +206,10 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
     setMessage("Migrated the existing source into canonical StudioProject asset/timeline state.");
   }, [localMode, projectId, source]);
 
-  const previewUrl = useMemo(() => activeUrl(projectId, state) || source?.previewUrl || null, [projectId, source?.previewUrl, state]);
+  const previewUrl = useMemo(
+    () => activeUrl(projectId, state) || transientPreviewUrl || source?.previewUrl || null,
+    [projectId, source?.previewUrl, state, transientPreviewUrl],
+  );
   const currentSourceId = source?.workerAssetId || "";
   const processingReady = Boolean(health?.ffmpeg && health?.ffprobe && currentSourceId);
 
@@ -209,6 +223,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       return;
     }
     const blobPreview = URL.createObjectURL(file);
+    setTransientPreviewUrl(blobPreview);
     const registered = registerLocalSource(projectId, {
       filename: file.name,
       sizeBytes: file.size,
@@ -219,7 +234,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       status: "pending-worker",
       workerAssetId: null,
       workerStorageFilename: null,
-      previewUrl: blobPreview,
+      previewUrl: null,
     });
     setSource(registered.asset);
     setPendingFile(file);

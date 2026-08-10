@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -99,6 +101,52 @@ def _escape_drawtext(value: str) -> str:
         .replace("[", r"\[")
         .replace("]", r"\]")
     )
+
+
+_SAFE_DRAW_EXPR = re.compile(r"^[0-9A-Za-z_+\-*/().% ]+$")
+_FONT_SUFFIXES = {".ttf", ".otf", ".ttc"}
+
+
+def _drawtext_expression(value: Any, label: str) -> str:
+    expression = str(value).strip()
+    if not expression or not _SAFE_DRAW_EXPR.fullmatch(expression):
+        raise ValueError(f"{label} contains unsupported drawtext expression characters")
+    return expression
+
+
+def _resolve_drawtext_font(value: Any = None) -> Path:
+    requested = str(value).strip() if value is not None else ""
+    environment = os.environ.get("MONTAGE_FONTFILE", "").strip()
+    candidates: list[Path] = []
+    if requested:
+        candidates.append(Path(requested).expanduser())
+    elif environment:
+        candidates.append(Path(environment).expanduser())
+
+    if sys.platform.startswith("win"):
+        windows = Path(os.environ.get("WINDIR", r"C:\Windows"))
+        candidates.extend([windows / "Fonts" / "segoeui.ttf", windows / "Fonts" / "arial.ttf"])
+    elif sys.platform == "darwin":
+        candidates.extend([
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+            Path("/System/Library/Fonts/Helvetica.ttc"),
+        ])
+    else:
+        candidates.extend([
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+        ])
+
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.is_file() and resolved.suffix.lower() in _FONT_SUFFIXES:
+            return resolved
+    if requested:
+        raise ValueError("fontfile must reference an existing .ttf, .otf, or .ttc font")
+    if environment:
+        raise ValueError("MONTAGE_FONTFILE must reference an existing .ttf, .otf, or .ttc font")
+    raise ValueError("No usable local font was found for FFmpeg drawtext. Set MONTAGE_FONTFILE to an installed font.")
 
 
 class LocalFootageTool(BaseTool):
@@ -293,13 +341,17 @@ class LocalFootageTool(BaseTool):
             role = str(overlay.get("role", "title")).strip() or "title"
             defaults = role_defaults.get(role, role_defaults["title"])
             fontsize = int(overlay.get("fontsize", defaults["fontsize"]))
-            x = str(overlay.get("x", defaults["x"]))
-            y = str(overlay.get("y", defaults["y"]))
+            if fontsize < 8 or fontsize > 200:
+                raise ValueError(f"overlay {index} fontsize must be between 8 and 200")
+            x = _drawtext_expression(overlay.get("x", defaults["x"]), f"overlay {index} x")
+            y = _drawtext_expression(overlay.get("y", defaults["y"]), f"overlay {index} y")
+            font = _resolve_drawtext_font(inputs.get("fontfile"))
+            fontfile = _escape_subtitle_path(font)
             escaped = _escape_drawtext(text)
             box = bool(overlay.get("box", defaults["box"]))
             box_clause = ":box=1:boxcolor=black@0.48:boxborderw=16" if box else ""
             filter_value = (
-                f"drawtext=text='{escaped}':fontcolor=white:fontsize={fontsize}:"
+                f"drawtext=fontfile='{fontfile}':text='{escaped}':fontcolor=white:fontsize={fontsize}:"
                 f"x={x}:y={y}{box_clause}:enable='between(t,{start},{end})'"
             )
             filters.append(filter_value)

@@ -11,6 +11,8 @@ export type TimelineOverlay = {
   role: "title" | "episode_marker" | "lower_third" | "caption";
 };
 
+type RenderOverlay = TimelineOverlay & { fontsize?: number; x?: string; y?: string };
+
 type SourceSegment = {
   item: TimelineItem;
   sourceStart: number;
@@ -74,6 +76,48 @@ function overlayRole(item: TimelineItem): TimelineOverlay["role"] {
   return "title";
 }
 
+function splitLowerThird(text: string): [string, string] | null {
+  const value = text.trim();
+  if (!value || value.includes("\n")) return null;
+
+  const wideDash = value.match(/[—–]/);
+  if (wideDash?.index != null) {
+    const name = value.slice(0, wideDash.index).trim();
+    const role = value.slice(wideDash.index + wideDash[0].length).trim();
+    return name && role ? [name, role] : null;
+  }
+
+  const spacedHyphen = value.match(/\s+-\s+/);
+  if (spacedHyphen?.index != null) {
+    const name = value.slice(0, spacedHyphen.index).trim();
+    const role = value.slice(spacedHyphen.index + spacedHyphen[0].length).trim();
+    return name && role ? [name, role] : null;
+  }
+
+  // Compact plain hyphens are ambiguous with hyphenated names. Only split one
+  // when the suffix begins with a common role label, which preserves names such
+  // as Anne-Marie while supporting "Name-Founder, Organization" input.
+  const compactRole = value.match(/-(?=(?:co-?founder|founder|ceo|coo|cfo|cto|director|producer|editor|manager|lead|president|vice president|vp|owner|coordinator|mentor)\b)/i);
+  if (compactRole?.index != null) {
+    const name = value.slice(0, compactRole.index).trim();
+    const role = value.slice(compactRole.index + 1).trim();
+    return name && role ? [name, role] : null;
+  }
+  return null;
+}
+
+function renderOverlay(overlay: TimelineOverlay): RenderOverlay {
+  if (overlay.role !== "lower_third") return overlay;
+  const parts = splitLowerThird(overlay.text);
+  return {
+    ...overlay,
+    text: parts ? `${parts[0]}\n${parts[1]}` : overlay.text,
+    fontsize: 34,
+    x: "60",
+    y: "h-430",
+  };
+}
+
 export function timelineTextOverlays(timeline: Timeline, assetId: string): TimelineOverlay[] {
   const segments = sourceSegments(timeline, assetId);
   const outputDuration = segments.at(-1)?.outputEnd || 0;
@@ -113,6 +157,7 @@ export async function renderLocalTimelineReview(projectId: string, timeline: Tim
   const ranges = timelineSourceRanges(timeline, source.id);
   if (!ranges.length) throw new Error("The video timeline has no source-backed clips to render.");
   const overlays = timelineTextOverlays(timeline, source.id);
+  const renderOverlays = overlays.map(renderOverlay);
 
   const durationSeconds = ranges.reduce((sum, [start, end]) => sum + (end - start), 0);
   const cutArtifact = `timeline-v${timeline.version}-source-cut.mp4`;
@@ -150,7 +195,7 @@ export async function renderLocalTimelineReview(projectId: string, timeline: Tim
       sourceKind: "outputs",
       sourceName: resolvedVertical,
       operation: "overlay_text",
-      overlays,
+      overlays: renderOverlays,
       outputName: reviewArtifact,
     });
     if (!overlay.success) throw new Error(overlay.error || "Timeline presentation-layer render failed.");
