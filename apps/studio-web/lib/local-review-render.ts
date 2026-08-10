@@ -4,10 +4,26 @@ import type { Timeline, TimelineItem } from "@/lib/timeline";
 
 export type SourceRange = [number, number];
 
+export type TimelineOverlay = {
+  text: string;
+  start: number;
+  end: number;
+  role: "title" | "episode_marker" | "lower_third" | "caption";
+};
+
+type SourceSegment = {
+  item: TimelineItem;
+  sourceStart: number;
+  sourceEnd: number;
+  outputStart: number;
+  outputEnd: number;
+};
+
 export type LocalReviewRenderResult = {
   artifact: string;
   cutArtifact: string;
   ranges: SourceRange[];
+  overlays: TimelineOverlay[];
   durationSeconds: number;
   verification: Record<string, unknown>;
   costUsd: number;
@@ -17,24 +33,74 @@ function isSourceItem(item: TimelineItem, assetId: string): boolean {
   return (item.kind === "asset" || item.kind === "composition") && item.assetId === assetId;
 }
 
-export function timelineSourceRanges(timeline: Timeline, assetId: string): SourceRange[] {
+function sourceSegments(timeline: Timeline, assetId: string): SourceSegment[] {
   const items = timeline.tracks
     .filter((track) => track.type === "video")
     .flatMap((track) => track.items)
     .filter((item) => isSourceItem(item, assetId))
     .sort((a, b) => a.startSeconds - b.startSeconds);
 
+  let outputCursor = 0;
   return items.map((item) => {
-    const start = Math.max(0, Number(item.sourceStartSeconds ?? 0));
+    const sourceStart = Math.max(0, Number(item.sourceStartSeconds ?? 0));
     const explicitEnd = item.sourceEndSeconds == null ? null : Number(item.sourceEndSeconds);
-    const end = explicitEnd != null && Number.isFinite(explicitEnd)
+    const sourceEnd = explicitEnd != null && Number.isFinite(explicitEnd)
       ? explicitEnd
-      : start + Math.max(0, Number(item.durationSeconds) || 0);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      : sourceStart + Math.max(0, Number(item.durationSeconds) || 0);
+    if (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd) || sourceEnd <= sourceStart) {
       throw new Error(`Timeline item ${item.id} has an invalid source range.`);
     }
-    return [start, end] as SourceRange;
+    const duration = sourceEnd - sourceStart;
+    const segment: SourceSegment = {
+      item,
+      sourceStart,
+      sourceEnd,
+      outputStart: outputCursor,
+      outputEnd: outputCursor + duration,
+    };
+    outputCursor += duration;
+    return segment;
   });
+}
+
+export function timelineSourceRanges(timeline: Timeline, assetId: string): SourceRange[] {
+  return sourceSegments(timeline, assetId).map(({ sourceStart, sourceEnd }) => [sourceStart, sourceEnd]);
+}
+
+function overlayRole(item: TimelineItem): TimelineOverlay["role"] {
+  if (item.kind === "caption") return "caption";
+  const role = item.extensions?.role;
+  if (role === "episode_marker" || role === "lower_third" || role === "caption") return role;
+  return "title";
+}
+
+export function timelineTextOverlays(timeline: Timeline, assetId: string): TimelineOverlay[] {
+  const segments = sourceSegments(timeline, assetId);
+  const outputDuration = segments.at(-1)?.outputEnd || 0;
+  if (!segments.length) return [];
+
+  return timeline.tracks
+    .filter((track) => track.type === "text" || track.type === "caption" || track.type === "overlay")
+    .flatMap((track) => track.items)
+    .filter((item) => (item.kind === "text" || item.kind === "caption") && Boolean(item.text?.trim()))
+    .map((item) => {
+      const segment = segments.find(({ item: sourceItem }) =>
+        item.startSeconds >= sourceItem.startSeconds - 0.05 &&
+        item.startSeconds < sourceItem.startSeconds + sourceItem.durationSeconds + 0.05,
+      );
+      if (!segment) {
+        throw new Error(`Text layer ${item.id} starts outside a rendered source clip. Move it onto visible media before rendering.`);
+      }
+      const mappedStart = Math.max(0, segment.outputStart + (item.startSeconds - segment.item.startSeconds));
+      const mappedEnd = Math.min(outputDuration, mappedStart + Math.max(0.05, item.durationSeconds));
+      if (mappedEnd <= mappedStart) throw new Error(`Text layer ${item.id} has no visible render duration.`);
+      return {
+        text: item.text!.trim(),
+        start: mappedStart,
+        end: mappedEnd,
+        role: overlayRole(item),
+      };
+    });
 }
 
 export async function renderLocalTimelineReview(projectId: string, timeline: Timeline): Promise<LocalReviewRenderResult> {
@@ -46,9 +112,11 @@ export async function renderLocalTimelineReview(projectId: string, timeline: Tim
 
   const ranges = timelineSourceRanges(timeline, source.id);
   if (!ranges.length) throw new Error("The video timeline has no source-backed clips to render.");
+  const overlays = timelineTextOverlays(timeline, source.id);
 
   const durationSeconds = ranges.reduce((sum, [start, end]) => sum + (end - start), 0);
   const cutArtifact = `timeline-v${timeline.version}-source-cut.mp4`;
+  const verticalArtifact = `timeline-v${timeline.version}-vertical-base.mp4`;
   const reviewArtifact = `timeline-v${timeline.version}-review-1080x1920.mp4`;
 
   const cut = await runLocalOperation({
@@ -67,12 +135,28 @@ export async function renderLocalTimelineReview(projectId: string, timeline: Tim
     sourceKind: "outputs",
     sourceName: resolvedCut,
     operation: "reframe_vertical",
-    outputName: reviewArtifact,
+    outputName: overlays.length ? verticalArtifact : reviewArtifact,
     width: 1080,
     height: 1920,
   });
   if (!reframe.success) throw new Error(reframe.error || "Timeline review reframe failed.");
-  const resolvedReview = reframe.artifacts.find((name) => name.toLowerCase().endsWith(".mp4")) || reviewArtifact;
+  const resolvedVertical = reframe.artifacts.find((name) => name.toLowerCase().endsWith(".mp4")) || (overlays.length ? verticalArtifact : reviewArtifact);
+
+  let resolvedReview = resolvedVertical;
+  let overlayCost = 0;
+  if (overlays.length) {
+    const overlay = await runLocalOperation({
+      projectId,
+      sourceKind: "outputs",
+      sourceName: resolvedVertical,
+      operation: "overlay_text",
+      overlays,
+      outputName: reviewArtifact,
+    });
+    if (!overlay.success) throw new Error(overlay.error || "Timeline presentation-layer render failed.");
+    resolvedReview = overlay.artifacts.find((name) => name.toLowerCase().endsWith(".mp4")) || reviewArtifact;
+    overlayCost = overlay.costUsd;
+  }
 
   const verify = await runLocalOperation({
     projectId,
@@ -84,13 +168,15 @@ export async function renderLocalTimelineReview(projectId: string, timeline: Tim
     min_duration_seconds: Math.max(0.1, durationSeconds - 0.35),
   });
   if (!verify.success) throw new Error(verify.error || "Timeline review verification failed.");
+  if (!verify.data.has_audio) throw new Error("Timeline review verification failed: rendered MP4 has no audio stream.");
 
   return {
     artifact: resolvedReview,
     cutArtifact: resolvedCut,
     ranges,
+    overlays,
     durationSeconds,
     verification: verify.data,
-    costUsd: cut.costUsd + reframe.costUsd + verify.costUsd,
+    costUsd: cut.costUsd + reframe.costUsd + overlayCost + verify.costUsd,
   };
 }
