@@ -48,10 +48,37 @@ function storage(): Storage | null {
   return window.localStorage;
 }
 
+function stablePreviewUrl(value?: string | null): string | null {
+  if (!value || value.startsWith("blob:")) return null;
+  return value;
+}
+
+function scrubTransientPreview(timeline: Timeline): Timeline {
+  return {
+    ...timeline,
+    tracks: timeline.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((item) => {
+        if (!item.extensions || !("previewUrl" in item.extensions)) return item;
+        return {
+          ...item,
+          extensions: {
+            ...item.extensions,
+            previewUrl: stablePreviewUrl(typeof item.extensions.previewUrl === "string" ? item.extensions.previewUrl : null),
+          },
+        };
+      }),
+    })),
+  };
+}
+
 function normalizeRecord(record: LocalStudioProject): LocalStudioProject {
   return {
     ...record,
-    assets: Array.isArray(record.assets) ? record.assets : [],
+    timeline: scrubTransientPreview(record.timeline),
+    assets: Array.isArray(record.assets)
+      ? record.assets.map((asset) => ({ ...asset, previewUrl: stablePreviewUrl(asset.previewUrl) }))
+      : [],
   };
 }
 
@@ -136,7 +163,7 @@ function sourceExtensions(asset: LocalStudioAsset): Record<string, unknown> {
     sourceFilename: asset.filename,
     sourceStatus: asset.status,
     sourceImmutable: true,
-    previewUrl: asset.previewUrl || null,
+    previewUrl: stablePreviewUrl(asset.previewUrl),
     workerAssetId: asset.workerAssetId || null,
     workerStorageFilename: asset.workerStorageFilename || null,
   };
@@ -353,7 +380,7 @@ export function registerLocalSource(
     status: input.status,
     workerAssetId: input.workerAssetId || null,
     workerStorageFilename: input.workerStorageFilename || null,
-    previewUrl: input.previewUrl || null,
+    previewUrl: stablePreviewUrl(input.previewUrl),
   };
   const record = mutateProject(projectId, (current) => {
     const assets = current.assets
@@ -374,7 +401,14 @@ export function updateLocalSource(
   const record = mutateProject(projectId, (current) => {
     const source = current.assets.find((asset) => asset.id === assetId && asset.role === "source-master");
     if (!source) throw new Error("Canonical source asset could not be found.");
-    updated = { ...source, ...patch, id: source.id, role: "source-master", immutable: true };
+    updated = {
+      ...source,
+      ...patch,
+      id: source.id,
+      role: "source-master",
+      immutable: true,
+      previewUrl: stablePreviewUrl(patch.previewUrl === undefined ? source.previewUrl : patch.previewUrl),
+    };
     const assets = current.assets.map((asset) => (asset.id === source.id ? updated! : asset));
     const timeline = timelineWithSourceMetadata(current.timeline, updated!);
     return { ...current, assets, timeline };
@@ -397,7 +431,7 @@ export function replaceLocalTimeline(
   }
   const updatedAt = nowIso();
   const nextTimeline: Timeline = {
-    ...structuredClone(timeline),
+    ...structuredClone(scrubTransientPreview(timeline)),
     version: expectedVersion + 1,
     extensions: {
       ...(timeline.extensions || {}),
