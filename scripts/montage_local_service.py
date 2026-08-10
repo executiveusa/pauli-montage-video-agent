@@ -179,7 +179,7 @@ class LocalWorkspace:
         else:
             source = self.resolve_operation_source(payload)
             inputs: dict[str, Any] = {"operation": operation, "source": str(source)}
-            if operation in {"proxy", "cut", "reframe_vertical", "burn_captions"}:
+            if operation in {"proxy", "cut", "reframe_vertical", "overlay_text", "burn_captions"}:
                 output_name = _safe_filename(str(payload.get("outputName") or f"{operation}.mp4"))
                 inputs["output"] = str(self.outputs_dir(project_id) / output_name)
             if operation == "transcribe":
@@ -187,7 +187,7 @@ class LocalWorkspace:
                 inputs["output"] = str(self.transcripts_dir(project_id) / transcript_name)
             for key in (
                 "height", "width", "keep_ranges", "crop_x", "crop_y", "srt",
-                "style", "expected_width", "expected_height", "min_duration_seconds",
+                "style", "overlays", "expected_width", "expected_height", "min_duration_seconds",
                 "model", "language", "compute_type", "timeout",
             ):
                 if key in payload:
@@ -207,7 +207,7 @@ class LocalWorkspace:
 
 
 class MontageHandler(BaseHTTPRequestHandler):
-    server_version = "MontageLocal/0.1"
+    server_version = "MontageLocal/0.2"
 
     @property
     def workspace(self) -> LocalWorkspace:
@@ -266,7 +266,7 @@ class MontageHandler(BaseHTTPRequestHandler):
             if parsed.path == "/health":
                 self._json(HTTPStatus.OK, {
                     "service": "montage-local",
-                    "version": "0.1.0",
+                    "version": "0.2.0",
                     "workspace": str(self.workspace.root),
                     "ffmpeg": bool(shutil.which("ffmpeg")),
                     "ffprobe": bool(shutil.which("ffprobe")),
