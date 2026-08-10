@@ -1,0 +1,115 @@
+"""Browser acceptance for the zero-credit local Montage editing loop.
+
+This test intentionally exercises the product surface, not only helper functions:
+create -> ingest -> canonical timeline -> source-backed preview -> split ->
+undo/redo -> save/reopen -> timed presentation -> deterministic render -> verify.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import urllib.request
+from pathlib import Path
+
+from playwright.sync_api import expect, sync_playwright
+
+BASE_URL = os.environ.get("MONTAGE_STUDIO_TEST_URL", "http://127.0.0.1:3000")
+FIXTURE = Path(os.environ.get("MONTAGE_STUDIO_TEST_FIXTURE", "/tmp/montage-browser-source.mp4")).resolve()
+
+
+def main() -> int:
+    if not FIXTURE.is_file():
+        raise SystemExit(f"fixture not found: {FIXTURE}")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 1200})
+        page_errors: list[str] = []
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
+
+        page.goto(f"{BASE_URL}/studio/new", wait_until="networkidle")
+        page.get_by_label("Project title").fill("ASC3ND WHY WE STARTED Browser Acceptance")
+        page.get_by_label("Project slug").fill("asc3nd-browser-acceptance")
+        page.get_by_label("What are we making?").fill("Prove source-backed local editing and a verified 9:16 review without publishing.")
+        page.get_by_label("Primary deliverable").select_option(label="9:16 vertical master")
+        page.get_by_role("button", name="Create project").click()
+        page.wait_for_url(re.compile(r"/studio/projects/local_.+/footage$"), timeout=15_000)
+
+        expect(page.get_by_role("heading", name="Ready on this computer")).to_be_visible(timeout=10_000)
+        file_input = page.locator('input[type="file"]')
+        expect(file_input).to_be_enabled()
+        file_input.set_input_files(str(FIXTURE))
+        expect(page.get_by_text("Canonical asset · local bytes synced")).to_be_visible(timeout=30_000)
+        source_name = FIXTURE.name
+        expect(page.get_by_text(source_name, exact=True)).to_be_visible()
+
+        page.get_by_role("link", name="Timeline").click()
+        page.wait_for_url(re.compile(r"/studio/projects/local_.+/edit$"), timeout=10_000)
+        expect(page.get_by_text("source-backed playback")).to_be_visible(timeout=10_000)
+        video = page.locator("video").first
+        expect(video).to_have_attribute("src", re.compile(r"127\.0\.0\.1:4788/files/.+/assets/"))
+
+        timeline_clips = page.locator('button[class*="timelineClip"]')
+        expect(timeline_clips).to_have_count(1)
+        timeline_clips.first.click()
+        playhead = page.get_by_label("Playhead")
+        playhead.evaluate("""el => {
+          el.value = '0.55';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page.get_by_role("button", name="Split at playhead").first.click()
+        expect(timeline_clips).to_have_count(2)
+
+        page.get_by_role("button", name="Undo").first.click()
+        expect(timeline_clips).to_have_count(1)
+        page.get_by_role("button", name="Redo").first.click()
+        expect(timeline_clips).to_have_count(2)
+
+        save = page.get_by_role("button", name=re.compile(r"Save v\d+"))
+        save.click()
+        expect(page.get_by_text(re.compile(r"Saved locally as timeline v\d+"))).to_be_visible(timeout=10_000)
+        page.get_by_role("button", name="Reopen saved").click()
+        expect(timeline_clips).to_have_count(2)
+
+        # Add typed presentation state through the same saved StudioProject timeline.
+        page.get_by_label("Role").select_option("title")
+        page.get_by_label("Text").fill("WHY WE STARTED")
+        page.get_by_label("Start").fill("0")
+        page.get_by_label("Duration").fill("0.45")
+        page.get_by_role("button", name="Add to timeline").click()
+        expect(page.get_by_text(re.compile(r"Added title to canonical timeline v\d+"))).to_be_visible()
+
+        page.get_by_label("Role").select_option("lower_third")
+        page.get_by_label("Text").fill("Otha Minnifield\\nFounder, ASC3ND Collective")
+        page.get_by_label("Start").fill("0.15")
+        page.get_by_label("Duration").fill("0.55")
+        page.get_by_role("button", name="Add to timeline").click()
+        expect(page.get_by_text(re.compile(r"Added lower third to canonical timeline v\d+"))).to_be_visible()
+
+        page.get_by_role("button", name="Reopen saved").click()
+        expect(page.get_by_text("WHY WE STARTED", exact=True)).to_be_visible(timeout=10_000)
+
+        page.get_by_role("button", name="Render + verify 9:16 review").click()
+        expect(page.get_by_text(re.compile(r"Verified \d+ source range"))).to_be_visible(timeout=120_000)
+        review_link = page.get_by_role("link", name=re.compile(r"Open verified MP4"))
+        expect(review_link).to_be_visible()
+        review_url = review_link.get_attribute("href")
+        if not review_url:
+            raise AssertionError("verified review link had no href")
+        with urllib.request.urlopen(review_url, timeout=30) as response:
+            payload = response.read(64)
+            if response.status != 200 or len(payload) == 0:
+                raise AssertionError("verified review MP4 was not retrievable from local worker")
+
+        # Browser-local project and worker API failures should be handled as product states,
+        # not uncaught JavaScript exceptions.
+        if page_errors:
+            raise AssertionError(f"uncaught browser errors: {page_errors}")
+        browser.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
