@@ -58,12 +58,22 @@ def main() -> int:
             timeline_clips = page.locator('button[class*="timelineClip"]')
             expect(timeline_clips).to_have_count(1)
             timeline_clips.first.click()
+
+            # Seek through the actual timeline-lane interaction instead of mutating
+            # a controlled React range input behind the product's back.
+            lane = page.locator('div[class*="trackLane"]').first
+            lane_box = lane.bounding_box()
+            if not lane_box:
+                raise AssertionError("timeline lane had no visible bounding box")
+            page.mouse.click(lane_box["x"] + lane_box["width"] * 0.30, lane_box["y"] + lane_box["height"] * 0.5)
             playhead = page.get_by_label("Playhead")
-            playhead.evaluate("""el => {
-              el.value = '0.55';
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-            }""")
+            playhead_value = float(playhead.input_value())
+            if playhead_value <= 0.05 or playhead_value >= 1.75:
+                raise AssertionError(f"timeline seek did not move playhead inside clip: {playhead_value}")
+
+            # Lane seeking clears selection by design; reselect the source clip, then split
+            # at the already-moved playhead.
+            timeline_clips.first.click(position={"x": 8, "y": 8})
             page.get_by_role("button", name="Split at playhead").first.click()
             expect(timeline_clips).to_have_count(2)
 
