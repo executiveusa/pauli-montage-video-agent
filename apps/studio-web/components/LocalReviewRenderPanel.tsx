@@ -11,6 +11,7 @@ import {
   replaceLocalTimeline,
 } from "@/lib/local-studio-store";
 import { timelineWithSyncedCaptions } from "@/lib/timeline-caption-sync";
+import { PresentationRole, timelineWithPresentation } from "@/lib/timeline-presentation";
 
 type RenderState = "idle" | "rendering" | "verified" | "error";
 
@@ -20,6 +21,34 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
   const [message, setMessage] = useState("Save the timeline, then render the same canonical edit as a local 1080×1920 review MP4.");
   const [artifact, setArtifact] = useState<string | null>(null);
   const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
+  const [role, setRole] = useState<PresentationRole>("title");
+  const [presentationText, setPresentationText] = useState("WHY WE STARTED");
+  const [presentationStart, setPresentationStart] = useState("0");
+  const [presentationDuration, setPresentationDuration] = useState("2.5");
+
+  function addPresentation() {
+    if (!localMode) {
+      setState("error");
+      setMessage("Hosted presentation editing is not connected yet.");
+      return;
+    }
+    try {
+      const timeline = getLocalTimeline(projectId);
+      if (!timeline) throw new Error("Save a local timeline before adding presentation layers.");
+      const next = timelineWithPresentation(timeline, {
+        text: presentationText,
+        startSeconds: Number(presentationStart),
+        durationSeconds: Number(presentationDuration),
+        role,
+      });
+      const result = replaceLocalTimeline(projectId, timeline.version, next);
+      setState("idle");
+      setMessage(`Added ${role.replaceAll("_", " ")} to canonical timeline v${result.timeline.version}. Reopen saved in the editor to inspect or change its timing/text.`);
+    } catch (reason) {
+      setState("error");
+      setMessage(reason instanceof Error ? reason.message : "Presentation layer could not be added.");
+    }
+  }
 
   function syncCaptions() {
     if (!localMode) {
@@ -91,7 +120,20 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
         <span className={`status-pill ${state === "verified" ? "local-ready" : ""}`}>{state}</span>
       </div>
       <p className="muted">{message}</p>
-      <div className="form-actions">
+
+      <div style={{ borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 14, marginTop: 14 }}>
+        <div className="section-label">Timed presentation</div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,.7fr) minmax(220px,1.5fr) 100px 100px auto", gap: 8, alignItems: "end", marginTop: 8 }}>
+          <label className="field"><span>Role</span><select value={role} onChange={(event) => setRole(event.target.value as PresentationRole)}><option value="title">Title</option><option value="episode_marker">Episode marker</option><option value="lower_third">Lower third</option><option value="caption">Manual caption</option></select></label>
+          <label className="field"><span>Text</span><input value={presentationText} onChange={(event) => setPresentationText(event.target.value)} /></label>
+          <label className="field"><span>Start</span><input min="0" step="0.05" type="number" value={presentationStart} onChange={(event) => setPresentationStart(event.target.value)} /></label>
+          <label className="field"><span>Duration</span><input min="0.1" step="0.05" type="number" value={presentationDuration} onChange={(event) => setPresentationDuration(event.target.value)} /></label>
+          <button className="button secondary" disabled={state === "rendering" || !localMode || !presentationText.trim()} onClick={addPresentation} type="button">Add to timeline</button>
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>For founder lower thirds, use two lines if desired: name, then “Founder, ASC3ND Collective”. Timing is stored on the same StudioProject timeline and rendered from that state.</p>
+      </div>
+
+      <div className="form-actions" style={{ marginTop: 16 }}>
         <button className="button secondary" disabled={state === "rendering" || !localMode} onClick={syncCaptions} type="button">Sync transcript captions</button>
         <button className="button accent" disabled={state === "rendering" || !localMode} onClick={() => void renderReview()} type="button">
           {state === "rendering" ? "Rendering…" : "Render + verify 9:16 review"}
