@@ -2,18 +2,47 @@
 
 import { useState } from "react";
 import { localEngineHealth, localFileUrl } from "@/lib/local-engine";
-import { registerExport } from "@/lib/local-footage-state";
+import { getFootageState, registerExport } from "@/lib/local-footage-state";
 import { renderLocalTimelineReview } from "@/lib/local-review-render";
-import { getLocalTimeline, isLocalProjectId } from "@/lib/local-studio-store";
+import {
+  getLocalSourceAsset,
+  getLocalTimeline,
+  isLocalProjectId,
+  replaceLocalTimeline,
+} from "@/lib/local-studio-store";
+import { timelineWithSyncedCaptions } from "@/lib/timeline-caption-sync";
 
 type RenderState = "idle" | "rendering" | "verified" | "error";
 
 export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
   const localMode = isLocalProjectId(projectId);
   const [state, setState] = useState<RenderState>("idle");
-  const [message, setMessage] = useState("Save the timeline, then render the same canonical source cuts as a local 1080×1920 review MP4.");
+  const [message, setMessage] = useState("Save the timeline, then render the same canonical edit as a local 1080×1920 review MP4.");
   const [artifact, setArtifact] = useState<string | null>(null);
   const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
+
+  function syncCaptions() {
+    if (!localMode) {
+      setState("error");
+      setMessage("Hosted caption sync is not connected yet.");
+      return;
+    }
+    try {
+      const timeline = getLocalTimeline(projectId);
+      const source = getLocalSourceAsset(projectId);
+      const transcript = getFootageState(projectId).transcript || [];
+      if (!timeline || !source) throw new Error("Save a source-backed local timeline before syncing captions.");
+      if (!transcript.length) throw new Error("Transcribe the source in Footage before syncing captions.");
+      const next = timelineWithSyncedCaptions(timeline, source.id, transcript);
+      const result = replaceLocalTimeline(projectId, timeline.version, next);
+      const captionTrack = result.timeline.tracks.find((track) => track.id === "track_captions_auto");
+      setState("idle");
+      setMessage(`Synced ${captionTrack?.items.length || 0} source-faithful captions into canonical timeline v${result.timeline.version}. Reopen saved in the editor to review/edit them.`);
+    } catch (reason) {
+      setState("error");
+      setMessage(reason instanceof Error ? reason.message : "Caption sync failed.");
+    }
+  }
 
   async function renderReview() {
     if (!localMode) {
@@ -36,13 +65,13 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
       if (!health.ffmpeg || !health.ffprobe) {
         throw new Error("Montage Local Engine is running but FFmpeg/ffprobe are not both ready.");
       }
-      setMessage(`Rendering timeline v${timeline.version} from canonical source ranges…`);
+      setMessage(`Rendering timeline v${timeline.version}: source cuts, 9:16 frame, timed text/captions, then ffprobe verification…`);
       const result = await renderLocalTimelineReview(projectId, timeline);
       registerExport(projectId, result.artifact);
       setArtifact(result.artifact);
       setVerification(result.verification);
       setState("verified");
-      setMessage(`Verified ${result.ranges.length} source range${result.ranges.length === 1 ? "" : "s"} into a ${result.durationSeconds.toFixed(2)}s review. Cost: $${result.costUsd.toFixed(2)}.`);
+      setMessage(`Verified ${result.ranges.length} source range${result.ranges.length === 1 ? "" : "s"}, ${result.overlays.length} timed text layer${result.overlays.length === 1 ? "" : "s"}, ${result.durationSeconds.toFixed(2)}s. Cost: $${result.costUsd.toFixed(2)}.`);
     } catch (reason) {
       setState("error");
       const raw = reason instanceof Error ? reason.message : "Local review render failed.";
@@ -63,6 +92,7 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
       </div>
       <p className="muted">{message}</p>
       <div className="form-actions">
+        <button className="button secondary" disabled={state === "rendering" || !localMode} onClick={syncCaptions} type="button">Sync transcript captions</button>
         <button className="button accent" disabled={state === "rendering" || !localMode} onClick={() => void renderReview()} type="button">
           {state === "rendering" ? "Rendering…" : "Render + verify 9:16 review"}
         </button>
