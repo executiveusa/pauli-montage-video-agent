@@ -98,14 +98,14 @@ def main() -> int:
             page.get_by_label("Role").select_option("title")
             page.get_by_label("Text").fill("WHY WE STARTED")
             page.get_by_label("Start").fill("0")
-            page.get_by_label("Duration").fill("0.45")
+            page.get_by_role("spinbutton", name="Duration", exact=True).fill("0.45")
             page.get_by_role("button", name="Add to timeline").click()
             expect(page.get_by_text(re.compile(r"Added title to canonical timeline v\d+"))).to_be_visible()
 
             page.get_by_label("Role").select_option("lower_third")
             page.get_by_label("Text").fill("Otha Minnifield — Founder, ASC3ND Collective")
             page.get_by_label("Start").fill("0.15")
-            page.get_by_label("Duration").fill("0.55")
+            page.get_by_role("spinbutton", name="Duration", exact=True).fill("0.55")
             page.get_by_role("button", name="Add to timeline").click()
             expect(page.get_by_text(re.compile(r"Added lower third to canonical timeline v\d+"))).to_be_visible()
 
