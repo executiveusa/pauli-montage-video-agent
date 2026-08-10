@@ -11,6 +11,7 @@ on:
       - "scripts/start_montage_windows.ps1"
       - "tests/test_local_footage.py"
       - "tests/test_windows_onboarding.py"
+      - "tests/studio_browser_acceptance.py"
       - "docs/ASC3ND_LOCAL_FOOTAGE_QUICKSTART.md"
       - "apps/studio-web/**"
       - ".github/workflows/local-footage.yml"
@@ -25,6 +26,7 @@ on:
       - "scripts/start_montage_windows.ps1"
       - "tests/test_local_footage.py"
       - "tests/test_windows_onboarding.py"
+      - "tests/studio_browser_acceptance.py"
       - "docs/ASC3ND_LOCAL_FOOTAGE_QUICKSTART.md"
       - "apps/studio-web/**"
       - ".github/workflows/local-footage.yml"
@@ -52,7 +54,7 @@ jobs:
       - name: Run local footage contract and real-media acceptance tests
         run: python -m unittest tests.test_local_footage tests.test_windows_onboarding -v
       - name: Compile local worker and tools
-        run: python -m py_compile tools/local_footage.py tools/synthcut_adapter.py scripts/montage_local_service.py scripts/prewarm_whisper.py
+        run: python -m py_compile tools/local_footage.py tools/synthcut_adapter.py scripts/montage_local_service.py scripts/prewarm_whisper.py tests/studio_browser_acceptance.py
       - name: Parse Windows PowerShell onboarding scripts
         shell: pwsh
         run: |
@@ -73,3 +75,40 @@ jobs:
         run: npm run typecheck:studio
       - name: Build Studio
         run: npm run build:studio
+      - name: Install browser acceptance runtime
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Run source-to-review browser gauntlet
+        env:
+          MONTAGE_STUDIO_TEST_URL: http://127.0.0.1:3000
+          MONTAGE_STUDIO_TEST_FIXTURE: /tmp/montage-browser-source.mp4
+        run: |
+          ffmpeg -y \
+            -f lavfi -i testsrc=size=640x360:rate=30 \
+            -f lavfi -i sine=frequency=440:sample_rate=48000 \
+            -t 1.8 -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 96k \
+            "$MONTAGE_STUDIO_TEST_FIXTURE" >/tmp/fixture.log 2>&1
+          python scripts/montage_local_service.py --workspace /tmp/montage-browser-media >/tmp/montage-worker.log 2>&1 &
+          WORKER_PID=$!
+          npm run start --workspace=@yappyverse/studio-web -- --hostname 127.0.0.1 --port 3000 >/tmp/montage-studio.log 2>&1 &
+          STUDIO_PID=$!
+          cleanup() {
+            kill "$STUDIO_PID" "$WORKER_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3000/studio/new >/dev/null && curl -fsS http://127.0.0.1:4788/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/studio/new >/dev/null || { cat /tmp/montage-studio.log; exit 1; }
+          curl -fsS http://127.0.0.1:4788/health >/dev/null || { cat /tmp/montage-worker.log; exit 1; }
+          python tests/studio_browser_acceptance.py || {
+            echo "--- Studio log ---"
+            cat /tmp/montage-studio.log
+            echo "--- Worker log ---"
+            cat /tmp/montage-worker.log
+            exit 1
+          }
