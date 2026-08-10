@@ -30,7 +30,20 @@ def main() -> int:
         context.tracing.start(screenshots=True, snapshots=True, sources=True)
         page = context.new_page()
         page_errors: list[str] = []
+        operation_payloads: list[dict] = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
+
+        def capture_operation(request) -> None:
+            if request.method != "POST" or not request.url.endswith("/operations"):
+                return
+            try:
+                payload = request.post_data_json
+                if isinstance(payload, dict):
+                    operation_payloads.append(payload)
+            except Exception:
+                return
+
+        page.on("request", capture_operation)
 
         try:
             page.goto(f"{BASE_URL}/studio/new", wait_until="networkidle")
@@ -102,8 +115,9 @@ def main() -> int:
             page.get_by_role("button", name="Add to timeline").click()
             expect(page.get_by_text(re.compile(r"Added title to canonical timeline v\d+"))).to_be_visible()
 
+            founder_lower_third = "Otha Minnifield — Founder, ASC3ND Collective"
             page.get_by_label("Role").select_option("lower_third")
-            page.get_by_label("Text").fill("Otha Minnifield — Founder, ASC3ND Collective")
+            page.get_by_label("Text").fill(founder_lower_third)
             page.get_by_label("Start").fill("0.15")
             page.get_by_role("spinbutton", name="Duration", exact=True).fill("0.55")
             page.get_by_role("button", name="Add to timeline").click()
@@ -111,9 +125,30 @@ def main() -> int:
 
             page.get_by_role("button", name="Reopen saved").click()
             expect(page.get_by_text("WHY WE STARTED", exact=True)).to_be_visible(timeout=10_000)
+            # Canonical StudioProject text remains exact; wrapping is render-only.
+            expect(page.get_by_text(founder_lower_third, exact=True)).to_be_visible(timeout=10_000)
 
             page.get_by_role("button", name="Render + verify 9:16 review").click()
             expect(page.get_by_text(re.compile(r"Verified \d+ source range"))).to_be_visible(timeout=120_000)
+
+            overlay_payloads = [payload for payload in operation_payloads if payload.get("operation") == "overlay_text"]
+            if not overlay_payloads:
+                raise AssertionError("render did not issue an overlay_text operation")
+            overlays = overlay_payloads[-1].get("overlays")
+            if not isinstance(overlays, list):
+                raise AssertionError("overlay_text request had no overlays")
+            rendered_lower_thirds = [
+                overlay for overlay in overlays
+                if isinstance(overlay, dict) and overlay.get("role") == "lower_third"
+            ]
+            if len(rendered_lower_thirds) != 1:
+                raise AssertionError(f"expected one rendered lower third, got {len(rendered_lower_thirds)}")
+            rendered_lower = rendered_lower_thirds[0]
+            if rendered_lower.get("text") != "Otha Minnifield\nFounder, ASC3ND Collective":
+                raise AssertionError(f"lower third was not semantically wrapped for safe rendering: {rendered_lower}")
+            if float(rendered_lower.get("fontsize", 999)) > 34:
+                raise AssertionError(f"lower-third render fontsize exceeds safe bound: {rendered_lower}")
+
             review_link = page.get_by_role("link", name=re.compile(r"Open verified MP4"))
             expect(review_link).to_be_visible()
             review_url = review_link.get_attribute("href")
