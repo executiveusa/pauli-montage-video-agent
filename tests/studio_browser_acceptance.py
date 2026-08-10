@@ -24,7 +24,7 @@ def main() -> int:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        page = browser.new_page(viewport={"width": 1440, "height": 1200)
+        page = browser.new_page(viewport={"width": 1440, "height": 1200})
         page_errors: list[str] = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
 
