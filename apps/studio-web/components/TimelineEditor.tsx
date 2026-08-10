@@ -53,9 +53,9 @@ function timelineLength(timeline: Timeline): number {
 }
 
 function fmt(seconds: number): string {
-  const safe = Math.max(0, seconds);
+  const safe = Math.round(Math.max(0, seconds) * 10) / 10;
   const minutes = Math.floor(safe / 60);
-  const remainder = (safe % 60).toFixed(1).padStart(4, "0");
+  const remainder = (safe - minutes * 60).toFixed(1).padStart(4, "0");
   return `${minutes}:${remainder}`;
 }
 
@@ -247,11 +247,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     const nextIndex = index + delta;
     if (index < 0 || nextIndex < 0 || nextIndex >= track.items.length) return;
     const items = [...track.items];
-    const [item] = items.splice(index, 1);
-    items.splice(nextIndex, 0, item);
+    const current = items[index];
+    const adjacent = items[nextIndex];
+    items[index] = { ...adjacent, startSeconds: current.startSeconds };
+    items[nextIndex] = { ...current, startSeconds: adjacent.startSeconds };
     mark(
       { ...timeline, tracks: timeline.tracks.map((candidate) => (candidate.id === track.id ? { ...candidate, items } : candidate)) },
-      "Clip order updated",
+      "Clip order and timeline position updated",
     );
   }
 
@@ -260,7 +262,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     const { track, item } = selected;
     const splitOffset = item.durationSeconds / 2;
     const secondId = nextId(`${item.kind}_split`);
-    const sourceSplit = item.sourceStartSeconds == null ? null : item.sourceStartSeconds + splitOffset;
+    const hasSourceRange = item.sourceStartSeconds != null && item.sourceEndSeconds != null;
+    const sourceSplit = hasSourceRange
+      ? item.sourceStartSeconds! + (item.sourceEndSeconds! - item.sourceStartSeconds!) / 2
+      : null;
     const first: TimelineItem = {
       ...item,
       durationSeconds: splitOffset,
@@ -640,7 +645,20 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       <div className={styles.footerBar}>
         <span><strong>Canonical state:</strong> StudioProject timeline · {localMode ? "browser-local persistence" : "hosted persistence"}</span>
         <span>Drive / CapCut are export and round-trip boundaries only · no silent publish</span>
-        <label>Canvas duration <input aria-label="Canvas duration" min="0" onChange={(event) => setDuration(Number(event.target.value))} step="0.1" type="number" value={timeline.canvas.durationSeconds ?? duration} /></label>
+        <label>Canvas duration <input
+          aria-label="Canvas duration"
+          min="0"
+          onChange={(event) => {
+            const raw = event.target.value;
+            if (raw === "") return;
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) return;
+            setDuration(parsed);
+          }}
+          step="0.1"
+          type="number"
+          value={timeline.canvas.durationSeconds ?? duration}
+        /></label>
       </div>
     </div>
   );
