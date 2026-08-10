@@ -1,3 +1,4 @@
+import { LocalReviewRenderPanel } from "@/components/LocalReviewRenderPanel";
 import { StudioFrame } from "@/components/StudioFrame";
 import { TimelineEditor } from "@/components/TimelineEditor";
 
@@ -8,6 +9,7 @@ export default async function EditProjectPage({ params }: PageProps) {
   return (
     <StudioFrame active="Projects">
       <TimelineEditor projectId={projectId} />
+      <LocalReviewRenderPanel projectId={projectId} />
     </StudioFrame>
   );
 }
