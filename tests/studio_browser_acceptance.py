@@ -55,6 +55,16 @@ def main() -> int:
             video = page.locator("video").first
             expect(video).to_have_attribute("src", re.compile(r"127\.0\.0\.1:4788/files/.+/assets/"))
 
+            # Prove this is not a decorative preview: the real media element must
+            # decode/play and advance the canonical timeline playhead.
+            playhead = page.get_by_label("Playhead")
+            page.get_by_role("button", name="Play").click()
+            page.wait_for_timeout(450)
+            playback_value = float(playhead.input_value())
+            if playback_value <= 0.05:
+                raise AssertionError(f"source playback did not advance timeline playhead: {playback_value}")
+            page.get_by_role("button", name="Pause").click()
+
             timeline_clips = page.locator('button[class*="timelineClip"]')
             expect(timeline_clips).to_have_count(1)
             timeline_clips.first.click()
@@ -66,7 +76,6 @@ def main() -> int:
             if not lane_box:
                 raise AssertionError("timeline lane had no visible bounding box")
             page.mouse.click(lane_box["x"] + lane_box["width"] * 0.30, lane_box["y"] + lane_box["height"] * 0.5)
-            playhead = page.get_by_label("Playhead")
             playhead_value = float(playhead.input_value())
             if playhead_value <= 0.05 or playhead_value >= 1.75:
                 raise AssertionError(f"timeline seek did not move playhead inside clip: {playhead_value}")
