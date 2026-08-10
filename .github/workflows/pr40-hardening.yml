@@ -1,5 +1,7 @@
 name: PR40 critic hardening patch
 
+# One-shot branch-only patch runner. The resulting commit does not touch this file,
+# so this workflow does not recurse after the deterministic patch is applied.
 on:
   push:
     branches:
