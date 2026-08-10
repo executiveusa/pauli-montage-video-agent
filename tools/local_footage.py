@@ -98,7 +98,6 @@ def _escape_drawtext(value: str) -> str:
         .replace(",", r"\,")
         .replace("[", r"\[")
         .replace("]", r"\]")
-        .replace("\n", r"\n")
     )
 
 
