@@ -71,7 +71,17 @@ export function CreateProjectForm() {
       <div className="field"><label htmlFor="deliverable">Primary deliverable</label><select id="deliverable" name="deliverable" defaultValue="9:16 vertical master"><option>16:9 master</option><option>9:16 vertical master</option><option>1:1 campaign master</option><option>Documentary rough cut</option><option>Character / avatar proof</option></select></div>
       <div className="field"><label htmlFor="quality_lane">Quality lane</label><select id="quality_lane" name="quality_lane" defaultValue="sovereign"><option value="economy">Economy — optimize cost</option><option value="premium">Premium — optimize quality</option><option value="sovereign">Sovereign — prefer owner-controlled compute</option><option value="owner_private">Owner private — private/restricted tools allowed</option></select></div>
       {message ? <div className={`notice ${isError ? "error" : ""}`}>{message}</div> : null}
-      <div className="form-actions"><button className="generation-primary" disabled={submitting} type="submit">{submitting ? "Creating…" : "Create project"}</button><Link className="button secondary" href="/studio">Cancel</Link></div>
+      <div className="form-actions">
+        <button
+          className="button"
+          disabled={submitting}
+          style={{ background: "#0a84ff", border: "1px solid #0a84ff", color: "#fff" }}
+          type="submit"
+        >
+          {submitting ? "Creating…" : "Create project"}
+        </button>
+        <Link className="button secondary" href="/studio">Cancel</Link>
+      </div>
       <p className="muted" style={{ fontSize: ".78rem", lineHeight: 1.5 }}>Montage uses the hosted Studio API when it is connected. If that service is unavailable, the project opens directly in the browser-local footage factory so you can start with real media and zero editor-agent credits.</p>
     </form>
   );
