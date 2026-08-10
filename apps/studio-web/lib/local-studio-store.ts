@@ -1,13 +1,35 @@
 import type { CreateProjectInput, ProjectSummary } from "@/lib/studio-api";
-import type { ProjectEnvelope, Timeline, TimelineReplaceResult } from "@/lib/timeline";
+import type { ProjectEnvelope, Timeline, TimelineItem, TimelineReplaceResult, TimelineTrack } from "@/lib/timeline";
 
 const STORAGE_KEY = "montage.studio.local-projects.v1";
 const SCHEMA_VERSION = "studio-project-v1-local";
+
+export type LocalStudioAsset = {
+  id: string;
+  role: "source-master" | "derived";
+  filename: string;
+  sizeBytes: number;
+  mimeType?: string | null;
+  durationSeconds?: number | null;
+  width?: number | null;
+  height?: number | null;
+  immutable: boolean;
+  status: "pending-worker" | "ready";
+  workerAssetId?: string | null;
+  workerStorageFilename?: string | null;
+  previewUrl?: string | null;
+};
 
 export type LocalStudioProject = {
   schemaVersion: string;
   project: ProjectEnvelope["project"];
   brief: CreateProjectInput;
+  timeline: Timeline;
+  assets: LocalStudioAsset[];
+};
+
+export type LocalSourceRegistration = {
+  asset: LocalStudioAsset;
   timeline: Timeline;
 };
 
@@ -26,6 +48,13 @@ function storage(): Storage | null {
   return window.localStorage;
 }
 
+function normalizeRecord(record: LocalStudioProject): LocalStudioProject {
+  return {
+    ...record,
+    assets: Array.isArray(record.assets) ? record.assets : [],
+  };
+}
+
 function readAll(): LocalStudioProject[] {
   const target = storage();
   if (!target) return [];
@@ -33,7 +62,7 @@ function readAll(): LocalStudioProject[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isLocalStudioProject) : [];
+    return Array.isArray(parsed) ? parsed.filter(isLocalStudioProject).map((record) => normalizeRecord(record)) : [];
   } catch {
     return [];
   }
@@ -70,6 +99,14 @@ function localId(slug: string): string {
   return `local_${slug}_${entropy}`;
 }
 
+function sourceId(): string {
+  const entropy =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replaceAll("-", "").slice(0, 16)
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  return `asset_local_${entropy}`;
+}
+
 function defaultTimeline(deliverable: string | undefined): Timeline {
   const vertical = deliverable?.includes("9:16") ?? false;
   const square = deliverable?.includes("1:1") ?? false;
@@ -91,6 +128,92 @@ function defaultTimeline(deliverable: string | undefined): Timeline {
       sourceImmutable: true,
     },
   };
+}
+
+function sourceExtensions(asset: LocalStudioAsset): Record<string, unknown> {
+  return {
+    role: "source-master",
+    sourceFilename: asset.filename,
+    sourceStatus: asset.status,
+    sourceImmutable: true,
+    previewUrl: asset.previewUrl || null,
+    workerAssetId: asset.workerAssetId || null,
+    workerStorageFilename: asset.workerStorageFilename || null,
+  };
+}
+
+function timelineWithSource(timeline: Timeline, asset: LocalStudioAsset): Timeline {
+  const duration = Math.max(0.1, Number(asset.durationSeconds) || 30);
+  const existingTrack = timeline.tracks.find((track) => track.type === "video");
+  const trackId = existingTrack?.id || "track_video_primary";
+  const existingItem = existingTrack?.items.find((item) => item.extensions?.role === "source-master");
+  const item: TimelineItem = {
+    id: existingItem?.id || "source_master_primary",
+    kind: "asset",
+    assetId: asset.id,
+    shotId: null,
+    startSeconds: existingItem?.startSeconds ?? 0,
+    durationSeconds: duration,
+    sourceStartSeconds: 0,
+    sourceEndSeconds: asset.durationSeconds || duration,
+    effects: existingItem?.effects || [],
+    extensions: {
+      ...(existingItem?.extensions || {}),
+      ...sourceExtensions(asset),
+    },
+  };
+  let tracks: TimelineTrack[];
+  if (existingTrack) {
+    tracks = timeline.tracks.map((track) =>
+      track.id === trackId
+        ? {
+            ...track,
+            items: existingItem
+              ? track.items.map((candidate) => (candidate.id === existingItem.id ? item : candidate))
+              : [...track.items, item],
+          }
+        : track,
+    );
+  } else {
+    tracks = [
+      ...timeline.tracks,
+      {
+        id: trackId,
+        type: "video",
+        name: "Source video",
+        order: timeline.tracks.length,
+        muted: false,
+        locked: false,
+        items: [item],
+      },
+    ];
+  }
+  return {
+    ...timeline,
+    version: timeline.version + 1,
+    canvas: {
+      ...timeline.canvas,
+      durationSeconds: Math.max(Number(timeline.canvas.durationSeconds) || 0, duration),
+    },
+    tracks,
+    extensions: {
+      ...(timeline.extensions || {}),
+      persistence: "browser-local",
+      sourceImmutable: true,
+      canonicalSourceAssetId: asset.id,
+    },
+  };
+}
+
+function mutateProject(projectId: string, mutate: (record: LocalStudioProject) => LocalStudioProject): LocalStudioProject {
+  const projects = readAll();
+  const index = projects.findIndex((project) => project.project.id === projectId);
+  if (index < 0) throw new Error("Local project could not be found.");
+  const next = mutate(structuredClone(projects[index]));
+  next.project.updatedAt = nowIso();
+  projects[index] = next;
+  writeAll(projects);
+  return structuredClone(next);
 }
 
 export function isLocalProjectId(projectId: string): boolean {
@@ -126,6 +249,7 @@ export function createLocalProject(input: CreateProjectInput): ProjectEnvelope {
     },
     brief: input,
     timeline: defaultTimeline(input.deliverables[0]),
+    assets: [],
   };
   const projects = readAll();
   writeAll([record, ...projects.filter((project) => project.project.id !== id)]);
@@ -140,6 +264,66 @@ export function getLocalProject(projectId: string): ProjectEnvelope | null {
 export function getLocalTimeline(projectId: string): Timeline | null {
   const record = readAll().find((project) => project.project.id === projectId);
   return record ? structuredClone(record.timeline) : null;
+}
+
+export function listLocalAssets(projectId: string): LocalStudioAsset[] {
+  const record = readAll().find((project) => project.project.id === projectId);
+  return record ? structuredClone(record.assets) : [];
+}
+
+export function getLocalAsset(projectId: string, assetId: string): LocalStudioAsset | null {
+  return listLocalAssets(projectId).find((asset) => asset.id === assetId) || null;
+}
+
+export function getLocalSourceAsset(projectId: string): LocalStudioAsset | null {
+  return listLocalAssets(projectId).find((asset) => asset.role === "source-master") || null;
+}
+
+export function registerLocalSource(
+  projectId: string,
+  input: Omit<LocalStudioAsset, "id" | "role" | "immutable"> & { id?: string },
+): LocalSourceRegistration {
+  const asset: LocalStudioAsset = {
+    id: input.id || sourceId(),
+    role: "source-master",
+    filename: input.filename,
+    sizeBytes: input.sizeBytes,
+    mimeType: input.mimeType || null,
+    durationSeconds: input.durationSeconds || null,
+    width: input.width || null,
+    height: input.height || null,
+    immutable: true,
+    status: input.status,
+    workerAssetId: input.workerAssetId || null,
+    workerStorageFilename: input.workerStorageFilename || null,
+    previewUrl: input.previewUrl || null,
+  };
+  const record = mutateProject(projectId, (current) => {
+    const assets = current.assets
+      .filter((candidate) => candidate.id !== asset.id)
+      .map((candidate) => (candidate.role === "source-master" ? { ...candidate, role: "derived" as const } : candidate));
+    const timeline = timelineWithSource(current.timeline, asset);
+    return { ...current, assets: [...assets, asset], timeline };
+  });
+  return { asset: structuredClone(asset), timeline: structuredClone(record.timeline) };
+}
+
+export function updateLocalSource(
+  projectId: string,
+  assetId: string,
+  patch: Partial<Omit<LocalStudioAsset, "id" | "role" | "immutable">>,
+): LocalSourceRegistration {
+  let updated: LocalStudioAsset | null = null;
+  const record = mutateProject(projectId, (current) => {
+    const source = current.assets.find((asset) => asset.id === assetId && asset.role === "source-master");
+    if (!source) throw new Error("Canonical source asset could not be found.");
+    updated = { ...source, ...patch, id: source.id, role: "source-master", immutable: true };
+    const assets = current.assets.map((asset) => (asset.id === source.id ? updated! : asset));
+    const timeline = timelineWithSource(current.timeline, updated!);
+    return { ...current, assets, timeline };
+  });
+  if (!updated) throw new Error("Canonical source asset could not be updated.");
+  return { asset: structuredClone(updated), timeline: structuredClone(record.timeline) };
 }
 
 export function replaceLocalTimeline(
