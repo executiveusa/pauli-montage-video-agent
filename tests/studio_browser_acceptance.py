@@ -73,6 +73,7 @@ def main() -> int:
             # the product's real input/change path and avoid clicking through a
             # source clip that visually covers the lane.
             playhead.focus()
+            expect(playhead).to_be_focused()
             playhead.press("Home")
             for _ in range(10):
                 playhead.press("ArrowRight")
