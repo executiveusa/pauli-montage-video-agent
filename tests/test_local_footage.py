@@ -51,6 +51,33 @@ class LocalFootageContractTests(unittest.TestCase):
             self.assertIn("1080", filter_value)
             self.assertIn("1920", filter_value)
 
+    def test_overlay_text_is_timed_and_deterministic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "vertical.mp4"
+            output = Path(tmp) / "review.mp4"
+            source.write_bytes(b"fixture")
+            overlays = [
+                {"text": "WHY WE STARTED", "start": 1.0, "end": 3.0, "role": "title"},
+                {"text": "Founder: ASC3ND", "start": 3.0, "end": 5.0, "role": "lower_third"},
+            ]
+            with patch.object(self.tool, "run_command") as run:
+                run.return_value.stdout = ""
+                run.return_value.stderr = ""
+                result = self.tool.execute({
+                    "operation": "overlay_text",
+                    "source": str(source),
+                    "output": str(output),
+                    "overlays": overlays,
+                })
+            self.assertTrue(result.success)
+            command = run.call_args.args[0]
+            filter_value = command[command.index("-vf") + 1]
+            self.assertIn("drawtext", filter_value)
+            self.assertIn("WHY WE STARTED", filter_value)
+            self.assertIn("between(t,1.0,3.0)", filter_value)
+            self.assertIn("Founder\\: ASC3ND", filter_value)
+            self.assertEqual(result.cost_usd, 0.0)
+
     def test_cut_validates_ranges(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "source.mp4"
