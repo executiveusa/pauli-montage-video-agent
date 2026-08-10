@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "initiativeId": "yappy-upgrade",
+  "repository": "executiveusa/pauli-montage-video-agent",
+  "authority": {
+    "taskSource": "ops/upgrade/roadmap.json",
+    "completionSource": "canonical GitHub merge evidence corroborated by ops/upgrade/evidence",
+    "generatedProgress": "docs/YAPPY-UPGRADE-PROGRESS.md"
+  },
+  "tasks": [
+    {"order": 0, "id": "upgrade-00-grinions-replay-guard", "title": "GRINIONS replay and no-delta guard", "acceptance": "Cross-task replay, zero-delta branches, ambiguous history, and unsafe identity reservation fail closed."},
+    {"order": 1, "id": "upgrade-01-architecture-contract", "title": "Architecture and delivery contract", "acceptance": "ADRs, source/license register, parity map, immutable roadmap, and generated evidence progress establish one source of truth."},
+    {"order": 2, "id": "upgrade-02-creative-contracts", "title": "Canonical creative contracts", "acceptance": "Import, transcript, element, candidate, action, and edit contracts pass serialization, migration, and optimistic-concurrency tests."},
+    {"order": 3, "id": "upgrade-03-popebot-director-shell", "title": "PopeBot Director shell", "acceptance": "A responsive accessible shell beneath the timeline demonstrates streaming, dry-run, approval, dispatch, and undo through shared services."},
+    {"order": 4, "id": "upgrade-04-local-resumable-ingest", "title": "Local resumable ingest", "acceptance": "Interrupted upload resume, checksum, owned copy, proxy generation, invalid-file, and large-file paths pass."},
+    {"order": 5, "id": "upgrade-05-google-drive-import", "title": "Google Drive import", "acceptance": "Composio connection, least-scope browse, owned copy, retry, and revoke behavior pass without making Composio canonical storage."},
+    {"order": 6, "id": "upgrade-06-onedrive-import", "title": "OneDrive import", "acceptance": "The shared import contract passes with OneDrive-specific connection, browse, copy, retry, and revoke fixtures."},
+    {"order": 7, "id": "upgrade-07-documentary-vertical-slice", "title": "Documentary vertical slice", "acceptance": "Real footage produces a source-traceable assembly and editable timeline export through canonical contracts."},
+    {"order": 8, "id": "upgrade-08-opusclip-adapter", "title": "OpusClip candidate adapter", "acceptance": "Signed webhook, polling recovery, budget, provenance, and candidate normalization tests pass."},
+    {"order": 9, "id": "upgrade-09-shorts-reels-pack", "title": "Shorts and Reels pack", "acceptance": "Local and Opus candidates flow through reframe, captions, quality control, and deterministic export."},
+    {"order": 10, "id": "upgrade-10-kie-omnirouter-adapter", "title": "Kie OmniRouter adapter", "acceptance": "Signature, idempotency, expiry copy, cost, approval, policy, and fallback tests pass behind OmniRouter."},
+    {"order": 11, "id": "upgrade-11-ugc-pack", "title": "UGC workflow pack", "acceptance": "Claim evidence, brief and brand approvals, provenance, and editable timeline output pass."},
+    {"order": 12, "id": "upgrade-12-anime-character-pack", "title": "Anime and consistent-character pack", "acceptance": "Bible, references, continuity checks, and provider provenance remain durable across revisions."},
+    {"order": 13, "id": "upgrade-13-operations-panels", "title": "Schema-driven operations panels", "acceptance": "Jobs, approvals, cost, and evidence panels satisfy shared contracts and accessibility tests."},
+    {"order": 14, "id": "upgrade-14-production-pilot", "title": "Production gauntlet and commercial pilot", "acceptance": "Blind comparison, production canaries, SLOs, rollback drill, and an approved paid pilot are recorded without fabricated evidence."}
+  ]
+}

@@ -1,5 +1,7 @@
 # YAPPY-CLIPZ Master Product Plan
 
+> Product context, not execution or completion authority. The PopeBot + Composio Slice 00–14 order and immutable IDs live only in `ops/upgrade/roadmap.json`; current status is generated from canonical evidence.
+
 ## Executive decision
 
 **YAPPY-CLIPZ** is the canonical video-production product inside **Yappyverse Studio**.

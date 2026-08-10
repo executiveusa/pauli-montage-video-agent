@@ -1,15 +1,22 @@
 project:
   name: yappy-clipz
-  base_branch: main
+  language: Python and TypeScript
+  framework: FastAPI and Next.js
+  description: YAPPY-CLIPZ canonical video-production studio
 
-execution:
-  branch_per_task: true
-  no_merge: true
-  max_retries: 3
-  max_parallel: 1
+commands:
+  test: "npm test --prefix ops/grinions && python packages/contracts/validate_contracts.py && python packages/contracts/test_contracts.py && python icm/test_workspace.py && python -m unittest discover -s tests/studio -p 'test_*.py' -v"
+  lint: "python scripts/render_upgrade_progress.py --check"
+  build: "python scripts/validate_active_openspecs.py && npm run typecheck:studio && npm run build:studio"
 
-capabilities:
-  browser: auto
+boundaries:
+  never_touch:
+    - ".env*"
+    - "ops/upgrade/roadmap.json"
+    - "ops/upgrade/evidence/**/*.json"
+    - "docs/YAPPY-UPGRADE-PROGRESS.md"
+    - ".ralphy/progress.txt"
+    - "package-lock.json"
 
 rules:
   - Read AGENTS.md, AGENT_GUIDE.md, the active OpenSpec change, and the claimed Bead before editing.
@@ -18,3 +25,5 @@ rules:
   - Do not change accepted requirements without a recorded OpenSpec change.
   - Run tests and lint; never use fast/no-tests/no-lint modes in GRINIONS execution.
   - Record discoveries as new linked Beads rather than expanding scope silently.
+  - Treat ops/upgrade/roadmap.json as the only upgrade task authority; evidence and progress are generated or verified by repository tooling.
+  - Ralphy runtime safety is enforced by ops/grinions/src/ralphy.mjs CLI arguments, not by unsupported YAML keys.

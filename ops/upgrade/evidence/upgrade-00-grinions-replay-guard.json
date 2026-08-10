@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "initiativeId": "yappy-upgrade",
+  "sliceId": "upgrade-00-grinions-replay-guard",
+  "identity": {"repository": "executiveusa/pauli-montage-video-agent", "initiativeId": "yappy-upgrade", "openspecId": "upgrade-00-grinions-replay-guard"},
+  "status": "completed",
+  "pullRequest": {
+    "number": 35,
+    "url": "https://github.com/executiveusa/pauli-montage-video-agent/pull/35",
+    "headSha": "b7ee7f664dd47d46f0c51a2048db677e5382eab9"
+  },
+  "judgment": {"verdict": "OURS WINS", "unresolvedReviewThreads": 0},
+  "merge": {
+    "sha": "c36f06a986556ab044c0ddbb282158a1a954e1ea",
+    "treeSha": "b0153256f4ee644c1198ee599bf1c8a8ee53855c"
+  },
+  "postMerge": {
+    "passed": true,
+    "mainSha": "c36f06a986556ab044c0ddbb282158a1a954e1ea",
+    "treeChecks": [
+      {"name": "cumulative-tests", "command": "npm test --prefix ops/grinions", "status": "passed", "subjectSha": "b7ee7f664dd47d46f0c51a2048db677e5382eab9", "evidenceUrl": "https://github.com/executiveusa/pauli-montage-video-agent/actions/runs/31339178064"},
+      {"name": "structure", "command": "npm run verify --prefix ops/grinions", "status": "passed", "subjectSha": "b7ee7f664dd47d46f0c51a2048db677e5382eab9", "evidenceUrl": "https://github.com/executiveusa/pauli-montage-video-agent/actions/runs/31339178064"},
+      {"name": "openspec", "command": "openspec validate upgrade-00-grinions-replay-guard --strict --no-interactive", "status": "passed", "subjectSha": "b7ee7f664dd47d46f0c51a2048db677e5382eab9", "evidenceUrl": "https://github.com/executiveusa/pauli-montage-video-agent/actions/runs/31339178064"}
+    ]
+  },
+  "rollback": {
+    "baselineSha": "0059299e4b05db6b8079e961eba2878aa22efa14",
+    "strategy": "Revert c36f06a986556ab044c0ddbb282158a1a954e1ea; no customer data or schema rollback."
+  }
+}

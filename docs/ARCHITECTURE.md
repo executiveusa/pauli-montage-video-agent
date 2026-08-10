@@ -1,6 +1,8 @@
 # OpenMontage Architecture
 
 > Last updated: 2026-03-28 | Derived from code exploration, not prior documentation.
+>
+> Architecture inventory only. For the PopeBot + Composio upgrade, authority and ownership decisions live in `docs/adr/ADR-001-UPGRADE-AUTHORITY.md` through ADR-003 and task identity lives only in `ops/upgrade/roadmap.json`.
 
 OpenMontage is an **agent-orchestrated video production platform**. An LLM coding assistant (Claude Code, Cursor, Copilot, etc.) acts as the orchestrator — reading pipeline manifests, following skill instructions, calling Python tools, and checkpointing state. There is no runtime Python orchestrator; the agent _is_ the control plane.
 

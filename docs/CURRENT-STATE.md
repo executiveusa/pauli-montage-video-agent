@@ -2,6 +2,8 @@
 
 Verified: 2026-07-31
 
+> Historical audit snapshot at the verified date, not a live completion ledger. PopeBot + Composio upgrade status is generated in `docs/YAPPY-UPGRADE-PROGRESS.md` from the authority chain defined by ADR-001.
+
 ## Canonical baseline
 
 The only integration baseline is the current `main` branch of:

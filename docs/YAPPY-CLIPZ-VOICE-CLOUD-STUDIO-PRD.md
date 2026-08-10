@@ -1,5 +1,7 @@
 # YAPPY-CLIPZ Voice Cloud Studio PRD
 
+> Product context, not execution or completion authority. The PopeBot + Composio Slice 00–14 order and immutable IDs live only in `ops/upgrade/roadmap.json`; current status is generated from canonical evidence.
+
 ## 1. Decision
 
 YAPPY-CLIPZ remains the canonical product and `executiveusa/pauli-montage-video-agent` remains the canonical repository.

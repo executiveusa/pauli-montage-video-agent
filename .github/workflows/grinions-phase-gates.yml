@@ -6,16 +6,29 @@ on:
       - 'AGENTS.md'
       - 'README.md'
       - 'ops/grinions/**'
+      - 'ops/upgrade/**'
       - 'openspec/**'
       - '.ralphy/**'
       - '.github/workflows/grinions-phase-gates.yml'
+      - '.github/CODEOWNERS'
       - '.github/pull_request_template.md'
       - 'EMERALD_TABLETS.md'
       - 'icm/**'
       - 'packages/contracts/**'
       - 'yappy_clipz/**'
       - 'tests/studio/**'
+      - 'scripts/render_upgrade_progress.py'
+      - 'scripts/validate_active_openspecs.py'
+      - 'docs/adr/**'
+      - 'docs/SOURCE-LICENSE-REGISTER.md'
+      - 'docs/UPGRADE-PARITY-MAP.md'
+      - 'docs/YAPPY-UPGRADE-PROGRESS.md'
+      - 'docs/ARCHITECTURE.md'
+      - 'docs/CURRENT-STATE.md'
+      - 'docs/YAPPY-CLIPZ-MASTER-PLAN.md'
+      - 'docs/YAPPY-CLIPZ-VOICE-CLOUD-STUDIO-PRD.md'
       - 'requirements-studio.txt'
+      - 'requirements.txt'
       - 'apps/studio-web/**'
       - 'package.json'
       - 'vercel.json'
@@ -26,21 +39,35 @@ on:
       - 'AGENTS.md'
       - 'README.md'
       - 'ops/grinions/**'
+      - 'ops/upgrade/**'
       - 'openspec/**'
       - '.ralphy/**'
       - '.github/workflows/grinions-phase-gates.yml'
+      - '.github/CODEOWNERS'
       - '.github/pull_request_template.md'
       - 'EMERALD_TABLETS.md'
       - 'icm/**'
       - 'packages/contracts/**'
       - 'yappy_clipz/**'
       - 'tests/studio/**'
+      - 'scripts/render_upgrade_progress.py'
+      - 'scripts/validate_active_openspecs.py'
+      - 'docs/adr/**'
+      - 'docs/SOURCE-LICENSE-REGISTER.md'
+      - 'docs/UPGRADE-PARITY-MAP.md'
+      - 'docs/YAPPY-UPGRADE-PROGRESS.md'
+      - 'docs/ARCHITECTURE.md'
+      - 'docs/CURRENT-STATE.md'
+      - 'docs/YAPPY-CLIPZ-MASTER-PLAN.md'
+      - 'docs/YAPPY-CLIPZ-VOICE-CLOUD-STUDIO-PRD.md'
       - 'requirements-studio.txt'
+      - 'requirements.txt'
       - 'apps/studio-web/**'
       - 'package.json'
       - 'vercel.json'
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -66,6 +93,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -169,18 +197,7 @@ jobs:
           "$RUNNER_TEMP/bin/bd" version
 
       - name: Validate all active OpenSpec changes strictly
-        shell: bash
-        run: |
-          set -euo pipefail
-          found=0
-          for change_dir in openspec/changes/*; do
-            [ -d "$change_dir" ] || continue
-            change="$(basename "$change_dir")"
-            [ "$change" = "archive" ] && continue
-            openspec validate "$change" --strict --no-interactive
-            found=1
-          done
-          test "$found" -eq 1
+        run: python scripts/validate_active_openspecs.py
 
       - name: Verify Beads agent bootstrap contract
         run: |
@@ -207,6 +224,12 @@ jobs:
 
       - name: Shared StudioService CLI/API/MCP parity tests
         run: python -m unittest discover -s tests/studio -p 'test_*.py' -v
+
+      - name: Verify canonical upgrade evidence against GitHub and origin/main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          YAPPY_VERIFY_CANONICAL_REMOTE: '1'
+        run: python scripts/render_upgrade_progress.py --check
 
       - name: Install uv and initialize Absurd
         run: |
