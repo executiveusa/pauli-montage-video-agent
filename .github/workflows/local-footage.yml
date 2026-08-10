@@ -51,6 +51,17 @@ jobs:
         run: python scripts/pr40_hardening_patch.py
       - name: Reconcile package lock
         run: npm install --package-lock-only --ignore-scripts
+      - name: Normalize newly-added evidence block
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("docs/evidence/ASC3ND-WHY-WE-STARTED-MONTAGE-DOD.md")
+          text = path.read_text(encoding="utf-8")
+          start = text.index("### FIX-015")
+          end = text.index("\n## Current architecture", start)
+          block = "\n".join(line.rstrip() for line in text[start:end].splitlines())
+          path.write_text(text[:start] + block + text[end:], encoding="utf-8")
+          PY
       - name: Sanity-check and commit
         run: |
           git diff --check
