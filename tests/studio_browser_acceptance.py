@@ -24,7 +24,7 @@ def main() -> int:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        page = browser.new_page(viewport={"width": 1440, "height": 1200})
+        page = browser.new_page(viewport={"width": 1440, "height": 1200)
         page_errors: list[str] = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
 
@@ -42,7 +42,7 @@ def main() -> int:
         file_input.set_input_files(str(FIXTURE))
         expect(page.get_by_text("Canonical asset · local bytes synced")).to_be_visible(timeout=30_000)
         source_name = FIXTURE.name
-        expect(page.get_by_text(source_name, exact=True)).to_be_visible()
+        expect(page.locator(".source-card strong")).to_have_text(source_name)
 
         page.get_by_role("link", name="Timeline").click()
         page.wait_for_url(re.compile(r"/studio/projects/local_.+/edit$"), timeout=10_000)
@@ -82,7 +82,7 @@ def main() -> int:
         expect(page.get_by_text(re.compile(r"Added title to canonical timeline v\d+"))).to_be_visible()
 
         page.get_by_label("Role").select_option("lower_third")
-        page.get_by_label("Text").fill("Otha Minnifield\\nFounder, ASC3ND Collective")
+        page.get_by_label("Text").fill("Otha Minnifield — Founder, ASC3ND Collective")
         page.get_by_label("Start").fill("0.15")
         page.get_by_label("Duration").fill("0.55")
         page.get_by_role("button", name="Add to timeline").click()
