@@ -70,8 +70,7 @@ def main() -> int:
             timeline_clips.first.click()
 
             # Seek with the actual accessible range control. Keyboard arrows fire
-            # the product's real input/change path and avoid clicking through a
-            # source clip that visually covers the lane.
+            # the product's real input/change path while keeping the selected clip.
             playhead.focus()
             expect(playhead).to_be_focused()
             playhead.press("Home")
@@ -81,7 +80,6 @@ def main() -> int:
             if playhead_value <= 0.05 or playhead_value >= 1.75:
                 raise AssertionError(f"timeline seek did not move playhead inside clip: {playhead_value}")
 
-            timeline_clips.first.click(position={"x": 8, "y": 8})
             page.get_by_role("button", name="Split at playhead").first.click()
             expect(timeline_clips).to_have_count(2)
 
