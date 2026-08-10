@@ -87,8 +87,9 @@
 .previewPanel { display: flex; flex-direction: column; }
 .previewBody { flex: 1; display: grid; place-items: center; padding: 20px; min-height: 420px; background: radial-gradient(circle at 50% 20%, rgba(255,255,255,.05), transparent 42%), #07080a; }
 .phoneFrame { width: min(260px, 76%); aspect-ratio: 9/16; border-radius: 24px; background: linear-gradient(180deg,#17191e,#050607); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 22px 80px rgba(0,0,0,.6); overflow: hidden; position: relative; }
+.previewVideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 0; }
 .previewGrid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px); background-size: 25% 25%; }
-.previewCopy { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
+.previewCopy { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; pointer-events: none; }
 .previewMeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .62rem; color: rgba(255,255,255,.66); }
 .previewMeta strong { color: white; font-weight: 760; }
 .previewCenter { display: grid; place-items: center; text-align: center; gap: 8px; padding: 20px 8px; }
