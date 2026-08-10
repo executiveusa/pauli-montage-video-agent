@@ -11,6 +11,7 @@
   --accent: #0a84ff;
   --accent-soft: rgba(10,132,255,.14);
   --danger: #ff453a;
+
   min-height: calc(100vh - 76px);
   margin: -18px -12px 0;
   padding: 16px;
