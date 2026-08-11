@@ -1,10 +1,11 @@
 name: hybrid
-version: "2.0"
+version: "2.1"
 description: >
   Hybrid pipeline for videos that combine source footage with designed or generated support
   assets: interviews plus diagrams, product footage plus overlays, screen recordings plus
   companion graphics, or montage edits with support inserts. EP orchestration adds quality
-  gates for source/support balance, overlay density, and cross-medium coherence.
+  gates for source/support balance, overlay density, cross-medium coherence, and an optional
+  one-shot autonomous render-review-fix workflow.
 category: hybrid
 stability: production
 default_checkpoint_policy: guided
@@ -23,6 +24,26 @@ extensions:
   custom_skills: true
   custom_tools: false
 
+metadata:
+  workflow_profiles:
+    one_shot_edit:
+      skill: meta/one-shot-edit-loop
+      activation: explicit_user_opt_in
+      intent: approved_prework_to_verified_review_cut
+      auto_continue_after_prework:
+        - assets
+        - edit
+        - compose
+      human_gates:
+        - idea
+        - script
+        - scene_plan
+        - publish
+      max_render_review_rounds: 3
+      source_immutable: true
+      generated_support_policy: reuse_source_before_generate
+      style_memory_policy: project_auto_global_owner_approval
+
 required_skills:
   - pipelines/hybrid/executive-producer
   - pipelines/hybrid/idea-director
@@ -32,6 +53,7 @@ required_skills:
   - pipelines/hybrid/edit-director
   - pipelines/hybrid/compose-director
   - pipelines/hybrid/publish-director
+  - meta/one-shot-edit-loop
   - meta/reviewer
   - meta/checkpoint-protocol
 
@@ -58,6 +80,7 @@ stages:
       - Anchor medium is clearly identified
       - Support layers are justified and realistic
       - Output mix matches the source inventory
+      - One-shot autonomy boundaries are explicit when the workflow profile is active
     success_criteria:
       - Schema-valid brief artifact
       - Brief distinguishes source-led and support-led elements
@@ -82,6 +105,7 @@ stages:
       - Source-led beats and support-led beats are clearly separated
       - Narration or dialogue plan is realistic
       - The script does not rely on unsupported assets without stating it
+      - Director comments and timing evidence are preserved for one-shot execution
     success_criteria:
       - Schema-valid script artifact
       - Script sections map to a feasible hybrid structure
@@ -106,6 +130,7 @@ stages:
       - Source content remains visually primary where intended
       - Overlay and support layers do not overload the frame
       - Platform or aspect-ratio variants are planned deliberately
+      - Existing screen recordings and source assets are preferred over generated B-roll
     success_criteria:
       - Schema-valid scene_plan artifact
       - Every scene has a defined source/support treatment
@@ -143,6 +168,7 @@ stages:
       - Support assets clearly map to real narrative gaps
       - Shared template assets are reused
       - Optional generated inserts do not eclipse source truth
+      - Paid or external generation stayed inside the approved one-shot budget and provider path
     success_criteria:
       - Schema-valid asset_manifest artifact
       - All referenced asset files exist on disk
@@ -156,16 +182,23 @@ stages:
       - script
     produces:
       - edit_decisions
-    tools_available: []
+    optional_tools:
+      - silence_cutter
+      - video_trimmer
+    tools_available:
+      - silence_cutter
+      - video_trimmer
     checkpoint_required: true
     human_approval_default: false
     review_focus:
       - Anchor cut is coherent before support layers are added
       - Support visuals clarify rather than distract
       - Variant logic is consistent across deliverables
+      - Rough-cut removals remain source-backed and transcript-grounded
     success_criteria:
       - Schema-valid edit_decisions artifact
       - Edit decisions cover the planned deliverables
+      - Source-backed cut ranges remain within source duration bounds
 
   - name: compose
     skill: pipelines/hybrid/compose-director
@@ -185,6 +218,8 @@ stages:
       - video_trimmer
       - color_grade
       - audio_enhance
+      - frame_sampler
+      - visual_qa
     tools_available:
       - video_compose
       - audio_mixer
@@ -192,15 +227,22 @@ stages:
       - video_trimmer
       - color_grade
       - audio_enhance
+      - frame_sampler
+      - visual_qa
     checkpoint_required: true
     human_approval_default: false
     review_focus:
       - Source and support layers remain balanced
       - Aspect-ratio variants preserve readability
       - Audio stays coherent across footage and generated elements
+      - One-shot mode performs deliberate frame/transition inspection after each complete render
+      - Captions, titles, lower thirds, and graphics stay inside safe areas and avoid subject collisions
+      - Critical visual-QA findings are fixed and re-rendered before pass
     success_criteria:
       - Schema-valid render_report artifact
       - Output file exists and passes ffprobe validation
+      - No unresolved critical visual-QA findings remain in one-shot mode
+      - Render-review-fix evidence is recorded for each one-shot revision round
 
   - name: publish
     skill: pipelines/hybrid/publish-director
@@ -219,6 +261,7 @@ stages:
       - Hero cut and derivative cuts are clearly organized
       - Metadata reflects the actual source mix
       - Export package is usable without manual cleanup
+      - Publish remains outside the autonomous one-shot loop
     success_criteria:
       - Schema-valid publish_log artifact
       - Export package contains video and metadata outputs
