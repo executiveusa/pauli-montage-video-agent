@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -50,6 +52,57 @@ class LocalFootageContractTests(unittest.TestCase):
             filter_value = command[command.index("-vf") + 1]
             self.assertIn("1080", filter_value)
             self.assertIn("1920", filter_value)
+
+    def test_overlay_text_is_timed_and_deterministic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "vertical.mp4"
+            output = Path(tmp) / "review.mp4"
+            source.write_bytes(b"fixture")
+            overlays = [
+                {"text": "WHY WE STARTED", "start": 1.0, "end": 3.0, "role": "title"},
+                {"text": "Founder: ASC3ND", "start": 3.0, "end": 5.0, "role": "lower_third"},
+            ]
+            with patch("tools.local_footage._resolve_drawtext_font", return_value=Path("/tmp/DejaVuSans.ttf")), \
+                 patch.object(self.tool, "run_command") as run:
+                run.return_value.stdout = ""
+                run.return_value.stderr = ""
+                result = self.tool.execute({
+                    "operation": "overlay_text",
+                    "source": str(source),
+                    "output": str(output),
+                    "overlays": overlays,
+                })
+            self.assertTrue(result.success)
+            command = run.call_args.args[0]
+            filter_value = command[command.index("-vf") + 1]
+            self.assertIn("drawtext", filter_value)
+            self.assertIn("WHY WE STARTED", filter_value)
+            self.assertIn("between(t,1.0,3.0)", filter_value)
+            self.assertIn("Founder\\: ASC3ND", filter_value)
+            self.assertEqual(result.cost_usd, 0.0)
+
+    def test_overlay_rejects_filter_option_injection_in_coordinates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "vertical.mp4"
+            output = Path(tmp) / "review.mp4"
+            source.write_bytes(b"fixture")
+            with patch("tools.local_footage._resolve_drawtext_font", return_value=Path("/tmp/DejaVuSans.ttf")), \
+                 patch.object(self.tool, "run_command") as run:
+                result = self.tool.execute({
+                    "operation": "overlay_text",
+                    "source": str(source),
+                    "output": str(output),
+                    "overlays": [{
+                        "text": "Founder",
+                        "start": 0,
+                        "end": 1,
+                        "role": "lower_third",
+                        "x": "10:fontfile=/etc/passwd:fontcolor=red",
+                    }],
+                })
+            self.assertFalse(result.success)
+            self.assertIn("unsupported drawtext expression", result.error or "")
+            run.assert_not_called()
 
     def test_cut_validates_ranges(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -117,6 +170,113 @@ class LocalWorkspaceSourceSelectionTests(unittest.TestCase):
                     "sourceKind": "filesystem",
                     "sourceName": "/tmp/arbitrary.mp4",
                 })
+
+    def test_overlay_operation_preserves_bounded_worker_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = LocalWorkspace(Path(tmp))
+            project_id = "asc3nd-test"
+            source = workspace.outputs_dir(project_id) / "vertical.mp4"
+            source.write_bytes(b"fixture")
+            overlays = [{"text": "WHY WE STARTED", "start": 0, "end": 1, "role": "title"}]
+            with patch.object(workspace.tool, "execute") as execute:
+                execute.return_value.success = True
+                execute.return_value.data = {"verified": True}
+                execute.return_value.artifacts = [str(workspace.outputs_dir(project_id) / "review.mp4")]
+                execute.return_value.error = None
+                execute.return_value.cost_usd = 0.0
+                execute.return_value.duration_seconds = 0.01
+                result = workspace.execute({
+                    "projectId": project_id,
+                    "sourceKind": "outputs",
+                    "sourceName": source.name,
+                    "operation": "overlay_text",
+                    "overlays": overlays,
+                    "outputName": "review.mp4",
+                })
+            self.assertTrue(result["success"])
+            inputs = execute.call_args.args[0]
+            self.assertEqual(inputs["operation"], "overlay_text")
+            self.assertEqual(inputs["overlays"], overlays)
+            self.assertEqual(Path(inputs["source"]), source.resolve())
+            self.assertEqual(Path(inputs["output"]), (workspace.outputs_dir(project_id) / "review.mp4").resolve())
+
+
+@unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg/ffprobe are required for media integration proof")
+class LocalMediaIntegrationTests(unittest.TestCase):
+    def test_real_cut_vertical_overlay_and_verify_round_trip(self):
+        tool = LocalFootageTool()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.mp4"
+            cut = root / "cut.mp4"
+            vertical = root / "vertical.mp4"
+            review = root / "review.mp4"
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+                "-t", "1.6", "-shortest",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "96k",
+                str(source),
+            ], check=True, capture_output=True, text=True, timeout=60)
+
+            cut_result = tool.execute({
+                "operation": "cut",
+                "source": str(source),
+                "output": str(cut),
+                "keep_ranges": [[0.15, 1.15]],
+                "timeout": 120,
+            })
+            self.assertTrue(cut_result.success, cut_result.error)
+            self.assertTrue(cut.is_file())
+
+            vertical_result = tool.execute({
+                "operation": "reframe_vertical",
+                "source": str(cut),
+                "output": str(vertical),
+                "width": 1080,
+                "height": 1920,
+                "timeout": 120,
+            })
+            self.assertTrue(vertical_result.success, vertical_result.error)
+            self.assertTrue(vertical.is_file())
+
+            overlay_result = tool.execute({
+                "operation": "overlay_text",
+                "source": str(vertical),
+                "output": str(review),
+                "overlays": [
+                    {"text": "WHY WE STARTED", "start": 0.05, "end": 0.55, "role": "title"},
+                    {"text": "01 / 04", "start": 0.05, "end": 0.75, "role": "episode_marker"},
+                    {
+                        "text": "Otha Minnifield\nFounder: ASC3ND Collective",
+                        "start": 0.20,
+                        "end": 0.75,
+                        "role": "lower_third",
+                        "fontsize": 34,
+                        "x": "60",
+                        "y": "h-430",
+                    },
+                ],
+                "timeout": 120,
+            })
+            self.assertTrue(overlay_result.success, overlay_result.error)
+            self.assertTrue(review.is_file())
+
+            verify = tool.execute({
+                "operation": "verify",
+                "source": str(review),
+                "expected_width": 1080,
+                "expected_height": 1920,
+                "min_duration_seconds": 0.75,
+            })
+            self.assertTrue(verify.success, verify.error)
+            self.assertTrue(verify.data["verified"])
+            self.assertTrue(verify.data["has_audio"])
+            self.assertEqual(verify.data["width"], 1080)
+            self.assertEqual(verify.data["height"], 1920)
+            self.assertGreaterEqual(verify.data["duration_seconds"], 0.75)
 
 
 class SynthCutAdapterTests(unittest.TestCase):

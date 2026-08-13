@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  getLocalAsset,
   getLocalProject,
   getLocalTimeline,
   isLocalProjectId,
@@ -20,6 +21,7 @@ import styles from "./TimelineEditor.module.css";
 
 type EditorState = "loading" | "ready" | "dirty" | "saving" | "saved" | "conflict" | "error";
 type Selection = { trackId: string; itemId: string } | null;
+type PreviewItem = { track: TimelineTrack; item: TimelineItem } | null;
 type ErrorPayload = {
   error?: string;
   message?: string;
@@ -52,6 +54,10 @@ function timelineLength(timeline: Timeline): number {
   return Math.max(1, explicit, itemEnd);
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 function fmt(seconds: number): string {
   const safe = Math.round(Math.max(0, seconds) * 10) / 10;
   const minutes = Math.floor(safe / 60);
@@ -61,8 +67,31 @@ function fmt(seconds: number): string {
 
 function itemLabel(item: TimelineItem): string {
   if (item.text?.trim()) return item.text.trim();
+  const sourceFilename = item.extensions?.sourceFilename;
+  if (typeof sourceFilename === "string" && sourceFilename.trim()) return sourceFilename;
   if (item.assetId) return item.assetId;
   return item.id;
+}
+
+function extensionString(item: TimelineItem, key: string): string | null {
+  const value = item.extensions?.[key];
+  return typeof value === "string" && value ? value : null;
+}
+
+function playable(item: TimelineItem): boolean {
+  return item.kind === "asset" || item.kind === "composition";
+}
+
+function previewForPlayhead(timeline: Timeline, playhead: number, selected: PreviewItem): PreviewItem {
+  const playableItems = timeline.tracks.flatMap((track) =>
+    track.items.filter(playable).map((item) => ({ track, item })),
+  );
+  const atPlayhead = playableItems.find(({ item }) =>
+    playhead >= item.startSeconds && playhead < item.startSeconds + item.durationSeconds,
+  );
+  if (atPlayhead) return atPlayhead;
+  if (selected && playable(selected.item)) return selected;
+  return playableItems[0] || null;
 }
 
 export function TimelineEditor({ projectId }: { projectId: string }) {
@@ -72,11 +101,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [message, setMessage] = useState("Loading project timeline…");
   const [selection, setSelection] = useState<Selection>(null);
   const [history, setHistory] = useState<Timeline[]>([]);
+  const [future, setFuture] = useState<Timeline[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [directorCommand, setDirectorCommand] = useState("");
   const savingRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const localMode = isLocalProjectId(projectId);
 
   const load = useCallback(async () => {
@@ -91,8 +122,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         setProject(localProject);
         setTimeline(localTimeline);
         setHistory([]);
+        setFuture([]);
         setSelection(null);
         setPlayhead(0);
+        setPlaying(false);
         setState("ready");
         setMessage(`Local timeline v${localTimeline.version} reopened from this device.`);
         return;
@@ -109,8 +142,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       setProject(projectPayload);
       setTimeline(timelinePayload);
       setHistory([]);
+      setFuture([]);
       setSelection(null);
       setPlayhead(0);
+      setPlaying(false);
       setState("ready");
       setMessage(`Timeline v${timelinePayload.version} loaded from hosted StudioProject state.`);
     } catch (error) {
@@ -124,34 +159,33 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }, [load]);
 
   const duration = timeline ? timelineLength(timeline) : 1;
-  const selected = useMemo(() => {
+  const selected = useMemo((): PreviewItem => {
     if (!timeline || !selection) return null;
     const track = timeline.tracks.find((candidate) => candidate.id === selection.trackId);
     const item = track?.items.find((candidate) => candidate.id === selection.itemId);
     return track && item ? { track, item } : null;
   }, [selection, timeline]);
 
-  useEffect(() => {
-    if (!playing || !timeline) return;
-    const id = window.setInterval(() => {
-      setPlayhead((current) => {
-        const next = current + 0.25;
-        if (next >= duration) {
-          setPlaying(false);
-          return duration;
-        }
-        return next;
-      });
-    }, 250);
-    return () => window.clearInterval(id);
-  }, [duration, playing, timeline]);
+  const activePreview = useMemo(
+    () => timeline ? previewForPlayhead(timeline, playhead, selected) : null,
+    [playhead, selected, timeline],
+  );
+
+  const activeLocalAsset = useMemo(() => {
+    if (!localMode || !activePreview?.item.assetId) return null;
+    return getLocalAsset(projectId, activePreview.item.assetId);
+  }, [activePreview?.item.assetId, localMode, projectId, timeline]);
+
+  const previewUrl = activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
+  const sourceStatus = activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
 
   const editingLocked = state === "saving" || state === "conflict" || state === "loading";
   const canSave = state === "dirty" || (state === "error" && timeline !== null);
 
   function mark(next: Timeline, detail = "Timeline changed") {
     if (!timeline || savingRef.current || state === "conflict") return;
-    setHistory((current) => [...current.slice(-29), timeline]);
+    setHistory((current) => [...current.slice(-29), structuredClone(timeline)]);
+    setFuture([]);
     setTimeline(next);
     setState("dirty");
     setMessage(`${detail}. Unsaved edits based on timeline v${next.version}.`);
@@ -160,10 +194,21 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   function undo() {
     if (!timeline || editingLocked || history.length === 0) return;
     const previous = history[history.length - 1];
+    setFuture((current) => [structuredClone(timeline), ...current].slice(0, 30));
     setHistory((current) => current.slice(0, -1));
     setTimeline(previous);
     setState("dirty");
     setMessage("Undo applied to the same StudioProject timeline. Save to persist it.");
+  }
+
+  function redo() {
+    if (!timeline || editingLocked || future.length === 0) return;
+    const next = future[0];
+    setHistory((current) => [...current.slice(-29), structuredClone(timeline)]);
+    setFuture((current) => current.slice(1));
+    setTimeline(next);
+    setState("dirty");
+    setMessage("Redo restored the previously undone StudioProject change.");
   }
 
   function setDuration(value: number) {
@@ -258,33 +303,43 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function splitSelected() {
-    if (!timeline || !selected || editingLocked || selected.item.durationSeconds < 0.4) return;
+    if (!timeline || !selected || editingLocked || selected.item.durationSeconds < 0.1) return;
     const { track, item } = selected;
-    const splitOffset = item.durationSeconds / 2;
-    const secondId = nextId(`${item.kind}_split`);
+    const itemEnd = item.startSeconds + item.durationSeconds;
+    if (playhead <= item.startSeconds + 0.05 || playhead >= itemEnd - 0.05) {
+      setMessage("Move the playhead inside the selected clip before splitting.");
+      return;
+    }
+    const splitAt = clamp(playhead, item.startSeconds + 0.05, itemEnd - 0.05);
+    const leftDuration = splitAt - item.startSeconds;
+    const rightDuration = itemEnd - splitAt;
     const hasSourceRange = item.sourceStartSeconds != null && item.sourceEndSeconds != null;
-    const sourceSplit = hasSourceRange
-      ? item.sourceStartSeconds! + (item.sourceEndSeconds! - item.sourceStartSeconds!) / 2
+    const sourceSpan = hasSourceRange ? item.sourceEndSeconds! - item.sourceStartSeconds! : null;
+    const sourceSplit = sourceSpan != null && item.durationSeconds > 0
+      ? item.sourceStartSeconds! + sourceSpan * (leftDuration / item.durationSeconds)
       : null;
+    const secondId = nextId(`${item.kind}_split`);
     const first: TimelineItem = {
       ...item,
-      durationSeconds: splitOffset,
+      durationSeconds: leftDuration,
       sourceEndSeconds: sourceSplit ?? item.sourceEndSeconds ?? null,
     };
     const second: TimelineItem = {
       ...item,
       id: secondId,
-      startSeconds: item.startSeconds + splitOffset,
-      durationSeconds: item.durationSeconds - splitOffset,
+      startSeconds: splitAt,
+      durationSeconds: rightDuration,
       sourceStartSeconds: sourceSplit ?? item.sourceStartSeconds ?? null,
+      extensions: item.extensions?.role === "source-master"
+        ? { ...item.extensions, role: "source-fragment" }
+        : item.extensions,
     };
     const items = track.items.flatMap((candidate) => (candidate.id === item.id ? [first, second] : [candidate]));
     mark(
       { ...timeline, tracks: timeline.tracks.map((candidate) => (candidate.id === track.id ? { ...candidate, items } : candidate)) },
-      "Selected clip split at midpoint",
+      `Selected clip split at ${fmt(splitAt)}`,
     );
     setSelection({ trackId: track.id, itemId: secondId });
-    setPlayhead(second.startSeconds);
   }
 
   function removeSelected() {
@@ -346,13 +401,18 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       setDirectorCommand("");
       return;
     }
-    if (normalized.includes("move left") && selected) {
+    if ((normalized.includes("move left") || normalized.includes("earlier")) && selected) {
       updateItem(selected.track.id, selected.item.id, { startSeconds: Math.max(0, selected.item.startSeconds - 0.5) }, "Director moved selected clip left 0.5s");
       setDirectorCommand("");
       return;
     }
-    if (normalized.includes("move right") && selected) {
+    if ((normalized.includes("move right") || normalized.includes("later")) && selected) {
       updateItem(selected.track.id, selected.item.id, { startSeconds: selected.item.startSeconds + 0.5 }, "Director moved selected clip right 0.5s");
+      setDirectorCommand("");
+      return;
+    }
+    if ((normalized.includes("trim") || normalized.includes("tighten") || normalized.includes("shorter")) && selected) {
+      updateItem(selected.track.id, selected.item.id, { durationSeconds: Math.max(0.25, selected.item.durationSeconds - 0.5) }, "Director tightened selected clip by 0.5s");
       setDirectorCommand("");
       return;
     }
@@ -366,7 +426,62 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       setDirectorCommand("");
       return;
     }
-    setMessage("Director did not mutate the timeline: use a bounded command such as split selected, move selected left/right, add episode marker, or add title.");
+    setMessage("Director did not mutate the timeline: use split selected, tighten selected, move selected earlier/later, add episode marker, or add title.");
+  }
+
+  function sourceTimeFor(item: TimelineItem, timelineTime: number): number {
+    const sourceStart = item.sourceStartSeconds ?? 0;
+    return Math.max(0, sourceStart + Math.max(0, timelineTime - item.startSeconds));
+  }
+
+  function seekPlayhead(next: number) {
+    const bounded = clamp(next, 0, duration);
+    setPlayhead(bounded);
+    if (!timeline || !previewUrl || !videoRef.current) return;
+    const targetPreview = previewForPlayhead(timeline, bounded, selected);
+    if (!targetPreview) return;
+    const target = sourceTimeFor(targetPreview.item, bounded);
+    if (Math.abs(videoRef.current.currentTime - target) > 0.12) {
+      videoRef.current.currentTime = target;
+    }
+  }
+
+  async function togglePlayback() {
+    const video = videoRef.current;
+    if (!previewUrl || !activePreview || !video) {
+      setPlaying(false);
+      setMessage(sourceStatus === "pending-worker"
+        ? "The source is on the timeline. Sync it to Montage Local Engine for durable source-backed playback."
+        : "No playable source is connected at this playhead yet.");
+      return;
+    }
+    if (video.paused) {
+      const target = sourceTimeFor(activePreview.item, playhead);
+      if (Math.abs(video.currentTime - target) > 0.12) video.currentTime = target;
+      try {
+        await video.play();
+      } catch (error) {
+        setPlaying(false);
+        setMessage(error instanceof Error ? error.message : "Source playback could not start.");
+      }
+    } else {
+      video.pause();
+    }
+  }
+
+  function handleVideoTimeUpdate() {
+    if (!activePreview || !videoRef.current) return;
+    const item = activePreview.item;
+    const sourceStart = item.sourceStartSeconds ?? 0;
+    const sourceEnd = item.sourceEndSeconds ?? sourceStart + item.durationSeconds;
+    const current = videoRef.current.currentTime;
+    const relative = Math.max(0, current - sourceStart);
+    const timelineTime = clamp(item.startSeconds + relative, item.startSeconds, item.startSeconds + item.durationSeconds);
+    setPlayhead(timelineTime);
+    if (current >= sourceEnd - 0.03 || timelineTime >= item.startSeconds + item.durationSeconds - 0.03) {
+      videoRef.current.pause();
+      setPlaying(false);
+    }
   }
 
   async function save() {
@@ -381,6 +496,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         const payload = replaceLocalTimeline(projectId, expectedVersion, snapshot);
         setTimeline(payload.timeline);
         setHistory([]);
+        setFuture([]);
         setState("saved");
         setMessage(`Saved locally as timeline v${payload.timeline.version}. Reopen this project to verify persistence.`);
         return;
@@ -400,6 +516,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       if (!response.ok) throw new Error(messageFrom(payload, "Timeline could not be saved."));
       setTimeline(payload.timeline);
       setHistory([]);
+      setFuture([]);
       setState("saved");
       setMessage(`Saved as timeline v${payload.timeline.version}. Reopen will use hosted StudioProject state.`);
     } catch (error) {
@@ -438,8 +555,6 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       : state === "error" || state === "conflict"
         ? styles.statusDotError
         : "";
-  const firstPlayable = timeline.tracks.flatMap((track) => track.items.map((item) => ({ track, item }))).find(({ item }) => item.kind === "asset" || item.kind === "composition");
-  const activePreview = selected ?? firstPlayable ?? null;
   const ticks = Array.from({ length: 6 }, (_, index) => (duration / 5) * index);
 
   return (
@@ -456,6 +571,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         </div>
         <div className={styles.actions}>
           <button className={styles.button} disabled={editingLocked || history.length === 0} onClick={undo} type="button">Undo</button>
+          <button className={styles.button} disabled={editingLocked || future.length === 0} onClick={redo} type="button">Redo</button>
           <button className={styles.button} disabled={state === "saving"} onClick={() => void load()} type="button">Reopen saved</button>
           <button className={`${styles.button} ${styles.primary}`} disabled={!canSave} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save v${timeline.version}`}
@@ -486,6 +602,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
             </div>
             <div className={styles.quickCommands}>
               <button onClick={() => runDirectorCommand("split selected")} type="button">Split selected</button>
+              <button onClick={() => runDirectorCommand("tighten selected")} type="button">Tighten selected</button>
               <button onClick={() => runDirectorCommand("add episode marker")} type="button">Add 01 / 04</button>
               <button onClick={() => runDirectorCommand("add title")} type="button">Add title</button>
             </div>
@@ -494,26 +611,41 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
         <div className={styles.previewColumn}>
           <section className={`${styles.panel} ${styles.previewPanel}`}>
-            <div className={styles.panelHeader}><h2>Preview</h2><span>9:16 synchronized playhead</span></div>
+            <div className={styles.panelHeader}><h2>Preview</h2><span>{previewUrl ? "source-backed playback" : "source not synced"}</span></div>
             <div className={styles.previewBody}>
               <div className={styles.phoneFrame}>
-                <div className={styles.previewGrid} />
+                {previewUrl ? (
+                  <video
+                    className={styles.previewVideo}
+                    key={previewUrl}
+                    onEnded={() => setPlaying(false)}
+                    onPause={() => setPlaying(false)}
+                    onPlay={() => setPlaying(true)}
+                    onTimeUpdate={handleVideoTimeUpdate}
+                    playsInline
+                    preload="metadata"
+                    ref={videoRef}
+                    src={previewUrl}
+                  />
+                ) : <div className={styles.previewGrid} />}
                 <div className={styles.previewCopy}>
                   <div className={styles.previewMeta}>
                     <strong>{activePreview ? activePreview.track.type.toUpperCase() : "STUDIO"}</strong>
                     <span>{fmt(playhead)}</span>
                   </div>
-                  <div className={styles.previewCenter}>
-                    <strong>{activePreview ? itemLabel(activePreview.item) : "No playable source on the timeline"}</strong>
-                    <span>{activePreview?.item.assetId ? `Source · ${activePreview.item.assetId}` : "Preview state follows the canonical timeline and selected layer."}</span>
-                  </div>
+                  {!previewUrl ? (
+                    <div className={styles.previewCenter}>
+                      <strong>{activePreview ? itemLabel(activePreview.item) : "No playable source on the timeline"}</strong>
+                      <span>{sourceStatus === "pending-worker" ? "Source is registered. Sync the local worker for durable playback." : activePreview?.item.assetId ? `Source · ${activePreview.item.assetId}` : "Choose source footage first."}</span>
+                    </div>
+                  ) : null}
                   <div className={styles.playheadChip}>{fmt(playhead)} / {fmt(duration)}</div>
                 </div>
               </div>
             </div>
             <div className={styles.transport}>
-              <button aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying((current) => !current)} type="button">{playing ? "Ⅱ" : "▶"}</button>
-              <input aria-label="Playhead" max={duration} min="0" onChange={(event) => setPlayhead(Number(event.target.value))} step="0.05" type="range" value={Math.min(playhead, duration)} />
+              <button aria-label={playing ? "Pause" : "Play"} onClick={() => void togglePlayback()} type="button">{playing ? "Ⅱ" : "▶"}</button>
+              <input aria-label="Playhead" max={duration} min="0" onChange={(event) => seekPlayhead(Number(event.target.value))} step="0.05" type="range" value={Math.min(playhead, duration)} />
               <span className={styles.timecode}>{fmt(playhead)}</span>
             </div>
           </section>
@@ -559,11 +691,12 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                     <span>Source provenance</span>
                     <code>{selected.item.assetId}</code>
                     <code>{selected.item.sourceStartSeconds ?? "?"} → {selected.item.sourceEndSeconds ?? "?"}</code>
+                    <code>{extensionString(selected.item, "sourceStatus") || "source state unknown"}</code>
                   </div>
                 </>
               ) : null}
               <div className={styles.actions}>
-                <button className={styles.button} disabled={selected.item.durationSeconds < .4} onClick={splitSelected} type="button">Split</button>
+                <button className={styles.button} disabled={selected.item.durationSeconds < .1} onClick={splitSelected} type="button">Split at playhead</button>
                 <button className={styles.button} onClick={() => moveSelected(-1)} type="button">Move earlier</button>
                 <button className={styles.button} onClick={() => moveSelected(1)} type="button">Move later</button>
                 <button className={styles.button} onClick={removeSelected} type="button">Remove</button>
@@ -577,7 +710,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         <div className={styles.timelineToolbar}>
           <div className={styles.timelineToolbarLeft}>
             <button className={styles.toolButton} disabled={editingLocked || history.length === 0} onClick={undo} type="button">↶ Undo</button>
-            <button className={styles.toolButton} disabled={!selected || editingLocked} onClick={splitSelected} type="button">Split</button>
+            <button className={styles.toolButton} disabled={editingLocked || future.length === 0} onClick={redo} type="button">↷ Redo</button>
+            <button className={styles.toolButton} disabled={!selected || editingLocked} onClick={splitSelected} type="button">Split at playhead</button>
             <button className={styles.toolButton} disabled={!selected || editingLocked} onClick={() => moveSelected(-1)} type="button">Move ←</button>
             <button className={styles.toolButton} disabled={!selected || editingLocked} onClick={() => moveSelected(1)} type="button">Move →</button>
             <button className={styles.toolButton} disabled={editingLocked} onClick={() => addPresentation("WHY WE STARTED", "Titles")} type="button">+ Title</button>
@@ -610,7 +744,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                   onClick={(event) => {
                     if (event.target !== event.currentTarget) return;
                     const rect = event.currentTarget.getBoundingClientRect();
-                    setPlayhead(((event.clientX - rect.left) / rect.width) * duration);
+                    seekPlayhead(((event.clientX - rect.left) / rect.width) * duration);
                     setSelection(null);
                   }}
                 >
@@ -623,7 +757,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                       <button
                         className={[styles.timelineClip, kindClass, selectedNow ? styles.timelineClipSelected : ""].filter(Boolean).join(" ")}
                         key={item.id}
-                        onClick={(event) => { event.stopPropagation(); setSelection({ trackId: track.id, itemId: item.id }); setPlayhead(item.startSeconds); }}
+                        onClick={(event) => { event.stopPropagation(); setSelection({ trackId: track.id, itemId: item.id }); seekPlayhead(item.startSeconds); }}
                         style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
                         type="button"
                       >

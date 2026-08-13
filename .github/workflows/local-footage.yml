@@ -11,6 +11,7 @@ on:
       - "scripts/start_montage_windows.ps1"
       - "tests/test_local_footage.py"
       - "tests/test_windows_onboarding.py"
+      - "tests/studio_browser_acceptance.py"
       - "docs/ASC3ND_LOCAL_FOOTAGE_QUICKSTART.md"
       - "apps/studio-web/**"
       - ".github/workflows/local-footage.yml"
@@ -25,6 +26,7 @@ on:
       - "scripts/start_montage_windows.ps1"
       - "tests/test_local_footage.py"
       - "tests/test_windows_onboarding.py"
+      - "tests/studio_browser_acceptance.py"
       - "docs/ASC3ND_LOCAL_FOOTAGE_QUICKSTART.md"
       - "apps/studio-web/**"
       - ".github/workflows/local-footage.yml"
@@ -41,12 +43,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install deterministic media runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
       - name: Install Python contract dependencies
         run: python -m pip install -r requirements.txt
-      - name: Run local footage contract tests
+      - name: Run local footage contract and real-media acceptance tests
         run: python -m unittest tests.test_local_footage tests.test_windows_onboarding -v
       - name: Compile local worker and tools
-        run: python -m py_compile tools/local_footage.py tools/synthcut_adapter.py scripts/montage_local_service.py scripts/prewarm_whisper.py
+        run: python -m py_compile tools/local_footage.py tools/synthcut_adapter.py scripts/montage_local_service.py scripts/prewarm_whisper.py tests/studio_browser_acceptance.py
       - name: Parse Windows PowerShell onboarding scripts
         shell: pwsh
         run: |
@@ -67,3 +75,59 @@ jobs:
         run: npm run typecheck:studio
       - name: Build Studio
         run: npm run build:studio
+      - name: Install browser acceptance runtime
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Run source-to-review browser gauntlet
+        env:
+          MONTAGE_STUDIO_TEST_URL: http://127.0.0.1:3000
+          MONTAGE_STUDIO_TEST_FIXTURE: /tmp/montage-browser-source.webm
+        run: |
+          # Playwright's bundled Chromium intentionally omits proprietary H.264/AAC.
+          # Use Chromium-native VP8/Opus here so this gate proves the product's real
+          # HTMLVideoElement playback clock instead of testing the CI image's codec pack.
+          # H.264/M4V remains a separate production-representative source test.
+          ffmpeg -y \
+            -f lavfi -i testsrc=size=640x360:rate=30 \
+            -f lavfi -i sine=frequency=440:sample_rate=48000 \
+            -t 1.8 -shortest \
+            -c:v libvpx -deadline realtime -cpu-used 8 -b:v 900k \
+            -c:a libopus -b:a 96k \
+            "$MONTAGE_STUDIO_TEST_FIXTURE" >/tmp/fixture.log 2>&1
+          python scripts/montage_local_service.py --workspace /tmp/montage-browser-media >/tmp/montage-worker.log 2>&1 &
+          WORKER_PID=$!
+          npm run start --workspace=@yappyverse/studio-web -- --hostname 127.0.0.1 --port 3000 >/tmp/montage-studio.log 2>&1 &
+          STUDIO_PID=$!
+          cleanup() {
+            kill "$STUDIO_PID" "$WORKER_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3000/studio/new >/dev/null && curl -fsS http://127.0.0.1:4788/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/studio/new >/dev/null || { cat /tmp/montage-studio.log; exit 1; }
+          curl -fsS http://127.0.0.1:4788/health >/dev/null || { cat /tmp/montage-worker.log; exit 1; }
+          python tests/studio_browser_acceptance.py || {
+            echo "--- Studio log ---"
+            cat /tmp/montage-studio.log
+            echo "--- Worker log ---"
+            cat /tmp/montage-worker.log
+            exit 1
+          }
+      - name: Upload browser gauntlet evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: montage-browser-gauntlet-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            /tmp/montage-studio.log
+            /tmp/montage-worker.log
+            /tmp/fixture.log
+            /tmp/montage-browser-failure.png
+            /tmp/montage-browser-trace.zip
+            /tmp/montage-browser-media/**/outputs/*.mp4

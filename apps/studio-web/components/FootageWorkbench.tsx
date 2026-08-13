@@ -17,14 +17,21 @@ import {
   LocalFootageState,
   recordFootageBead,
   registerExport,
-  registerSource,
   revertLastFootageBead,
   saveCaptionArtifact,
   saveTranscript,
   TranscriptSegment,
 } from "@/lib/local-footage-state";
+import {
+  getLocalSourceAsset,
+  isLocalProjectId,
+  LocalStudioAsset,
+  registerLocalSource,
+  updateLocalSource,
+} from "@/lib/local-studio-store";
 
 type BusyAction = "connect" | "upload" | "transcribe" | "cut" | "reframe" | "captions" | "verify" | null;
+type EngineState = "checking" | "offline" | "ready" | "missing-dependencies";
 
 type OperationSource =
   | { sourceKind: "assets"; sourceAssetId: string }
@@ -48,7 +55,7 @@ function activeOperationSource(state: LocalFootageState, sourceAssetId: string):
   return { sourceKind: "assets", sourceAssetId };
 }
 
-function formatDuration(value?: number): string {
+function formatDuration(value?: number | null): string {
   if (!Number.isFinite(value)) return "—";
   const secondsValue = Math.max(0, Number(value));
   const minutes = Math.floor(secondsValue / 60);
@@ -56,70 +63,198 @@ function formatDuration(value?: number): string {
   return `${minutes}:${secondsPart.toString().padStart(2, "0")}`;
 }
 
+function friendlyWorkerError(reason: unknown): string {
+  const raw = reason instanceof Error ? reason.message : String(reason || "");
+  if (/failed to fetch|networkerror|load failed|network request failed|abort/i.test(raw)) {
+    return "Montage Local Engine is not reachable. Start it on this computer; if your browser asks for Local Network access, choose Allow.";
+  }
+  return raw || "Montage Local Engine is not reachable on this computer.";
+}
+
+function workerStorageFilename(assetId: string, filename: string): string {
+  return `${assetId}__${filename}`;
+}
+
 export function FootageWorkbench({ projectId }: { projectId: string }) {
+  const localMode = isLocalProjectId(projectId);
   const [health, setHealth] = useState<LocalEngineHealth | null>(null);
+  const [engineState, setEngineState] = useState<EngineState>("checking");
   const [engineUrl, setEngineUrl] = useState(DEFAULT_LOCAL_ENGINE_URL);
-  const [state, setState] = useState<LocalFootageState>(() => getFootageState(projectId));
+  const [source, setSource] = useState<LocalStudioAsset | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [transientPreviewUrl, setTransientPreviewUrl] = useState<string | null>(null);
+  const [state, setState] = useState<LocalFootageState>({ projectId, beads: [], exports: [], updatedAt: "" });
   const [busy, setBusy] = useState<BusyAction>(null);
-  const [message, setMessage] = useState("Connect the local worker, then bring in footage.");
+  const [message, setMessage] = useState("Choose footage now. Local processing can connect separately.");
   const [error, setError] = useState<string | null>(null);
   const [cutStart, setCutStart] = useState("0");
   const [cutEnd, setCutEnd] = useState("30");
   const [captionStyle] = useState("Alignment=2,MarginV=180,FontSize=18,Outline=2,Shadow=0");
 
-  const refreshState = useCallback(() => setState(getFootageState(projectId)), [projectId]);
+  const refreshAuxState = useCallback(() => setState(getFootageState(projectId)), [projectId]);
+  const refreshSource = useCallback(() => {
+    if (localMode) setSource(getLocalSourceAsset(projectId));
+  }, [localMode, projectId]);
 
-  const connect = useCallback(async () => {
-    setBusy("connect");
-    setError(null);
-    try {
-      setLocalEngineBaseUrl(engineUrl);
-      const next = await localEngineHealth();
-      setHealth(next);
-      setMessage(next.ffmpeg && next.ffprobe
-        ? `Local worker ready. $0 editor/API credits. Workspace: ${next.workspace}`
-        : "Local worker responded, but FFmpeg/ffprobe are not both available yet.");
-    } catch (reason) {
-      setHealth(null);
-      setError(reason instanceof Error ? reason.message : "Local worker is not reachable.");
-      setMessage("Start the Montage local worker on this computer, then reconnect.");
-    } finally {
-      setBusy(null);
+  async function uploadAndBind(file: File, canonicalAssetId: string) {
+    if (!localMode) {
+      setError("Hosted source registration is not connected yet. Use a browser-local project for this local media path.");
+      return null;
     }
-  }, [engineUrl]);
-
-  useEffect(() => {
-    setEngineUrl(localEngineBaseUrl());
-    refreshState();
-  }, [refreshState]);
-
-  const previewUrl = useMemo(() => activeUrl(projectId, state), [projectId, state]);
-  const currentSourceId = state.source?.assetId || "";
-
-  async function onUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
     setBusy("upload");
     setError(null);
     try {
-      const asset = await uploadLocalAsset(projectId, file);
-      const next = registerSource(projectId, {
-        assetId: asset.assetId,
-        filename: asset.filename,
-        sizeBytes: asset.sizeBytes,
-        durationSeconds: asset.probe?.duration_seconds,
-        width: asset.probe?.width,
-        height: asset.probe?.height,
+      const workerAsset = await uploadLocalAsset(projectId, file);
+      const storageFilename = workerStorageFilename(workerAsset.assetId, workerAsset.filename);
+      const stablePreview = localFileUrl(projectId, "assets", storageFilename);
+      const next = updateLocalSource(projectId, canonicalAssetId, {
+        filename: workerAsset.filename,
+        sizeBytes: workerAsset.sizeBytes,
+        durationSeconds: workerAsset.probe?.duration_seconds || null,
+        width: workerAsset.probe?.width || null,
+        height: workerAsset.probe?.height || null,
+        status: "ready",
+        workerAssetId: workerAsset.assetId,
+        workerStorageFilename: storageFilename,
+        previewUrl: stablePreview,
       });
-      setState(next);
-      if (asset.probe?.duration_seconds) setCutEnd(String(Math.min(30, Number(asset.probe.duration_seconds)).toFixed(2)));
-      setMessage(`Imported ${asset.filename}. The original is registered as immutable source media.`);
+      setSource(next.asset);
+      setPendingFile(null);
+      setTransientPreviewUrl(null);
+      if (workerAsset.probe?.duration_seconds) {
+        setCutEnd(String(Math.min(30, Number(workerAsset.probe.duration_seconds)).toFixed(2)));
+      }
+      setMessage(`Source synced to the local engine. The canonical project asset remains ${next.asset.id}.`);
+      return next.asset;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Footage import failed.");
+      setError(friendlyWorkerError(reason));
+      setMessage("The source is still registered in StudioProject. Start the local engine when you are ready to process it.");
+      return null;
     } finally {
       setBusy(null);
-      event.target.value = "";
     }
+  }
+
+  const connect = useCallback(async (silent = false) => {
+    setBusy(silent ? null : "connect");
+    if (!silent) setError(null);
+    setEngineState("checking");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 1800);
+    try {
+      setLocalEngineBaseUrl(engineUrl);
+      const next = await localEngineHealth(controller.signal);
+      setHealth(next);
+      const ready = next.ffmpeg && next.ffprobe;
+      setEngineState(ready ? "ready" : "missing-dependencies");
+      setError(null);
+      setMessage(ready
+        ? `Local engine ready. $0 processing. Workspace: ${next.workspace}`
+        : "Local engine is running, but FFmpeg and ffprobe must both be installed before editing operations can run.");
+      if (ready && pendingFile && source?.status === "pending-worker") {
+        await uploadAndBind(pendingFile, source.id);
+      }
+    } catch (reason) {
+      setHealth(null);
+      setEngineState("offline");
+      if (!silent) setError(friendlyWorkerError(reason));
+      setMessage(source
+        ? "Your footage is already in the project. Start Montage Local Engine to enable transcript, cut, render, and verification."
+        : "Local processing is offline. You can still choose footage and build the project first.");
+    } finally {
+      window.clearTimeout(timeout);
+      setBusy(null);
+    }
+  // uploadAndBind is intentionally called with current pending source only after a successful probe.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineUrl, pendingFile, source?.id, source?.status]);
+
+  useEffect(() => {
+    const savedUrl = localEngineBaseUrl();
+    setEngineUrl(savedUrl);
+    refreshAuxState();
+    refreshSource();
+    void connect(true);
+  // Run one silent probe on project entry. Subsequent retries are explicit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  useEffect(() => {
+    return () => {
+      if (transientPreviewUrl) URL.revokeObjectURL(transientPreviewUrl);
+    };
+  }, [transientPreviewUrl]);
+
+  useEffect(() => {
+    if (!localMode || source) return;
+    const legacy = getFootageState(projectId).source;
+    if (!legacy?.assetId) return;
+    const storageFilename = legacy.storageFilename || workerStorageFilename(legacy.assetId, legacy.filename);
+    const migrated = registerLocalSource(projectId, {
+      filename: legacy.filename,
+      sizeBytes: legacy.sizeBytes,
+      durationSeconds: legacy.durationSeconds || null,
+      width: legacy.width || null,
+      height: legacy.height || null,
+      mimeType: null,
+      status: "ready",
+      workerAssetId: legacy.assetId,
+      workerStorageFilename: storageFilename,
+      previewUrl: localFileUrl(projectId, "assets", storageFilename),
+    });
+    setSource(migrated.asset);
+    setMessage("Migrated the existing source into canonical StudioProject asset/timeline state.");
+  }, [localMode, projectId, source]);
+
+  const previewUrl = useMemo(
+    () => activeUrl(projectId, state) || transientPreviewUrl || source?.previewUrl || null,
+    [projectId, source?.previewUrl, state, transientPreviewUrl],
+  );
+  const currentSourceId = source?.workerAssetId || "";
+  const processingReady = Boolean(health?.ffmpeg && health?.ffprobe && currentSourceId);
+
+  async function onSelectSource(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    if (!localMode) {
+      setError("Hosted asset registration is not connected. Create a browser-local project for the local editing path.");
+      event.target.value = "";
+      return;
+    }
+    const blobPreview = URL.createObjectURL(file);
+    setTransientPreviewUrl(blobPreview);
+    const registered = registerLocalSource(projectId, {
+      filename: file.name,
+      sizeBytes: file.size,
+      mimeType: file.type || "application/octet-stream",
+      durationSeconds: null,
+      width: null,
+      height: null,
+      status: "pending-worker",
+      workerAssetId: null,
+      workerStorageFilename: null,
+      previewUrl: null,
+    });
+    setSource(registered.asset);
+    setPendingFile(file);
+    setMessage(`Added ${file.name} to the canonical StudioProject. Local processing can sync separately.`);
+    if (engineState === "ready" && health) {
+      await uploadAndBind(file, registered.asset.id);
+    }
+    event.target.value = "";
+  }
+
+  async function syncPendingSource() {
+    if (!pendingFile || !source) {
+      setError("Choose the source file again so Montage can sync its bytes to the local engine.");
+      return;
+    }
+    if (!health?.ffmpeg || !health?.ffprobe) {
+      setError("Start or repair Montage Local Engine before syncing the source for processing.");
+      return;
+    }
+    await uploadAndBind(pendingFile, source.id);
   }
 
   async function run(
@@ -128,7 +263,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
     successMessage: string,
   ) {
     if (!currentSourceId) {
-      setError("Import source footage first.");
+      setError("The source is in StudioProject, but it must be synced to Montage Local Engine before this operation can run.");
       return null;
     }
     setBusy(action);
@@ -156,7 +291,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       return result;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Local operation failed.");
-      refreshState();
+      refreshAuxState();
       return null;
     } finally {
       setBusy(null);
@@ -164,7 +299,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
   }
 
   async function transcribe() {
-    if (!currentSourceId) return setError("Import source footage first.");
+    if (!currentSourceId) return setError("Sync the project source to the local engine first.");
     setBusy("transcribe");
     setError(null);
     try {
@@ -189,7 +324,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       setMessage(`Transcribed ${segments.length} segments locally. Cost: $${result.costUsd.toFixed(2)}.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Transcription failed.");
-      refreshState();
+      refreshAuxState();
     } finally {
       setBusy(null);
     }
@@ -217,7 +352,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
 
   async function writeCaptions() {
     if (!state.transcript?.length) return setError("Transcribe the footage before creating captions.");
-    if (!currentSourceId) return setError("Import source footage first.");
+    if (!currentSourceId) return setError("Sync the project source to the local engine first.");
     setBusy("captions");
     setError(null);
     try {
@@ -254,7 +389,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       setMessage(`Captions generated and rendered locally. Cost: $${burned.costUsd.toFixed(2)}.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Caption operation failed.");
-      refreshState();
+      refreshAuxState();
     } finally {
       setBusy(null);
     }
@@ -276,9 +411,17 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
   function undoLast() {
     const next = revertLastFootageBead(projectId);
     setState(next);
-    setMessage("Reverted the last accepted change in project state. Generated files remain as immutable evidence.");
+    setMessage("Reverted the last accepted local edit receipt. Generated files remain immutable evidence.");
     setError(null);
   }
+
+  const engineTitle = engineState === "ready"
+    ? "Ready on this computer"
+    : engineState === "missing-dependencies"
+      ? "Engine needs FFmpeg"
+      : engineState === "checking"
+        ? "Checking this computer"
+        : "Engine not running";
 
   return (
     <div className="footage-workbench">
@@ -286,7 +429,7 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
         <div>
           <div className="eyebrow">Local footage factory</div>
           <h1>Footage in. Finished cut out.</h1>
-          <p className="muted">The AI chooses bounded operations. Your local worker executes them with FFmpeg and keeps every material change reversible.</p>
+          <p className="muted">Choose source footage first. Montage keeps project truth separate from the local FFmpeg worker that processes the bytes.</p>
         </div>
         <div className="form-actions">
           <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/edit`}>Timeline</Link>
@@ -296,13 +439,22 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
 
       <section className="panel local-engine-panel">
         <div className="panel-head">
-          <div><div className="section-label">Local engine</div><h2>{health ? "Connected" : "Connect this computer"}</h2></div>
-          <span className={`status-pill ${health ? "local-ready" : ""}`}>{health ? "$0 editor credits" : "offline"}</span>
+          <div><div className="section-label">Local processing</div><h2>{engineTitle}</h2></div>
+          <span className={`status-pill ${engineState === "ready" ? "local-ready" : ""}`}>{engineState === "ready" ? "$0 editor credits" : engineState === "checking" ? "checking" : "offline"}</span>
         </div>
-        <div className="engine-connect-row">
-          <input aria-label="Local engine URL" value={engineUrl} onChange={(event) => setEngineUrl(event.target.value)} />
-          <button className="button accent" disabled={busy === "connect"} onClick={() => void connect()} type="button">{busy === "connect" ? "Connecting…" : "Connect"}</button>
+        {engineState === "offline" ? <p className="muted">Your project still works without the worker. To transcribe, cut, render, or verify, run <strong>GO.ps1</strong> from the Montage repository on this computer, then retry.</p> : null}
+        {engineState === "missing-dependencies" ? <p className="muted">The local service answered, but FFmpeg/ffprobe are missing. Run the Montage setup again, then retry.</p> : null}
+        <div className="form-actions">
+          <button className="button accent" disabled={busy === "connect" || engineState === "checking"} onClick={() => void connect(false)} type="button">{busy === "connect" || engineState === "checking" ? "Checking…" : engineState === "ready" ? "Recheck engine" : "Retry local engine"}</button>
+          {source?.status === "pending-worker" ? <button className="button secondary" disabled={!health || !pendingFile || busy !== null} onClick={() => void syncPendingSource()} type="button">Sync source for processing</button> : null}
         </div>
+        <details style={{ marginTop: 14 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>Advanced connection settings</summary>
+          <div className="engine-connect-row" style={{ marginTop: 10 }}>
+            <input aria-label="Local engine URL" value={engineUrl} onChange={(event) => setEngineUrl(event.target.value)} />
+            <button className="button secondary" disabled={busy === "connect"} onClick={() => void connect(false)} type="button">Use address</button>
+          </div>
+        </details>
         {health ? <div className="engine-facts">
           <span>FFmpeg {health.ffmpeg ? "ready" : "missing"}</span>
           <span>ffprobe {health.ffprobe ? "ready" : "missing"}</span>
@@ -316,59 +468,69 @@ export function FootageWorkbench({ projectId }: { projectId: string }) {
       <div className="footage-grid">
         <section className="panel footage-source-panel">
           <div className="panel-head"><div><div className="section-label">01 · Source</div><h2>Bring in real footage.</h2></div></div>
-          {state.source ? (
+          {source ? (
             <div className="source-card">
-              <strong>{state.source.filename}</strong>
-              <span>{state.source.width || "?"}×{state.source.height || "?"} · {formatDuration(state.source.durationSeconds)}</span>
-              <span>Original protected · {Math.round(state.source.sizeBytes / 1024 / 1024)} MB</span>
+              <strong>{source.filename}</strong>
+              <span>{source.width || "?"}×{source.height || "?"} · {formatDuration(source.durationSeconds)}</span>
+              <span>Original protected · {Math.round(source.sizeBytes / 1024 / 1024)} MB</span>
+              <span>{source.status === "ready" ? "Canonical asset · local bytes synced" : "Canonical asset · waiting for local processing sync"}</span>
             </div>
-          ) : <p className="muted">Source media stays untouched. Every cut and render becomes a new artifact.</p>}
-          <label className={`button secondary upload-button ${!health ? "disabled" : ""}`}>
-            {busy === "upload" ? "Importing…" : state.source ? "Replace working source" : "Choose footage"}
-            <input accept="video/*,audio/*" disabled={!health || busy !== null} onChange={(event) => void onUpload(event)} type="file" />
+          ) : <p className="muted">Source selection is available even while local processing is offline. The original remains immutable.</p>}
+          <label className={`button secondary upload-button ${busy !== null ? "disabled" : ""}`}>
+            {source ? "Choose different source" : "Choose footage"}
+            <input accept="video/*,audio/*" disabled={busy !== null} onChange={(event) => void onSelectSource(event)} type="file" />
           </label>
         </section>
 
         <section className="panel footage-preview-panel">
-          <div className="panel-head"><div><div className="section-label">Preview</div><h2>{state.activeArtifact || "No active cut yet"}</h2></div></div>
-          {previewUrl ? <video className="footage-preview" controls key={previewUrl} preload="metadata" src={previewUrl} /> : <div className="preview-empty">Import footage to begin.</div>}
+          <div className="panel-head"><div><div className="section-label">Preview</div><h2>{state.activeArtifact || source?.filename || "No active source yet"}</h2></div></div>
+          {previewUrl ? <video className="footage-preview" controls key={previewUrl} preload="metadata" src={previewUrl} /> : <div className="preview-empty">Choose footage to begin.</div>}
         </section>
       </div>
 
       <section className="panel footage-actions-panel">
-        <div className="panel-head"><div><div className="section-label">02 · Edit</div><h2>One material change at a time.</h2></div><button className="button secondary" disabled={!state.beads.some((bead) => bead.status === "applied")} onClick={undoLast} type="button">Undo last change</button></div>
+        <div className="panel-head"><div><div className="section-label">02 · Process</div><h2>One reversible material change at a time.</h2></div><button className="button secondary" disabled={!state.beads.some((bead) => bead.status === "applied")} onClick={undoLast} type="button">Undo last change</button></div>
+        {!processingReady && source ? <p className="muted">The source is safely registered. Processing controls unlock after its bytes are synced to the local engine.</p> : null}
         <div className="operation-grid">
           <article className="operation-card">
             <span>Transcript</span><strong>Turn speech into editable time.</strong><p>Runs Faster-Whisper locally when installed.</p>
-            <button disabled={!health || !state.source || busy !== null} onClick={() => void transcribe()} type="button">{busy === "transcribe" ? "Transcribing…" : state.transcript?.length ? "Transcribe again" : "Transcribe locally"}</button>
+            <button disabled={!processingReady || busy !== null} onClick={() => void transcribe()} type="button">{busy === "transcribe" ? "Transcribing…" : state.transcript?.length ? "Transcribe again" : "Transcribe locally"}</button>
           </article>
           <article className="operation-card">
             <span>Cut</span><strong>Keep the exact range.</strong><div className="range-row"><label>Start<input value={cutStart} onChange={(event) => setCutStart(event.target.value)} /></label><label>End<input value={cutEnd} onChange={(event) => setCutEnd(event.target.value)} /></label></div>
-            <button disabled={!health || !state.source || busy !== null} onClick={() => void makeCut()} type="button">{busy === "cut" ? "Cutting…" : "Create cut"}</button>
+            <button disabled={!processingReady || busy !== null} onClick={() => void makeCut()} type="button">{busy === "cut" ? "Cutting…" : "Create cut"}</button>
           </article>
           <article className="operation-card">
-            <span>Reframe</span><strong>Make a 9:16 social master.</strong><p>Center crop is deterministic now; tracking can plug in later without changing project truth.</p>
-            <button disabled={!health || !state.source || busy !== null} onClick={() => void reframe()} type="button">{busy === "reframe" ? "Reframing…" : "Reframe 9:16"}</button>
+            <span>Reframe</span><strong>Make a 9:16 social master.</strong><p>Deterministic center framing today; tracking can remain an adapter without owning project truth.</p>
+            <button disabled={!processingReady || busy !== null} onClick={() => void reframe()} type="button">{busy === "reframe" ? "Reframing…" : "Create 9:16"}</button>
           </article>
           <article className="operation-card">
-            <span>Captions</span><strong>Create SRT + rendered captions.</strong><p>{state.transcript?.length ? `${state.transcript.length} transcript segments ready.` : "Transcript required first."}</p>
-            <button disabled={!health || !state.transcript?.length || busy !== null} onClick={() => void writeCaptions()} type="button">{busy === "captions" ? "Rendering…" : "Add captions"}</button>
+            <span>Captions</span><strong>Render readable subtitles.</strong><p>Uses the local transcript and keeps the SRT as evidence.</p>
+            <button disabled={!processingReady || !state.transcript?.length || busy !== null} onClick={() => void writeCaptions()} type="button">{busy === "captions" ? "Rendering…" : "Create captions"}</button>
           </article>
           <article className="operation-card">
-            <span>Verify</span><strong>Check the output before delivery.</strong><p>ffprobe checks dimensions, duration and decodability metadata.</p>
-            <button disabled={!health || !state.source || busy !== null} onClick={() => void verify()} type="button">{busy === "verify" ? "Checking…" : "Verify active cut"}</button>
+            <span>Verify</span><strong>Prove the current artifact.</strong><p>ffprobe checks dimensions, duration, audio/video decoding metadata.</p>
+            <button disabled={!processingReady || busy !== null} onClick={() => void verify()} type="button">{busy === "verify" ? "Verifying…" : "Verify media"}</button>
           </article>
         </div>
       </section>
 
-      <section className="panel change-ledger-panel">
-        <div className="panel-head"><div><div className="section-label">Change beads</div><h2>Every material operation has a receipt.</h2></div><span className="status-pill">{state.beads.length} recorded</span></div>
-        {state.beads.length ? <div className="bead-list">{[...state.beads].reverse().map((bead) => (
-          <div className="bead-row" key={bead.id}><div><strong>{bead.operation}</strong><span>{bead.id}</span></div><div><span>{bead.status}</span><span>${bead.costUsd.toFixed(2)}</span></div></div>
-        ))}</div> : <div className="empty compact-empty"><strong>No edits yet.</strong><p>Operations will appear here instead of disappearing into an AI chat history.</p></div>}
+      <section className="panel">
+        <div className="panel-head"><div><div className="section-label">Evidence</div><h2>Edit receipts</h2></div></div>
+        {state.beads.length ? <div className="bead-list">{[...state.beads].reverse().map((receipt) => (
+          <div className="bead-row" key={receipt.id}>
+            <div><strong>{receipt.operation}</strong><span>{receipt.id}</span></div>
+            <span>{receipt.status} · ${receipt.costUsd.toFixed(2)} · {receipt.artifacts.join(", ") || "no file artifact"}</span>
+          </div>
+        ))}</div> : <div className="preview-empty compact-empty">No processing receipts yet.</div>}
       </section>
 
-      {state.exports.length ? <section className="panel delivery-panel"><div className="panel-head"><div><div className="section-label">03 · Deliver</div><h2>Verified local exports.</h2></div></div><div className="export-list">{state.exports.map((filename) => <a className="button accent" href={localFileUrl(projectId, "outputs", filename)} key={filename} target="_blank" rel="noreferrer">Open {filename}</a>)}</div></section> : null}
+      <section className="panel delivery-panel">
+        <div className="panel-head"><div><div className="section-label">03 · Review</div><h2>Verified local outputs</h2></div></div>
+        {state.exports.length ? <div className="export-list">{state.exports.map((filename) => (
+          <a className="button secondary" href={localFileUrl(projectId, "outputs", filename)} key={filename} rel="noreferrer" target="_blank">Open {filename}</a>
+        ))}</div> : <p className="muted">Nothing is published. Verified review files will appear here.</p>}
+      </section>
     </div>
   );
 }
