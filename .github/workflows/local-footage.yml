@@ -92,6 +92,7 @@ jobs:
           MONTAGE_OWNER_EMAIL: browser-acceptance@montage.test
           MONTAGE_OWNER_PASSWORD: montage-browser-acceptance-only
           MONTAGE_SESSION_SECRET: browser-acceptance-session-secret-32-characters-minimum
+          MONTAGE_COOKIE_SECURE: "false"
         run: |
           # Playwright's bundled Chromium intentionally omits proprietary H.264/AAC.
           # Use Chromium-native VP8/Opus here so this gate proves the product's real
