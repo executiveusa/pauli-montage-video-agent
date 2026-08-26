@@ -85,7 +85,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="floating-card card-search"><span><i/>Visual search</span><strong>“waterfront at dusk”</strong></div>
-          <div className="floating-card card-cut"><span><i/>Montage found</span><strong>14 usable moments</strong></div>
+          <div className="floating-card card-cut"><span><i/>Montage indexed</span><strong>Scene-level moments</strong></div>
         </div>
       </section>
 
