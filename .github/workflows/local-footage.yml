@@ -75,6 +75,8 @@ jobs:
           if ($failed) { exit 1 }
       - name: Install Studio dependencies
         run: npm install
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: Typecheck Studio
         run: npm run typecheck:studio
       - name: Build Studio
