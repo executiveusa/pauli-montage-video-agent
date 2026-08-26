@@ -90,10 +90,17 @@ export async function getSession(): Promise<SessionPayload | null> {
   return verifySessionToken(store.get(SESSION_COOKIE)?.value);
 }
 
+function secureCookie(): boolean {
+  const override = process.env.MONTAGE_COOKIE_SECURE?.trim().toLowerCase();
+  if (override === "true") return true;
+  if (override === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 export const sessionCookieOptions = {
   httpOnly: true,
   sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
+  secure: secureCookie(),
   path: "/",
   maxAge: SESSION_TTL_SECONDS,
 };
