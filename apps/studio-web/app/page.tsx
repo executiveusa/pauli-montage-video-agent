@@ -1,108 +1,130 @@
 import Link from "next/link";
 
-const capabilities = [
+const problems = [
   {
-    kicker: "Real footage",
-    title: "Find the story inside the footage.",
-    copy: "Import interviews and source media, work from transcript-aware project state, and keep every editorial decision traceable.",
+    n: "01",
+    title: "Hours of footage. No map.",
+    copy: "Montage turns source media into searchable scenes so you can find the moment instead of scrubbing the timeline blind.",
   },
   {
-    kicker: "Short-form",
-    title: "Turn one master into many cuts.",
-    copy: "Create vertical versions, captions, hooks, reframes, and campaign derivatives without rebuilding the project from scratch.",
+    n: "02",
+    title: "Every edit starts over.",
+    copy: "Keep one project truth for long cuts, shorts, captions, reframes, versions, and approvals instead of rebuilding from exports.",
   },
   {
-    kicker: "AI production",
-    title: "Generate without losing continuity.",
-    copy: "Use replaceable image, video, avatar, and voice engines while the project keeps ownership of canon, assets, approvals, and versions.",
+    n: "03",
+    title: "AI tools create more tabs, not less work.",
+    copy: "Use AI where it helps — transcription, visual search, selects, cleanup, B-roll, captions — inside one understandable production flow.",
   },
   {
-    kicker: "Local-first",
-    title: "Use the best engine. Keep the project.",
-    copy: "Run deterministic editing and finishing through owner-controlled tools, with cloud providers available when they actually add value.",
+    n: "04",
+    title: "The software owns the workflow.",
+    copy: "Montage keeps source media, edit decisions, versions, and evidence portable while engines remain replaceable.",
   },
+];
+
+const flow = [
+  ["01", "Bring it in", "Footage, interviews, screen recordings, audio, images, references."],
+  ["02", "Find the story", "Search what was said and what was seen. Build selects from real moments."],
+  ["03", "Shape the cut", "Edit the timeline, captions, framing, sound, graphics, and generated support media."],
+  ["04", "Ship versions", "Review, verify, export, repurpose, and keep the project ready for the next cut."],
 ];
 
 export default function HomePage() {
   return (
-    <main className="site-shell landing-light">
-      <header className="topbar product-topbar">
-        <Link className="brand product-brand" href="/">MONTAGE</Link>
-        <nav className="nav product-nav" aria-label="Primary">
-          <a href="#product">Product</a>
-          <a href="#workflow">Workflow</a>
-          <a href="#control">Control</a>
+    <main className="landing">
+      <header className="landing-nav">
+        <Link className="landing-logo" href="/">MONTAGE</Link>
+        <nav className="landing-nav-center" aria-label="Primary">
+          <a href="#why">Why Montage</a>
+          <a href="#flow">Workflow</a>
+          <a href="#studio">Studio</a>
         </nav>
-        <Link className="button ink" href="/studio">Open Studio</Link>
+        <div className="landing-nav-actions">
+          <Link href="/sign-in">Sign in</Link>
+          <Link className="nav-pill" href="/studio/new">Start a project</Link>
+        </div>
       </header>
 
-      <section className="hero product-hero">
-        <div className="eyebrow dark-eyebrow">AI-native video production, without the software maze</div>
-        <h1>From footage to finished story.</h1>
-        <div className="hero-copy">
-          <p>
-            Montage gives creators one calm workspace to bring in footage, shape the edit,
-            review changes, and deliver platform-ready video while keeping the project portable.
+      <section className="masthead">
+        <div className="masthead-kicker">
+          <span>AI video studio for real footage</span>
+          <span>Search · Edit · Repurpose · Deliver</span>
+        </div>
+        <h1 className="masthead-word">MONTAGE</h1>
+        <div className="masthead-bottom">
+          <p className="masthead-copy">
+            Find the right moment. Shape the story. Turn one body of footage into finished work without living in six different apps.
           </p>
-          <div className="hero-actions">
-            <Link className="button accent" href="/studio/new">Start a project</Link>
-            <Link className="button ink-outline" href="/studio">See the studio</Link>
+          <div className="masthead-cta">
+            <p>
+              A calm production workspace for documentary footage, interviews, podcasts, campaigns, social clips, and AI-assisted finishing.
+            </p>
+            <Link className="hero-button" href="/studio/new"><span>Start with your footage</span><span>↗</span></Link>
           </div>
         </div>
       </section>
 
-      <section className="product-marquee" aria-label="Core promise">
-        <span>CREATE</span><span>EDIT</span><span>REVIEW</span><span>DELIVER</span>
+      <section className="motion-stage" id="studio" aria-label="Animated Montage editor preview">
+        <div className="motion-top"><span>One workspace</span><span>Footage → story</span></div>
+        <div className="motion-canvas">
+          <div className="editor-window">
+            <div className="editor-bar"><i className="editor-dot"/><i className="editor-dot"/><i className="editor-dot"/></div>
+            <div className="editor-body">
+              <aside className="editor-sidebar">
+                <div className="editor-thumb"/><div className="editor-thumb"/><div className="editor-thumb"/>
+              </aside>
+              <div className="editor-main">
+                <div className="preview"><div className="preview-copy">THE MOMENT<br/>YOU WERE LOOKING FOR.</div></div>
+                <div className="timeline">
+                  <div className="track"><i className="clip"/><i className="clip accent"/><i className="clip"/><i className="clip"/></div>
+                  <div className="track"><i className="clip"/><i className="clip"/><i className="clip accent"/></div>
+                  <i className="playhead"/>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="floating-card card-search"><span><i/>Visual search</span><strong>“waterfront at dusk”</strong></div>
+          <div className="floating-card card-cut"><span><i/>Montage found</span><strong>14 usable moments</strong></div>
+        </div>
       </section>
 
-      <section className="section product-section" id="product">
-        <div className="section-header product-section-header">
-          <h2>One project.<br />Every production engine.</h2>
-          <p>
-            The interface stays understandable even when the production stack underneath it is sophisticated.
-            Engines can change. Project history, approvals, and ownership do not.
-          </p>
+      <section className="problem-section" id="why">
+        <div className="section-rule"><span>The problem</span><span>Less software. More finished work.</span></div>
+        <div className="problem-grid">
+          <h2>Stop<br/>hunting.<br/>Start<br/>editing.</h2>
+          <div className="problem-list">
+            {problems.map((item) => (
+              <article className="problem-row" key={item.n}>
+                <b>{item.n}</b>
+                <div><h3>{item.title}</h3><p>{item.copy}</p></div>
+              </article>
+            ))}
+          </div>
         </div>
-        <div className="lane-grid product-card-grid">
-          {capabilities.map((item) => (
-            <article className="lane-card product-card" key={item.title}>
-              <small>{item.kicker}</small>
-              <h3>{item.title}</h3>
-              <p>{item.copy}</p>
-            </article>
+      </section>
+
+      <section className="flow-section" id="flow">
+        <div className="section-rule"><span>The workflow</span><span>Built to be remembered</span></div>
+        <h2 className="flow-title">One flow from source to story.</h2>
+        <div className="flow-steps">
+          {flow.map(([n, title, copy]) => (
+            <article className="flow-step" key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>
           ))}
         </div>
       </section>
 
-      <section className="section product-section workflow-section" id="workflow">
-        <div className="section-header product-section-header">
-          <h2>A workflow people can remember.</h2>
-          <p>No architecture vocabulary required. Every project follows the same four visible stages.</p>
-        </div>
-        <div className="workflow-large">
-          <div><span>01</span><strong>Create</strong><p>Outcome, source material, audience, constraints.</p></div>
-          <div><span>02</span><strong>Edit</strong><p>Transcript, timeline, captions, crop, sound.</p></div>
-          <div><span>03</span><strong>Review</strong><p>Version changes, quality checks, approvals.</p></div>
-          <div><span>04</span><strong>Deliver</strong><p>Verified exports, manifests, reusable assets.</p></div>
+      <section className="final-cta">
+        <div>
+          <h2>MAKE<br/>THE CUT.</h2>
+          <p>Bring the footage. Montage helps you understand it, find the best moments, shape the edit, and deliver the versions.</p>
+          <Link href="/studio/new">Start a project →</Link>
         </div>
       </section>
 
-      <section className="section product-section control-section" id="control">
-        <div className="control-card">
-          <div>
-            <div className="eyebrow dark-eyebrow">Built to stay yours</div>
-            <h2>Keep the project. Swap the engine.</h2>
-          </div>
-          <p>
-            Montage is designed so local editors, FFmpeg workers, generation providers, transcription engines,
-            and specialist agents can plug in without becoming the owner of your project.
-          </p>
-        </div>
-      </section>
-
-      <footer className="footer product-footer">
+      <footer className="landing-footer">
         <span>MONTAGE / Yappyverse Studio</span>
-        <span>Portable project truth. Replaceable engines.</span>
+        <span>Owner-controlled video production</span>
       </footer>
     </main>
   );
