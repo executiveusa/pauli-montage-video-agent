@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$Worker = Join-Path $RepoRoot "scripts\montage_local_service.py"
+$Worker = Join-Path $RepoRoot "scripts\montage_documentary_service.py"
 $VenvPython = Join-Path $RuntimeRoot ".venv\Scripts\python.exe"
 $RuntimePythonFile = Join-Path $RuntimeRoot "python-executable.txt"
 $FallbackPackages = Join-Path $RuntimeRoot "python-packages"
