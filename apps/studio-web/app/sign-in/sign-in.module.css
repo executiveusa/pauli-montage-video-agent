@@ -1,0 +1,22 @@
+.page { min-height:100svh; display:grid; grid-template-columns:1.15fr .85fr; background:#f3f1eb; color:#0c0d0d; }
+.brandPanel { position:relative; overflow:hidden; background:#101212; color:white; padding:28px; display:flex; flex-direction:column; justify-content:space-between; }
+.brand { color:white; text-decoration:none; font-weight:950; letter-spacing:-.05em; font-size:14px; }
+.word { margin:0 0 -.04em -.055em; font-size:clamp(7rem,15vw,15rem); line-height:.72; letter-spacing:-.09em; font-weight:950; }
+.orbit { position:absolute; width:60vw; height:60vw; border-radius:50%; border:1px solid #ffffff1f; left:-20vw; top:-14vw; }
+.orbit::before,.orbit::after { content:""; position:absolute; border-radius:50%; border:1px solid #dfff4540; inset:12%; }
+.orbit::after { inset:28%; background:#dfff4514; }
+.caption { max-width:520px; color:#c9cbc4; line-height:1.5; font-size:14px; }
+.formPanel { display:grid; place-items:center; padding:40px; }
+.formWrap { width:min(100%,430px); }
+.kicker { text-transform:uppercase; letter-spacing:.1em; font-size:11px; }
+.title { margin:18px 0 12px; font-size:clamp(3rem,6vw,5.5rem); line-height:.82; letter-spacing:-.07em; }
+.copy { color:#6e706b; line-height:1.5; margin:0 0 34px; }
+.form { display:grid; gap:14px; }
+.label { display:grid; gap:8px; font-size:12px; font-weight:800; }
+.input { width:100%; border:1px solid #0c0d0d2e; background:#ffffff80; border-radius:12px; padding:14px 15px; font:inherit; outline:none; }
+.input:focus { border-color:#0c0d0d; box-shadow:0 0 0 3px #dfff4566; }
+.button { margin-top:6px; border:0; border-radius:999px; background:#0c0d0d; color:white; padding:15px 18px; font:inherit; font-weight:850; cursor:pointer; }
+.error { margin:0 0 20px; border-left:3px solid #ef5a45; background:#fff3ef; padding:12px 14px; font-size:13px; line-height:1.45; }
+.config { border-left-color:#d3a800; background:#fff8d8; }
+.back { display:inline-block; margin-top:24px; color:#0c0d0d; text-underline-offset:4px; font-size:12px; font-weight:800; }
+@media(max-width:800px){.page{grid-template-columns:1fr}.brandPanel{min-height:38svh}.word{font-size:24vw}.formPanel{padding:44px 20px 70px}.orbit{width:100vw;height:100vw}}
