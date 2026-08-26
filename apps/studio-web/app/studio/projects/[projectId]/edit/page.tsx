@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LocalReviewRenderPanel } from "@/components/LocalReviewRenderPanel";
 import { StudioFrame } from "@/components/StudioFrame";
 import { TimelineEditor } from "@/components/TimelineEditor";
+import styles from "./edit-workspace.module.css";
 
 type PageProps = { params: Promise<{ projectId: string }> };
 
@@ -11,7 +12,7 @@ export default async function EditProjectPage({ params }: PageProps) {
 
   return (
     <StudioFrame active="Projects">
-      <header className="studio-head studio-head-product montage-project-head">
+      <header className={`studio-head studio-head-product ${styles.head}`}>
         <div>
           <div className="eyebrow">Montage workspace</div>
           <h1>Edit the story, not the software.</h1>
@@ -22,13 +23,13 @@ export default async function EditProjectPage({ params }: PageProps) {
         <Link className="button secondary" href="/studio">All projects</Link>
       </header>
 
-      <nav className="project-stage-nav" aria-label="Project workflow">
+      <nav className={styles.stageNav} aria-label="Project workflow">
         <Link href={`/studio/projects/${encoded}/footage`}>
           <span>01</span>
           <strong>Footage</strong>
           <small>Bring in and inspect source media</small>
         </Link>
-        <div className="active" aria-current="step">
+        <div className={styles.active} aria-current="step">
           <span>02</span>
           <strong>Edit</strong>
           <small>Shape the source-backed timeline</small>
@@ -40,8 +41,8 @@ export default async function EditProjectPage({ params }: PageProps) {
         </a>
       </nav>
 
-      <section className="project-workspace-section" aria-labelledby="edit-workspace-title">
-        <div className="workspace-section-head">
+      <section className={styles.workspaceSection} aria-labelledby="edit-workspace-title">
+        <div className={styles.workspaceHead}>
           <div>
             <div className="section-label">Edit</div>
             <h2 id="edit-workspace-title">One timeline. One project truth.</h2>
@@ -51,8 +52,8 @@ export default async function EditProjectPage({ params }: PageProps) {
         <TimelineEditor projectId={projectId} />
       </section>
 
-      <section className="project-workspace-section review-workspace" id="review" aria-labelledby="review-workspace-title">
-        <div className="workspace-section-head">
+      <section className={`${styles.workspaceSection} ${styles.review}`} id="review" aria-labelledby="review-workspace-title">
+        <div className={styles.workspaceHead}>
           <div>
             <div className="section-label">Review</div>
             <h2 id="review-workspace-title">Make a review copy you can trust.</h2>
