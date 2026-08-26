@@ -1,7 +1,7 @@
 """Browser acceptance for the zero-credit local Montage editing loop.
 
 This test intentionally exercises the product surface, not only helper functions:
-create -> ingest -> canonical timeline -> source-backed preview -> split ->
+sign in -> create -> ingest -> canonical timeline -> source-backed preview -> split ->
 undo/redo -> save/reopen -> timed presentation -> deterministic render -> verify.
 """
 
@@ -20,11 +20,15 @@ BASE_URL = os.environ.get("MONTAGE_STUDIO_TEST_URL", "http://127.0.0.1:3000")
 FIXTURE = Path(os.environ.get("MONTAGE_STUDIO_TEST_FIXTURE", "/tmp/montage-browser-source.mp4")).resolve()
 SCREENSHOT = Path("/tmp/montage-browser-failure.png")
 TRACE = Path("/tmp/montage-browser-trace.zip")
+TEST_EMAIL = os.environ.get("MONTAGE_OWNER_EMAIL", "")
+TEST_PASSWORD = os.environ.get("MONTAGE_OWNER_PASSWORD", "")
 
 
 def main() -> int:
     if not FIXTURE.is_file():
         raise SystemExit(f"fixture not found: {FIXTURE}")
+    if not TEST_EMAIL or not TEST_PASSWORD:
+        raise SystemExit("browser acceptance requires MONTAGE_OWNER_EMAIL and MONTAGE_OWNER_PASSWORD")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -48,6 +52,15 @@ def main() -> int:
         page.on("request", capture_operation)
 
         try:
+            # Authentication is part of the production acceptance path. The test
+            # uses throwaway CI credentials and proves the signed session gate
+            # before it touches any studio route.
+            page.goto(f"{BASE_URL}/sign-in", wait_until="networkidle")
+            page.get_by_label("Email").fill(TEST_EMAIL)
+            page.get_by_label("Password").fill(TEST_PASSWORD)
+            page.get_by_role("button", name="Enter Montage").click()
+            page.wait_for_url(re.compile(r"/studio$"), timeout=15_000)
+
             page.goto(f"{BASE_URL}/studio/new", wait_until="networkidle")
             page.get_by_label("Project title").fill("ASC3ND WHY WE STARTED Browser Acceptance")
             page.get_by_label("Project slug").fill("asc3nd-browser-acceptance")
