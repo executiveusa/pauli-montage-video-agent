@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./landing.css";
 import "./timeline.css";
 import "./generation.css";
 import "./footage.css";
 
 export const metadata: Metadata = {
-  title: "YAPPY-CLIPZ — AI-Native Production Studio",
+  title: "MONTAGE — Find the story in your footage",
   description:
-    "A sovereign production studio for anime, consistent characters, AI avatars, documentary footage, campaigns, and clips.",
+    "A calm AI video studio for finding moments, shaping edits, creating clips, and delivering finished stories from real footage.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
