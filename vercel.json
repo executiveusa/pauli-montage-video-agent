@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "npm install --omit=optional && npm install --no-save @next/swc-linux-x64-gnu@16.2.11",
+  "installCommand": "npm install --omit=optional && npm install --no-save @next/swc-linux-x64-gnu@16.3.3",
   "buildCommand": "npm run build:studio",
   "outputDirectory": "apps/studio-web/.next"
 }
