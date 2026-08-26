@@ -11,7 +11,7 @@ export function StudioFrame({ children, active = "Projects" }: { children: React
       <aside className="sidebar">
         <div>
           <Link className="side-brand" href="/">MONTAGE</Link>
-          <div className="side-kicker">Yappyverse Studio</div>
+          <div className="side-kicker">Source → story → versions</div>
         </div>
         <nav className="side-nav" aria-label="Studio">
           {items.map((item) => (
@@ -22,9 +22,12 @@ export function StudioFrame({ children, active = "Projects" }: { children: React
         </nav>
         <div className="side-spacer" />
         <div className="side-note">
-          <strong>Local-first by design</strong>
-          <span>Your project stays portable. Editing engines stay replaceable.</span>
+          <strong>One project truth</strong>
+          <span>Footage, edits, review renders, and versions stay traceable to their source.</span>
         </div>
+        <form action="/api/auth/sign-out" method="post">
+          <button className="side-signout" type="submit">Sign out</button>
+        </form>
       </aside>
       <main className="studio-main">{children}</main>
     </div>
