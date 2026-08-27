@@ -2,8 +2,8 @@
 
 | Phase | Outcome | State | Starting main | Merge commit | Evidence |
 |---:|---|---|---|---|---|
-| 1 | Product contract and architecture | IN-FLIGHT | `5e3a11a` | pending | `.unlazy/open-montage-13/gates/phase-01.md` |
-| 2 | Design system and application shell | WAITING | pending | pending | phase ledger |
+| 1 | Product contract and architecture | VERIFIED | `5e3a11a` | `44d1f57` | `.unlazy/open-montage-13/gates/phase-01.md` — 9/9 post-merge gates met |
+| 2 | Design system and application shell | READY | `44d1f57` | pending | phase ledger |
 | 3 | Full-bleed landing page | WAITING | pending | pending | phase ledger |
 | 4 | Authentication and workspace ownership | WAITING | pending | pending | phase ledger |
 | 5 | Media ingestion and asset library | WAITING | pending | pending | phase ledger |

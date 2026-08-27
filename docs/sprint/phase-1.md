@@ -35,11 +35,19 @@ Reset the phase merge using its recorded merge commit, returning to `5e3a11a145b
 
 ## Tasks
 
-- [ ] Reconcile `package-lock.json` with declared Next.js and override versions.
-- [ ] Declare SOCKS transport support required when the runtime provides an ambient SOCKS proxy.
-- [ ] Prove clean npm installation.
-- [ ] Validate active OpenSpec changes strictly.
-- [ ] Validate and round-trip StudioProject contracts.
-- [ ] Run the shared StudioService compatibility suite.
-- [ ] Update architecture and current-state documentation only where evidence requires it.
-- [ ] Run the full repository regression, typecheck, and production web build.
+- [x] Reconcile `package-lock.json` with declared Next.js and override versions.
+- [x] Declare SOCKS transport support required when the runtime provides an ambient SOCKS proxy.
+- [x] Prove clean npm installation.
+- [x] Validate active OpenSpec changes strictly.
+- [x] Validate and round-trip StudioProject contracts.
+- [x] Run the shared StudioService compatibility suite.
+- [x] Update architecture and current-state documentation only where evidence requires it.
+- [x] Run the full repository regression, typecheck, and production web build.
+
+## Merge evidence
+
+- Canonical implementation commit: `44d1f57e48c32fb8a1333ef9283563e98adb0231`
+- Verified tree: `58177012b40866c78e7294cf392cefd154ae64cd`
+- Remote and locally tested tree hashes matched exactly.
+- Post-merge Unlazy result: `ALL MET` (9/9 gates rerun from `main`).
+- Full regression included 366 Python items, the 57-test GRINIONS control plane (one environment-dependent skip), strict active OpenSpec validation, clean npm install, contract/service suites, Studio typecheck, and production builds.

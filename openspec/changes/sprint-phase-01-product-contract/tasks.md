@@ -6,4 +6,4 @@
 - [x] Declare SOCKS transport support for the Studio HTTP client.
 - [x] Run strict OpenSpec validation with telemetry disabled.
 - [x] Run contract, service, typecheck, build, and regression gates.
-- [ ] Commit, merge to `main`, and reverify the resulting canonical tree.
+- [x] Commit, merge to `main`, and reverify the resulting canonical tree.
