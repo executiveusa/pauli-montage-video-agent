@@ -73,6 +73,13 @@ Thumbs.db
 # Node (for remotion-composer/)
 node_modules/
 
+# Owner-local development and verification state
+.venv/
+.unlazy/
+.unlazy-hook-state.json
+**/.next/
+*.tsbuildinfo
+
 # Remotion build output and copied project assets (regenerable at render time)
 remotion-composer/out/
 remotion-composer/public/*

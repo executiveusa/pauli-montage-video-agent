@@ -190,7 +190,7 @@ No secondary engine owns project state. Every engine connects through contracts 
 
 Every durable capability must be available through all three surfaces.
 
-### Planned CLI
+### CLI command family
 
 ```bash
 yappy-clipz project create
@@ -212,7 +212,7 @@ yappy-clipz serve
 yappy-clipz mcp
 ```
 
-### Planned API
+### Versioned API resource family
 
 ```text
 /api/v1/projects
@@ -323,9 +323,9 @@ Project:    pauli-montage-video-agent
 
 ### Current deployment status
 
-The current production deployment is not live. Vercel detected the repository as Python and failed because no supported Python web entrypoint exists.
+The repository now contains an explicit Next.js application in `apps/studio-web`, and `vercel.json` builds that workspace. The last repository-audited production deployment was `READY` at an older commit, with `/` and `/studio` returning HTTP 200. The current `main` revision must still receive a fresh deployment and runtime verification before it is described as the verified production release.
 
-The intended correction is to add an explicit web-studio application and configure Vercel to build that frontend. Heavy video, analysis, and GPU work will run on persistent workers rather than inside Vercel serverless functions.
+The public frontend fails closed when its persistent Studio API is not connected. Heavy video, analysis, and GPU work belongs on persistent workers rather than Vercel serverless functions.
 
 ### Intended infrastructure boundary
 
@@ -339,7 +339,7 @@ Provider keys and privileged credentials must never be exposed in the browser.
 
 ## Current status
 
-### Established
+### Working and repository-verified
 
 - canonical repository;
 - product name and Yappyverse Studio position;
@@ -347,18 +347,30 @@ Provider keys and privileged credentials must never be exposed in the browser.
 - agent operating contract;
 - consolidation architecture;
 - master product plan;
+- StudioProject v1 contracts and ICM workspace contracts;
+- shared StudioService behavior across CLI, API, and MCP;
+- tenant-aware authentication and persistent-repository boundaries;
+- asset registration, provenance, signed-ingest contracts, jobs, approvals, costs, and OmniRouter;
+- provider-neutral generation planning with paid execution disabled by default;
+- deterministic render manifests, verification, and export packages;
+- Next.js landing page, project workflow, local-footage editor, and documentary indexing interface;
 - existing OpenMontage production engine.
 
-### Next foundation work
+### Implemented but not production-activated
 
-- StudioProject v1 schemas;
-- shared application service layer;
-- CLI/API/MCP skeleton;
-- Twick round-trip integration;
-- landing page and studio shell;
-- Infinote Canvas;
-- OmniRouter implementation;
-- SaaS tenancy, quotas, billing, and audit.
+- dedicated YAPPY PostgreSQL/Supabase target and migrations;
+- approved object storage and deployed Studio API/workers;
+- paid generation providers and customer spend controls;
+- production-grade external cloud imports;
+- commercial billing and entitlement activation.
+
+### Still requiring product slices
+
+- reversible transcript/text and voice editing;
+- complete PopeBot structured edit workflow;
+- Infinote Canvas and durable Elements/continuity workflows;
+- avatar, lip-sync, localization, and sovereign GPU execution;
+- complete commercial launch and current-production evidence.
 
 ### First code proof
 
@@ -389,6 +401,16 @@ Existing OpenMontage setup remains available:
 ```bash
 make setup
 ```
+
+For a clean contributor verification install:
+
+```bash
+npm ci
+python -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt -r requirements-studio.txt
+```
+
+The Studio dependency set includes HTTPX SOCKS transport support for operators whose runtime uses an ambient SOCKS proxy.
 
 Then run the provider and capability preflight documented in `AGENT_GUIDE.md` before making paid or consequential production calls.
 

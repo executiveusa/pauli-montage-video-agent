@@ -239,8 +239,6 @@ class CorpusBuilder(BaseTool):
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         start = time.time()
         try:
-            from lib.corpus import Corpus
-            from tools.video.clip_cache import get_default_cache
             from tools.video.stock_sources import (
                 SearchFilters,
                 all_sources,
@@ -297,6 +295,12 @@ class CorpusBuilder(BaseTool):
                     success=False,
                     error="No stock sources available. " + self.install_instructions,
                 )
+
+            # Heavy local corpus dependencies are optional. Resolve the
+            # requested provider set first so configuration failures remain
+            # actionable even on machines without the embedding stack.
+            from lib.corpus import Corpus
+            from tools.video.clip_cache import get_default_cache
 
             corp = Corpus(corpus_dir)
             corp.load()

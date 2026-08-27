@@ -1,6 +1,6 @@
 # YAPPY-CLIPZ Current State
 
-Verified: 2026-07-31
+Tree verified locally: 2026-08-27
 
 > Historical audit snapshot at the verified date, not a live completion ledger. PopeBot + Composio upgrade status is generated in `docs/YAPPY-UPGRADE-PROGRESS.md` from the authority chain defined by ADR-001.
 
@@ -10,9 +10,9 @@ The only integration baseline is the current `main` branch of:
 
 `executiveusa/pauli-montage-video-agent`
 
-Baseline audited for this consolidation:
+Baseline audited for the owner-requested 13-phase sprint:
 
-`185c2235b388ca23f7f8eeb7bc67c096f2e7a860`
+`5e3a11a145baf35662b1f101cba4732c2186f259`
 
 GitHub pull-request numbering and surviving phase-branch history are **not** reliable indicators of implementation order. Several old branches were replayed and merged after newer phases already existed. Determine product state from the current tree, contracts, tests, and deployment evidence—not from a phase branch's commit count.
 
@@ -34,13 +34,15 @@ The current tree contains the cumulative product foundation through the determin
 - durable jobs, events, approvals, costs, budgets, and OmniRouter;
 - provider-neutral image/video generation planning and submission boundaries;
 - deterministic FFmpeg render manifests, workers, ffprobe verification, and export packages;
+- a Next.js landing page, authenticated studio route, local-footage workflow, and documentary index panel;
+- source-backed edit review and deterministic local worker paths;
 - deployable Docker/Compose worker topology.
 
 ## Not implemented
 
 These roadmap outcomes are not present as completed runtime capabilities:
 
-- Phase 12 documentary intelligence and Clip Factory service;
+- a complete Phase 12 documentary assembly and Clip Factory service beyond the current indexing and UI foundation;
 - Phase 13 Elements, canon, continuity scoring, and structured canvas;
 - Phase 14 voice, avatar, lip sync, and localization;
 - Phase 15 sovereign/local GPU and LTX worker execution.
