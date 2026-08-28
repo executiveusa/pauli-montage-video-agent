@@ -4,7 +4,7 @@
 |---:|---|---|---|---|---|
 | 1 | Product contract and architecture | VERIFIED | `5e3a11a` | `44d1f57` | `.unlazy/open-montage-13/gates/phase-01.md` — 9/9 post-merge gates met |
 | 2 | Design system and application shell | VERIFIED | `c3d7d89` | `ab97ae9` | `.unlazy/open-montage-13/gates/phase-02.md` — 7/7 post-merge gates met |
-| 3 | Full-bleed landing page | READY | `ab97ae9` | pending | phase ledger |
+| 3 | Full-bleed landing page | IN-FLIGHT | `8cf5451` | pending | `.unlazy/open-montage-13/gates/phase-03.md` — 7/7 pre-merge gates met |
 | 4 | Authentication and workspace ownership | WAITING | pending | pending | phase ledger |
 | 5 | Media ingestion and asset library | WAITING | pending | pending | phase ledger |
 | 6 | Transcription and transcript editor | WAITING | pending | pending | phase ledger |
