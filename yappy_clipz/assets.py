@@ -5,6 +5,7 @@ import hashlib
 import json
 import mimetypes
 import re
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -22,6 +23,7 @@ class AssetNotFound(AssetError):
 
 
 _ALLOWED_KINDS = {"image","video","audio","document","text","archive","other"}
+_MEDIA_PREFIX = {"image":"image/","video":"video/","audio":"audio/","text":"text/"}
 _SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
@@ -50,6 +52,8 @@ class AssetService:
         tenant = validate_identifier(tenant_id,"tenant_id"); project_id = validate_identifier(project_id,"project_id")
         self.repository.get(tenant, project_id)
         if kind not in _ALLOWED_KINDS: raise AssetError("unsupported asset kind")
+        expected_prefix = _MEDIA_PREFIX.get(kind)
+        if expected_prefix and (not mime_type or not mime_type.lower().startswith(expected_prefix)): raise AssetError(f"{kind} uploads require a matching MIME type")
         if not filename or not role: raise AssetError("filename and role are required")
         if bytes_expected < 0 or bytes_expected > self.max_upload_bytes: raise AssetError("upload size exceeds policy")
         if checksum_sha256 is not None and not re.fullmatch(r"[0-9a-fA-F]{64}", checksum_sha256): raise AssetError("checksumSha256 must be 64 hex characters")
@@ -67,6 +71,18 @@ class AssetService:
         info = self.storage.put_bytes(claims["storageKey"], data, content_type=content_type or claims.get("mimeType"))
         return {"uploaded":True,"assetId":claims["assetId"],"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256}}
 
+    def accept_upload_path(self, *, tenant_id: str, token: str, path: Path | str, content_type: str | None) -> dict[str, Any]:
+        claims = self.signer.verify(token,operation="upload",tenant_id=tenant_id); source=Path(path)
+        size=source.stat().st_size
+        if size != int(claims["maxBytes"]): raise AssetError("uploaded byte count does not match reservation")
+        checksum=hashlib.sha256()
+        with source.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024): checksum.update(chunk)
+        actual=checksum.hexdigest(); expected=claims.get("checksumSha256")
+        if expected and not hmac_compare(expected.lower(),actual): raise AssetError("uploaded checksum does not match reservation")
+        info=self.storage.put_file(claims["storageKey"],source,content_type=content_type or claims.get("mimeType"))
+        return {"uploaded":True,"assetId":claims["assetId"],"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256}}
+
     def complete_upload(self, *, tenant_id: str, project_id: str, transfer_token: str, created_by: str | None = None) -> dict[str, Any]:
         claims = self.signer.verify(transfer_token, operation="upload", tenant_id=tenant_id)
         if claims.get("projectId") != project_id: raise AssetError("transfer project does not match request")
@@ -74,6 +90,11 @@ class AssetService:
         if info.bytes != int(claims["maxBytes"]): raise AssetError("stored object size does not match reservation")
         expected = claims.get("checksumSha256")
         if expected and not hmac_compare(expected.lower(), info.checksum_sha256): raise AssetError("stored object checksum does not match reservation")
+        current=self.repository.get(tenant_id,project_id)
+        duplicate=next((item for item in current.get("assets",[]) if item.get("checksum",{}).get("value")==info.checksum_sha256 and not item.get("extensions",{}).get("archived")),None)
+        if duplicate:
+            if duplicate.get("storage",{}).get("key") != info.key: self.storage.delete(info.key)
+            return json.loads(json.dumps(duplicate))
         asset = {"id":claims["assetId"],"tenantId":tenant_id,"projectId":project_id,"kind":claims["kind"],"role":claims["role"],"name":claims["filename"],"mimeType":info.content_type,"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256},"storage":{"type":self.storage.storage_type,"key":info.key,"bucket":getattr(self.storage,"bucket",None),"url":None},"source":{"type":claims.get("sourceType","upload"),"provider":None,"externalId":None,"parentAssetIds":[],"license":None,"attribution":None,"sourceUrl":None},"media":{},"rights":{"commercialUse":None,"consentRecordIds":[],"releaseAssetIds":[],"expiresAt":None},"tags":[],"createdAt":_now(),"createdBy":created_by,"extensions":{"archived":False,"versions":[{"version":1,"storageKey":info.key,"checksum":info.checksum_sha256,"createdAt":_now()}]}}
         def mutate(project: dict[str, Any]) -> dict[str, Any]:
             if any(item.get("id") == asset["id"] for item in project.get("assets",[])): return project
@@ -123,6 +144,22 @@ class AssetService:
             item=_asset(project,asset_id); item.setdefault("extensions",{})["archived"]=True; item["extensions"]["archivedAt"]=_now(); project["project"]["updatedAt"]=_now(); return project
         return _asset(self.repository.mutate(tenant_id,project_id,mutate),asset_id)
 
+    def add_to_timeline(self, *, tenant_id: str, project_id: str, asset_id: str) -> dict[str, Any]:
+        def mutate(project: dict[str,Any]) -> dict[str,Any]:
+            item=_asset(project,asset_id); timeline=project["timeline"]
+            existing=[entry for track in timeline["tracks"] for entry in track["items"] if entry.get("assetId")==asset_id]
+            if existing: return project
+            track_type="audio" if item["kind"]=="audio" else "video"
+            track=next((row for row in timeline["tracks"] if row["type"]==track_type),None)
+            if not track:
+                track={"id":f"track_{track_type}_{uuid4().hex[:12]}","type":track_type,"name":f"{track_type.title()} assets","order":len(timeline["tracks"]),"muted":False,"locked":False,"items":[]};timeline["tracks"].append(track)
+            start=max((entry["startSeconds"]+entry["durationSeconds"] for entry in track["items"]),default=0.0)
+            duration=max(0.1,float(item.get("media",{}).get("durationSeconds") or 30.0))
+            track["items"].append({"id":f"item_{uuid4().hex[:20]}","kind":"asset","assetId":asset_id,"shotId":None,"startSeconds":start,"durationSeconds":duration,"sourceStartSeconds":0,"sourceEndSeconds":duration,"effects":[],"extensions":{"ingestedFromAssetLibrary":True}})
+            timeline["version"]+=1;timeline["canvas"]["durationSeconds"]=max(float(timeline["canvas"].get("durationSeconds") or 0),start+duration);project["project"]["updatedAt"]=_now();return project
+        project=self.repository.mutate(tenant_id,project_id,mutate)
+        return {"assetId":asset_id,"timeline":project["timeline"]}
+
     def request_download(self, *, tenant_id: str, project_id: str, asset_id: str) -> dict[str, Any]:
         item=self.get(tenant_id=tenant_id,project_id=project_id,asset_id=asset_id)
         token=self.signer.issue({"operation":"download","tenantId":tenant_id,"projectId":project_id,"assetId":asset_id,"storageKey":item["storage"]["key"]})
@@ -130,6 +167,10 @@ class AssetService:
 
     def download(self, *, tenant_id: str, token: str) -> tuple[bytes, str | None]:
         claims=self.signer.verify(token,operation="download",tenant_id=tenant_id); info=self.storage.info(claims["storageKey"]); return self.storage.get_bytes(claims["storageKey"]),info.content_type
+
+    def download_stream(self, *, tenant_id: str, token: str):
+        claims=self.signer.verify(token,operation="download",tenant_id=tenant_id);info=self.storage.info(claims["storageKey"])
+        return self.storage.iter_bytes(claims["storageKey"]),info
 
 
 def hmac_compare(first: str, second: str) -> bool:

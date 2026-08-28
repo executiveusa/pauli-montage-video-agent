@@ -350,7 +350,7 @@ Provider keys and privileged credentials must never be exposed in the browser.
 - StudioProject v1 contracts and ICM workspace contracts;
 - shared StudioService behavior across CLI, API, and MCP;
 - tenant-aware authentication and persistent-repository boundaries;
-- asset registration, provenance, signed-ingest contracts, jobs, approvals, costs, and OmniRouter;
+- hosted streamed media upload/download, tenant-private previews, durable asset libraries, provenance, safe archive, jobs, approvals, costs, and OmniRouter;
 - provider-neutral generation planning with paid execution disabled by default;
 - deterministic render manifests, verification, and export packages;
 - Next.js landing page, project workflow, local-footage editor, and documentary indexing interface;

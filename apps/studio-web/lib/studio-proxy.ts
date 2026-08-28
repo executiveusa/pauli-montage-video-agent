@@ -45,3 +45,20 @@ export async function proxyStudioRequest(request: NextRequest, upstreamPath: str
     clearTimeout(timeout);
   }
 }
+
+export async function proxyStudioTransfer(request: NextRequest, upstreamPath: string, method: "GET" | "PUT"): Promise<NextResponse> {
+  const base=studioApiBaseUrl();if(!base)return disconnected();
+  const accessToken=studioAccessTokenFromSession(request.cookies.get(sessionCookieName())?.value);if(!accessToken)return authenticationRequired();
+  try {
+    const headers:Record<string,string>={authorization:`Bearer ${accessToken}`};
+    for(const name of ["content-type","content-length","range"]){const value=request.headers.get(name);if(value)headers[name]=value;}
+    const init:RequestInit & {duplex?:"half"}={method,headers,body:method==="PUT"?request.body:undefined,cache:"no-store"};
+    if(method==="PUT")init.duplex="half";
+    const response=await fetch(`${base}${upstreamPath}`,init);
+    const outgoingHeaders=new Headers();
+    for(const name of ["content-type","content-length","content-range","accept-ranges","cache-control"]){const value=response.headers.get(name);if(value)outgoingHeaders.set(name,value);}
+    return new NextResponse(response.body,{status:response.status,headers:outgoingHeaders});
+  } catch {
+    return NextResponse.json({error:"service_unreachable",message:"The media transfer service could not be reached.",configured:true},{status:502});
+  }
+}

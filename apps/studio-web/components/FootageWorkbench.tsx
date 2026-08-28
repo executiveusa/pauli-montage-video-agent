@@ -29,6 +29,7 @@ import {
   registerLocalSource,
   updateLocalSource,
 } from "@/lib/local-studio-store";
+import { HostedAssetLibrary } from "@/components/HostedAssetLibrary";
 
 type BusyAction = "connect" | "upload" | "transcribe" | "cut" | "reframe" | "captions" | "verify" | null;
 type EngineState = "checking" | "offline" | "ready" | "missing-dependencies";
@@ -75,8 +76,10 @@ function workerStorageFilename(assetId: string, filename: string): string {
   return `${assetId}__${filename}`;
 }
 
-export function FootageWorkbench({ projectId }: { projectId: string }) {
-  const localMode = isLocalProjectId(projectId);
+export function FootageWorkbench({projectId}:{projectId:string}){return isLocalProjectId(projectId)?<LocalFootageWorkbench projectId={projectId}/>:<HostedAssetLibrary projectId={projectId}/>;}
+
+function LocalFootageWorkbench({ projectId }: { projectId: string }) {
+  const localMode = true;
   const [health, setHealth] = useState<LocalEngineHealth | null>(null);
   const [engineState, setEngineState] = useState<EngineState>("checking");
   const [engineUrl, setEngineUrl] = useState(DEFAULT_LOCAL_ENGINE_URL);

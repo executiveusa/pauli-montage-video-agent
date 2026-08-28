@@ -6,7 +6,7 @@
 | 2 | Design system and application shell | VERIFIED | `c3d7d89` | `ab97ae9` | `.unlazy/open-montage-13/gates/phase-02.md` — 7/7 post-merge gates met |
 | 3 | Full-bleed landing page | VERIFIED | `8cf5451` | `f343e3a` | `.unlazy/open-montage-13/gates/phase-03.md` — 7/7 post-merge gates met |
 | 4 | Authentication and workspace ownership | VERIFIED | `f6623e0` | `82465be` | `.unlazy/open-montage-13/gates/phase-04.md` — 7/7 post-merge gates met |
-| 5 | Media ingestion and asset library | READY | `82465be` | pending | phase ledger |
+| 5 | Media ingestion and asset library | IN-FLIGHT | `40ca2ec` | pending | `.unlazy/open-montage-13/gates/phase-05.md` — 12/12 pre-merge gates met |
 | 6 | Transcription and transcript editor | WAITING | pending | pending | phase ledger |
 | 7 | Core timeline and montage engine | WAITING | pending | pending | phase ledger |
 | 8 | Text-based editing and voice workflow | WAITING | pending | pending | phase ledger |

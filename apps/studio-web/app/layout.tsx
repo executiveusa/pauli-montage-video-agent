@@ -4,6 +4,7 @@ import "./landing.css";
 import "./timeline.css";
 import "./generation.css";
 import "./footage.css";
+import "./hosted-assets.css";
 import "./design-system.css";
 
 export const metadata: Metadata = {

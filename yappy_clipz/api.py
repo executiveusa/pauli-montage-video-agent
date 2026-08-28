@@ -1,10 +1,13 @@
 """FastAPI adapter over the shared YAPPY-CLIPZ application runtime."""
 from __future__ import annotations
+import os
+import tempfile
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .actions import ActionContext
@@ -146,12 +149,24 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
         try:
             p=require(principal(request,tenant),"asset:write"); length=request.headers.get("content-length")
             if length is None or int(length)>active_runtime.settings.max_upload_bytes: raise AssetError("valid bounded Content-Length is required")
-            data=await request.body(); return active_runtime.assets.accept_upload(tenant_id=p.tenant_id,token=token,data=data,content_type=request.headers.get("content-type"))
+            descriptor,path=tempfile.mkstemp(prefix="yappy-upload-")
+            try:
+                received=0
+                with os.fdopen(descriptor,"wb") as stream:
+                    async for chunk in request.stream():
+                        received+=len(chunk)
+                        if received>int(length) or received>active_runtime.settings.max_upload_bytes: raise AssetError("uploaded bytes exceed reservation")
+                        stream.write(chunk)
+                    stream.flush();os.fsync(stream.fileno())
+                if received!=int(length): raise AssetError("uploaded byte count does not match Content-Length")
+                return active_runtime.assets.accept_upload_path(tenant_id=p.tenant_id,token=token,path=path,content_type=request.headers.get("content-type"))
+            finally:
+                if os.path.exists(path): os.unlink(path)
         except Exception as exc:raise _http_error(exc) from exc
     @app.get("/api/v1/assets/transfers/{token}")
     def download_transfer(token:str,request:Request,tenant:OptionalTenantHeader=None):
         try:
-            p=require(principal(request,tenant),"asset:read"); data,mime=active_runtime.assets.download(tenant_id=p.tenant_id,token=token); return Response(content=data,media_type=mime or "application/octet-stream",headers={"cache-control":"private, no-store"})
+            p=require(principal(request,tenant),"asset:read"); chunks,info=active_runtime.assets.download_stream(tenant_id=p.tenant_id,token=token); return StreamingResponse(chunks,media_type=info.content_type or "application/octet-stream",headers={"cache-control":"private, no-store","content-length":str(info.bytes),"accept-ranges":"none"})
         except Exception as exc:raise _http_error(exc) from exc
 
     @app.post("/api/v1/projects",status_code=201)

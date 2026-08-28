@@ -10,7 +10,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol
+from typing import Any, BinaryIO, Iterator, Protocol
 
 
 class StorageError(RuntimeError):
@@ -40,8 +40,10 @@ class ObjectInfo:
 class ObjectStorage(Protocol):
     storage_type: str
     def put_bytes(self, key: str, data: bytes, *, content_type: str | None = None) -> ObjectInfo: ...
+    def put_file(self, key: str, source: Path | str, *, content_type: str | None = None) -> ObjectInfo: ...
     def info(self, key: str) -> ObjectInfo: ...
     def get_bytes(self, key: str) -> bytes: ...
+    def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[bytes]: ...
     def delete(self, key: str) -> None: ...
 
 
@@ -85,6 +87,24 @@ class LocalObjectStorage:
         target.with_suffix(target.suffix + ".meta.json").write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
         return ObjectInfo(key, len(data), metadata["sha256"], content_type)
 
+    def put_file(self, key: str, source: Path | str, *, content_type: str | None = None) -> ObjectInfo:
+        source_path = Path(source)
+        if not source_path.is_file(): raise ObjectNotFound("upload source does not exist")
+        target = self._path(key); target.parent.mkdir(parents=True, exist_ok=True)
+        checksum = hashlib.sha256(); size = 0
+        fd, temporary = tempfile.mkstemp(prefix=".upload.", dir=target.parent)
+        try:
+            with source_path.open("rb") as incoming, os.fdopen(fd, "wb") as outgoing:
+                while chunk := incoming.read(1024 * 1024):
+                    checksum.update(chunk); size += len(chunk); outgoing.write(chunk)
+                outgoing.flush(); os.fsync(outgoing.fileno())
+            os.chmod(temporary, 0o600); os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
+        metadata = {"contentType":content_type,"sha256":checksum.hexdigest(),"bytes":size}
+        target.with_suffix(target.suffix + ".meta.json").write_text(json.dumps(metadata,sort_keys=True),encoding="utf-8")
+        return ObjectInfo(key,size,metadata["sha256"],content_type)
+
     def info(self, key: str) -> ObjectInfo:
         target = self._path(key)
         if not target.is_file():
@@ -101,6 +121,12 @@ class LocalObjectStorage:
         target = self._path(key)
         if not target.is_file(): raise ObjectNotFound("object not found")
         return target.read_bytes()
+
+    def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+        target=self._path(key)
+        if not target.is_file(): raise ObjectNotFound("object not found")
+        with target.open("rb") as stream:
+            while chunk := stream.read(chunk_size): yield chunk
 
     def delete(self, key: str) -> None:
         target = self._path(key)
@@ -128,6 +154,17 @@ class S3ObjectStorage:
         self.client.put_object(**kwargs)
         return ObjectInfo(key, len(data), checksum, content_type)
 
+    def put_file(self, key: str, source: Path | str, *, content_type: str | None = None) -> ObjectInfo:
+        safe_storage_key(key); source_path=Path(source)
+        if not source_path.is_file(): raise ObjectNotFound("upload source does not exist")
+        checksum=hashlib.sha256(); size=0
+        with source_path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024): checksum.update(chunk); size += len(chunk)
+        extra={"Metadata":{"sha256":checksum.hexdigest()}}
+        if content_type: extra["ContentType"]=content_type
+        self.client.upload_file(str(source_path),self.bucket,key,ExtraArgs=extra)
+        return ObjectInfo(key,size,checksum.hexdigest(),content_type)
+
     def info(self, key: str) -> ObjectInfo:
         safe_storage_key(key)
         try: head = self.client.head_object(Bucket=self.bucket, Key=key)
@@ -140,6 +177,13 @@ class S3ObjectStorage:
     def get_bytes(self, key: str) -> bytes:
         safe_storage_key(key)
         try: return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        except Exception as exc: raise ObjectNotFound("object not found") from exc
+
+    def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+        safe_storage_key(key)
+        try:
+            body=self.client.get_object(Bucket=self.bucket,Key=key)["Body"]
+            yield from body.iter_chunks(chunk_size=chunk_size)
         except Exception as exc: raise ObjectNotFound("object not found") from exc
 
     def delete(self, key: str) -> None:

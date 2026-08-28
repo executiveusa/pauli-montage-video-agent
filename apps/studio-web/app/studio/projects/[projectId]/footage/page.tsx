@@ -9,7 +9,7 @@ export default async function FootageProjectPage({ params }: PageProps) {
   return (
     <StudioFrame active="Projects">
       <FootageWorkbench projectId={projectId} />
-      <DocumentaryIndexPanel projectId={projectId} />
+      {projectId.startsWith("local_") ? <DocumentaryIndexPanel projectId={projectId} /> : null}
     </StudioFrame>
   );
 }

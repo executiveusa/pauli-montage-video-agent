@@ -29,6 +29,7 @@ _EXTRA_CAPABILITIES = {
     "asset.rights.attach":_cap("asset.rights.attach","Attach asset rights","Attach commercial-use, consent, release, license, and attribution evidence.",scopes=["project:write","asset:write"],risk="high",approval="explicit",idempotency="supported",stage="00_intake"),
     "asset.derivative.create":_cap("asset.derivative.create","Create derivative asset","Register a verified derived object with parent lineage.",scopes=["project:write","asset:write"],risk="medium",idempotency="supported",stage="07_render"),
     "asset.archive":_cap("asset.archive","Archive asset","Hide an asset without deleting canonical history or bytes.",scopes=["project:write","asset:write"],risk="medium",approval="explicit",idempotency="supported",stage="10_qa_archive"),
+    "asset.timeline.add":_cap("asset.timeline.add","Add asset to timeline","Append a tenant-owned media asset to its project timeline.",scopes=["project:write","asset:read","timeline:write"],risk="medium",idempotency="supported",stage="03_edit"),
 }
 
 
@@ -49,6 +50,7 @@ class HostedActionDispatcher(ActionDispatcher):
             "asset.upload.request":self._asset_upload_request,"asset.upload.complete":self._asset_upload_complete,"asset.list":self._asset_list,"asset.get":self._asset_get,
             "asset.download.request":self._asset_download_request,"asset.metadata.update":self._asset_metadata,"asset.rights.attach":self._asset_rights,
             "asset.derivative.create":self._asset_derivative,"asset.archive":self._asset_archive,
+            "asset.timeline.add":self._asset_timeline_add,
         })
 
     def dispatch(self, action_id: str, input_payload: dict[str,Any] | None=None, *, context: ActionContext | None=None) -> dict[str,Any]:
@@ -82,3 +84,4 @@ class HostedActionDispatcher(ActionDispatcher):
     def _asset_rights(self,p,c): return self.assets.attach_rights(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"),rights=self.req(p,"rights"),license_name=p.get("license"),attribution=p.get("attribution"))
     def _asset_derivative(self,p,c): return self.assets.create_derivative(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),parent_asset_ids=self.req(p,"parentAssetIds"),kind=self.req(p,"kind"),role=self.req(p,"role"),name=self.req(p,"name"),storage_key=self.req(p,"storageKey"),mime_type=p.get("mimeType"),bytes_count=self.req(p,"bytes"),checksum_sha256=self.req(p,"checksumSha256"),created_by=c.actor_id)
     def _asset_archive(self,p,c): return self.assets.archive(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"))
+    def _asset_timeline_add(self,p,c): return self.assets.add_to_timeline(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"))
