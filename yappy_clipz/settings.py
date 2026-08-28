@@ -48,6 +48,16 @@ class Settings:
     storage_signing_secret_env: str = "YAPPY_STORAGE_SIGNING_SECRET"
     storage_transfer_ttl_seconds: int = 900
     max_upload_bytes: int = 2_147_483_648
+    account_store_path: Path | None = None
+    recovery_delivery: str = "disabled"
+    recovery_outbox_path: Path | None = None
+    recovery_reset_base_url: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_sender: str | None = None
+    smtp_username: str | None = None
+    smtp_password_env: str = "YAPPY_SMTP_PASSWORD"
+    smtp_tls: bool = True
 
     @property
     def resolved_prompt_root(self) -> Path:
@@ -61,6 +71,12 @@ class Settings:
     @property
     def resolved_storage_root(self) -> Path:
         return (self.storage_root or self.project_root.parent / "objects").expanduser().resolve()
+    @property
+    def resolved_account_store_path(self) -> Path:
+        return (self.account_store_path or self.project_root.parent / "accounts.json").expanduser().resolve()
+    @property
+    def resolved_recovery_outbox_path(self) -> Path:
+        return (self.recovery_outbox_path or self.project_root.parent / "recovery-outbox").expanduser().resolve()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -75,6 +91,9 @@ class Settings:
         storage_backend = os.environ.get("YAPPY_STORAGE_BACKEND", "local").strip().lower()
         if storage_backend not in {"local", "s3"}: storage_backend = "local"
         storage_root = os.environ.get("YAPPY_STORAGE_ROOT")
+        account_store_path = os.environ.get("YAPPY_ACCOUNT_STORE_PATH")
+        recovery_delivery = os.environ.get("YAPPY_RECOVERY_DELIVERY", "disabled").strip().lower()
+        if recovery_delivery not in {"disabled", "file", "smtp"}: recovery_delivery = "disabled"
         origins = tuple(value.strip() for value in os.environ.get("YAPPY_CORS_ORIGINS", "").split(",") if value.strip())
         return cls(
             project_root=Path(configured).expanduser().resolve(),
@@ -91,4 +110,8 @@ class Settings:
             storage_region=os.environ.get("YAPPY_STORAGE_REGION","us-east-1"),storage_endpoint_url=os.environ.get("YAPPY_STORAGE_ENDPOINT_URL"),
             storage_signing_secret_env=os.environ.get("YAPPY_STORAGE_SIGNING_SECRET_ENV","YAPPY_STORAGE_SIGNING_SECRET"),storage_transfer_ttl_seconds=_env_int("YAPPY_STORAGE_TRANSFER_TTL_SECONDS",900,60,3600),
             max_upload_bytes=_env_int("YAPPY_MAX_UPLOAD_BYTES",2_147_483_648,1,10_737_418_240),
+            account_store_path=Path(account_store_path).expanduser().resolve() if account_store_path else None,
+            recovery_delivery=recovery_delivery,recovery_outbox_path=Path(os.environ["YAPPY_RECOVERY_OUTBOX_PATH"]).expanduser().resolve() if os.environ.get("YAPPY_RECOVERY_OUTBOX_PATH") else None,
+            recovery_reset_base_url=os.environ.get("YAPPY_RECOVERY_RESET_BASE_URL"),smtp_host=os.environ.get("YAPPY_SMTP_HOST"),smtp_port=_env_int("YAPPY_SMTP_PORT",587,1,65535),
+            smtp_sender=os.environ.get("YAPPY_SMTP_SENDER"),smtp_username=os.environ.get("YAPPY_SMTP_USERNAME"),smtp_password_env=os.environ.get("YAPPY_SMTP_PASSWORD_ENV","YAPPY_SMTP_PASSWORD"),smtp_tls=_env_bool("YAPPY_SMTP_TLS",True),
         )

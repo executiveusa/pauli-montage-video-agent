@@ -50,6 +50,10 @@ class PostgresProjectRepository:
     def _connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
+    @staticmethod
+    def _scope(connection, tenant_id: str) -> None:
+        connection.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+
     def save(self, tenant_id: str, project: dict[str, Any]) -> dict[str, Any]:
         tenant = validate_identifier(tenant_id, "tenant_id")
         document = _validated(project)
@@ -58,6 +62,7 @@ class PostgresProjectRepository:
         if meta.get("tenantId") != tenant:
             raise RepositoryCorruptionError("project tenantId does not match requested tenant")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             connection.execute(
                 """
                 INSERT INTO yappy_studio_projects (tenant_id, project_id, document, created_at, updated_at)
@@ -73,6 +78,7 @@ class PostgresProjectRepository:
         tenant = validate_identifier(tenant_id, "tenant_id")
         canonical_id = validate_identifier(project_id, "project_id")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             row = connection.execute(
                 "SELECT document FROM yappy_studio_projects WHERE tenant_id = %s AND project_id = %s",
                 (tenant, canonical_id),
@@ -88,6 +94,7 @@ class PostgresProjectRepository:
     def list(self, tenant_id: str) -> list[dict[str, Any]]:
         tenant = validate_identifier(tenant_id, "tenant_id")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             rows = connection.execute(
                 "SELECT document FROM yappy_studio_projects WHERE tenant_id = %s ORDER BY updated_at DESC, project_id",
                 (tenant,),
@@ -98,6 +105,7 @@ class PostgresProjectRepository:
         tenant = validate_identifier(tenant_id, "tenant_id")
         canonical_id = validate_identifier(project_id, "project_id")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             row = connection.execute(
                 "SELECT document FROM yappy_studio_projects WHERE tenant_id = %s AND project_id = %s FOR UPDATE",
                 (tenant, canonical_id),
@@ -125,6 +133,7 @@ class PostgresProjectRepository:
             raise RepositoryCorruptionError("backup tenant or project collection is invalid")
         restored = 0
         with self._connect() as connection:
+            self._scope(connection, tenant)
             if replace:
                 connection.execute("DELETE FROM yappy_studio_projects WHERE tenant_id = %s", (tenant,))
             for raw in payload["projects"]:

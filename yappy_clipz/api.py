@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .actions import ActionContext
+from .accounts import AccountConflict, AccountError, AccountValidationError
 from .assets import AssetError, AssetNotFound
 from .auth import AuthConfigurationError, AuthenticationRequired, AuthorizationDenied, Principal
 from .errors import ActionProblem
@@ -28,12 +29,17 @@ class ReplaceTimelineRequest(BaseModel):
 class RunActionRequest(BaseModel):
     input:dict[str,Any]=Field(default_factory=dict); approved:bool=False; idempotency_key:str|None=None; correlation_id:str|None=None; causation_id:str|None=None; request_id:str|None=None
 class LoginRequest(BaseModel): username:str; password:str
+class SignUpRequest(BaseModel): email:str; password:str=Field(min_length=12,max_length=1024); display_name:str=Field(min_length=1,max_length=100)
+class RecoveryRequest(BaseModel): email:str
+class ResetPasswordRequest(BaseModel): token:str=Field(min_length=20,max_length=512); password:str=Field(min_length=12,max_length=1024)
 class CreateTokenRequest(BaseModel): name:str; scopes:list[str]=Field(min_length=1); ttl_seconds:int|None=Field(default=None,ge=300,le=2_592_000); approved:bool=False
 class RevokeTokenRequest(BaseModel): token:str; approved:bool=False
 
 
 def _http_error(exc:Exception)->HTTPException:
     if isinstance(exc,(AuthenticationRequired,AuthConfigurationError)): return HTTPException(status_code=401 if isinstance(exc,AuthenticationRequired) else 503,detail=str(exc))
+    if isinstance(exc,AccountConflict): return HTTPException(status_code=409,detail=str(exc))
+    if isinstance(exc,(AccountValidationError,AccountError)): return HTTPException(status_code=400,detail=str(exc))
     if isinstance(exc,AuthorizationDenied): return HTTPException(status_code=403,detail=str(exc))
     if isinstance(exc,ProjectNotFound): return HTTPException(status_code=404,detail="project not found")
     if isinstance(exc,(AssetNotFound,ObjectNotFound)): return HTTPException(status_code=404,detail="resource not found")
@@ -59,6 +65,9 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
         required=set(scopes)
         if not resolved.allows(required): raise AuthorizationDenied("caller lacks required scopes: "+", ".join(sorted(required)))
         return resolved
+    def account_user_id(resolved:Principal)->str:
+        if not resolved.actor_id.startswith("user:"): raise AuthorizationDenied("a user session is required")
+        return resolved.actor_id.removeprefix("user:")
     def context_for(request:Request,tenant_header:str|None,*,approved:bool=False,idempotency_key:str|None=None,correlation_id:str|None=None,causation_id:str|None=None,request_id:str|None=None)->ActionContext:
         p=principal(request,tenant_header); return ActionContext(tenant_id=p.tenant_id,actor_id=p.actor_id,approved=approved,idempotency_key=idempotency_key,correlation_id=correlation_id,causation_id=causation_id,request_id=request_id,scopes=p.scopes)
 
@@ -68,10 +77,38 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
     def login(payload:LoginRequest):
         try:return active_runtime.auth.login(payload.username,payload.password)
         except Exception as exc: raise _http_error(exc) from exc
+    @app.post("/api/v1/accounts",status_code=201)
+    def sign_up(payload:SignUpRequest):
+        try:return active_runtime.accounts.sign_up(email=payload.email,password=payload.password,display_name=payload.display_name)
+        except Exception as exc: raise _http_error(exc) from exc
+    @app.post("/api/v1/accounts/recovery",status_code=202)
+    def request_recovery(payload:RecoveryRequest):
+        try:
+            return active_runtime.accounts.request_recovery(payload.email)
+        except AccountValidationError:
+            return {"accepted":True}
+        except Exception as exc: raise _http_error(exc) from exc
+    @app.post("/api/v1/accounts/recovery/reset",status_code=204)
+    def reset_password(payload:ResetPasswordRequest):
+        try:active_runtime.accounts.reset_password(payload.token,payload.password);return Response(status_code=204)
+        except Exception as exc: raise _http_error(exc) from exc
     @app.get("/api/v1/session")
     def inspect_session(request:Request,tenant:OptionalTenantHeader=None):
         try:return active_runtime.dispatcher.dispatch("session.inspect",context=context_for(request,tenant))["result"]
         except ActionProblem as exc: raise HTTPException(status_code=exc.status,detail=exc.message) from exc
+        except Exception as exc: raise _http_error(exc) from exc
+    @app.get("/api/v1/account/export")
+    def export_account(request:Request,tenant:OptionalTenantHeader=None):
+        try:
+            p=require(principal(request,tenant),"account:read");return {"account":active_runtime.accounts.export(account_user_id(p)),"workspaceData":{"schemaVersion":"1.0.0","tenantId":p.tenant_id,"projects":active.repository.list(p.tenant_id)}}
+        except Exception as exc: raise _http_error(exc) from exc
+    @app.delete("/api/v1/account",status_code=204)
+    def delete_account(request:Request,tenant:OptionalTenantHeader=None):
+        try:
+            p=require(principal(request,tenant),"account:delete");active_runtime.accounts.delete(account_user_id(p))
+            authorization=request.headers.get("authorization") or ""
+            if authorization.startswith("Bearer "): active_runtime.auth.revoke(authorization[7:].strip())
+            return Response(status_code=204)
         except Exception as exc: raise _http_error(exc) from exc
     @app.post("/api/v1/tokens",status_code=201)
     def create_token(request:Request,payload:CreateTokenRequest,tenant:OptionalTenantHeader=None,idempotency:OptionalIdempotencyHeader=None):

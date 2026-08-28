@@ -19,4 +19,6 @@
 .error { margin:0 0 20px; border-left:3px solid #ef5a45; background:#fff3ef; padding:12px 14px; font-size:13px; line-height:1.45; }
 .config { border-left-color:#d3a800; background:#fff8d8; }
 .back { display:inline-block; margin-top:24px; color:#0c0d0d; text-underline-offset:4px; font-size:12px; font-weight:800; }
+.accountLinks { display:flex; justify-content:space-between; gap:16px; margin-top:18px; font-size:.82rem; }
+.accountLinks a { color:#4c514c; text-decoration:underline; text-underline-offset:4px; }
 @media(max-width:800px){.page{grid-template-columns:1fr}.brandPanel{min-height:38svh}.word{font-size:24vw}.formPanel{padding:44px 20px 70px}.orbit{width:100vw;height:100vw}}

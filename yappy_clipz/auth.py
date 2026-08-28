@@ -191,6 +191,7 @@ class AuthService:
         self.owner_tenant_id = owner_tenant_id
         self.session_ttl_seconds = session_ttl_seconds
         self.service_ttl_seconds = service_ttl_seconds
+        self.accounts = None
         secret = os.environ.get(signing_secret_env)
         self.tokens = SignedTokenService(secret=secret, revocations=revocations) if secret else None
 
@@ -198,11 +199,13 @@ class AuthService:
     def configured(self) -> bool:
         if self.mode == "local":
             return True
-        return self.tokens is not None and bool(os.environ.get(self.owner_password_env))
+        return self.tokens is not None and (self.accounts is not None or bool(os.environ.get(self.owner_password_env)))
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         if self.mode != "hosted" or not self.tokens:
             raise AuthConfigurationError("hosted authentication is not configured")
+        if self.accounts is not None and "@" in username:
+            return self.accounts.login(email=username, password=password)
         expected = os.environ.get(self.owner_password_env)
         if not expected or not hmac.compare_digest(username, self.owner_username) or not hmac.compare_digest(password, expected):
             raise AuthenticationRequired("invalid credentials")
@@ -214,12 +217,18 @@ class AuthService:
             ttl_seconds=self.session_ttl_seconds,
         )
 
+    def configure_accounts(self, accounts: Any) -> None:
+        self.accounts = accounts
+
     def verify_bearer(self, authorization: str | None) -> Principal:
         if not authorization or not authorization.startswith("Bearer "):
             raise AuthenticationRequired("bearer token is required")
         if not self.tokens:
             raise AuthConfigurationError("hosted authentication is not configured")
-        return self.tokens.verify(authorization[7:].strip())
+        principal = self.tokens.verify(authorization[7:].strip())
+        if principal.actor_id.startswith("user:usr_") and self.accounts is not None and not self.accounts.is_active(principal.actor_id.removeprefix("user:")):
+            raise AuthenticationRequired("account is inactive")
+        return principal
 
     def issue_service_token(self, principal: Principal, *, name: str, scopes: list[str], ttl_seconds: int | None = None) -> dict[str, Any]:
         if principal.token_type not in {"session", "service"}:
