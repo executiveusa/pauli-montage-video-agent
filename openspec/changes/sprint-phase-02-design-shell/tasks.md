@@ -5,4 +5,4 @@
 - [x] Define tablet, mobile, reduced-motion, and minimum-target behavior.
 - [x] Replace dashboard-local state markup with shared primitives.
 - [x] Classify AutoClip UI overlap and route accepted non-UI capabilities into later phases.
-- [ ] Validate, commit, merge, and post-merge reverify.
+- [x] Validate, commit, merge, and post-merge reverify.

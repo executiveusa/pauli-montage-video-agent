@@ -33,3 +33,11 @@ The cloud browser selected by the required browser-control workflow could not re
 ## AutoClip integration boundary
 
 The requested AutoClip harvest was audited during this phase because the shell is the active slice. Its UI stack is not merged into the product. The accepted missing capabilities and their later phase gates are recorded in `docs/sprint/AUTOCLIP-INTEGRATION.md`.
+
+## Merge evidence
+
+- Canonical implementation commit: `ab97ae93e3d35de20df6c4ce401b1846f21d62c0`
+- Verified tree: `5cf0462b7d04c731072b1d2a845dd3cb4f2e6805`
+- Remote and locally tested tree hashes matched exactly.
+- Post-merge Unlazy result: `ALL MET` (7/7 gates rerun from canonical `main`).
+- RTK audit session recorded approximately 75% compression of shell output while preserving failures and full recoverable logs.
