@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ProjectSummary, ServiceError } from "@/lib/studio-api";
 import { listLocalProjects } from "@/lib/local-studio-store";
+import { StudioEmptyState, StudioLoadingState, StudioNotice } from "@/components/ui/StudioUI";
 
 function statusCopy(error: ServiceError | null, hasLocalProjects: boolean) {
   if (!error) return null;
@@ -99,19 +100,15 @@ export function ProjectDashboard() {
         ))}
       </div>
 
-      <div className={`service-banner ${hostedConnected ? "connected" : ""}`}>
-        <span className="status-pill">
-          <span className={`status-dot ${hostedConnected || !loading ? "live" : "warn"}`} />
-          {loading ? "Checking project service" : hostedConnected ? "Hosted + local workspace ready" : unavailable?.title}
-        </span>
-        <span className="muted">
-          {loading
-            ? "Checking hosted project state and this device's local workspace…"
-            : hostedConnected
-              ? "Hosted projects and browser-local projects are available in one list."
-              : unavailable?.detail}
-        </span>
-      </div>
+      <StudioNotice
+        detail={loading
+          ? "Checking hosted project state and this device's local workspace…"
+          : hostedConnected
+            ? "Hosted projects and browser-local projects are available in one list."
+            : unavailable?.detail ?? "The local workspace remains available."}
+        state={loading ? "loading" : hostedConnected || unavailable ? "ready" : "error"}
+        title={loading ? "Checking project service" : hostedConnected ? "Hosted + local workspace ready" : unavailable?.title ?? "Project service unavailable"}
+      />
 
       <section className="panel project-panel">
         <div className="panel-head">
@@ -123,7 +120,7 @@ export function ProjectDashboard() {
         </div>
 
         {loading ? (
-          <div className="empty"><strong>Loading your projects…</strong></div>
+          <StudioLoadingState label="Loading your projects…" />
         ) : projects.length ? (
           <div className="project-list">
             {projects.map((project) => {
@@ -148,11 +145,11 @@ export function ProjectDashboard() {
             })}
           </div>
         ) : (
-          <div className="empty empty-product">
-            <strong>No projects yet.</strong>
-            <p>Create one project and move through the same simple path every time: create, edit, review, deliver. A hosted API is optional for the local-first workflow.</p>
-            <Link className="button secondary" href="/studio/new">Create first project</Link>
-          </div>
+          <StudioEmptyState
+            action={<Link className="button secondary" href="/studio/new">Create first project</Link>}
+            detail="Create one project and move through the same simple path every time: create, edit, review, deliver. A hosted API is optional for the local-first workflow."
+            title="No projects yet."
+          />
         )}
       </section>
     </>

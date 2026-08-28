@@ -4,6 +4,7 @@ import "./landing.css";
 import "./timeline.css";
 import "./generation.css";
 import "./footage.css";
+import "./design-system.css";
 
 export const metadata: Metadata = {
   title: "MONTAGE — Find the story in your footage",
