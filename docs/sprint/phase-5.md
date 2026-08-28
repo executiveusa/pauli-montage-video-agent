@@ -37,6 +37,14 @@ The user-facing removal action is archive: canonical history and object bytes ar
 
 Executable tests use two authenticated workspaces and real byte transfers to prove cross-tenant rejection, streamed upload/download, persistence after runtime reconstruction, signed preview, timeline use, checksum deduplication, safe archive, MIME rejection, incomplete-transfer rejection, and browser progress/cancel/retry contracts. The cloud browser cannot reach the workspace loopback server, so no screenshot acceptance is claimed.
 
+## Merge evidence
+
+- implementation commit: `aaf247286426b94d7aca8de753c5d0183f30e9b1`
+- verified tree: `4048a85b6a2e253a99ebb3704400beb73ce6e9fd`
+- canonical branch: `main`
+- phase branch: `sprint/phase-5-media-ingestion`
+- post-merge verification: `.unlazy/open-montage-13/gates/phase-05.md` — 12/12 gates met from canonical `main`
+
 ## Rollback
 
 Revert the Phase 5 merge to `40ca2ec3517b25bf39a2671c6587181e84c38410`. The phase adds no migration. Archived assets and stored originals remain readable after rollback.
