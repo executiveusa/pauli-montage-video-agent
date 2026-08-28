@@ -5,4 +5,4 @@
 - [x] Bind projects and protected routes to authenticated workspace tenants.
 - [x] Add PostgreSQL migration and forced row-level project isolation.
 - [x] Add hosted web entry and first-project onboarding routes.
-- [x] Validate implementation before merge; canonical merge and post-merge reverification are recorded in the phase ledger/status attestation.
+- [x] Validate, commit, merge, and post-merge reverify.

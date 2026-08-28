@@ -33,3 +33,9 @@ Executable tests prove two independently registered users cannot access one anot
 
 Revert the Phase 4 merge to `f6623e09f39552bb61ee5875765e349f0ecf5090`. Migration `0002` is additive; rolling application code back does not require dropping account tables. Do not remove stored identities until export/retention requirements have been reviewed.
 
+## Merge evidence
+
+- Canonical implementation commit: `82465be3f2c27e97de56b4dadffad1abde8aed3a`
+- Verified tree: `23638cc02cc22d7b4395c7386d182d95433790ea`
+- Remote and locally tested tree hashes matched exactly.
+- Post-merge Unlazy result: `ALL MET` (7/7 gates rerun from canonical `main`).
