@@ -1,4 +1,4 @@
-"""Hosted authentication and asset extensions over the universal dispatcher."""
+"""Hosted authentication, asset, and external-source extensions over the universal dispatcher."""
 from __future__ import annotations
 
 import time
@@ -9,6 +9,7 @@ from .assets import AssetError, AssetNotFound, AssetService
 from .auth import AuthConfigurationError, AuthError, AuthenticationRequired, AuthorizationDenied, AuthService, Principal
 from .capabilities import CapabilityRegistry
 from .errors import ActionProblem
+from .onedrive import OneDriveService,SourceAuthenticationError,SourceConfigurationError,SourceError
 from .storage import ObjectNotFound, StorageError, TransferInvalid
 
 
@@ -30,6 +31,10 @@ _EXTRA_CAPABILITIES = {
     "asset.derivative.create":_cap("asset.derivative.create","Create derivative asset","Register a verified derived object with parent lineage.",scopes=["project:write","asset:write"],risk="medium",idempotency="supported",stage="07_render"),
     "asset.archive":_cap("asset.archive","Archive asset","Hide an asset without deleting canonical history or bytes.",scopes=["project:write","asset:write"],risk="medium",approval="explicit",idempotency="supported",stage="10_qa_archive"),
     "asset.timeline.add":_cap("asset.timeline.add","Add asset to timeline","Append a tenant-owned media asset to its project timeline.",scopes=["project:write","asset:read","timeline:write"],risk="medium",idempotency="supported",stage="03_edit"),
+    "source.onedrive.authorize":_cap("source.onedrive.authorize","Connect OneDrive","Create a read-only Microsoft authorization URL using delegated Files.Read access.",scopes=["asset:write"],risk="medium",stage="00_intake"),
+    "source.onedrive.complete":_cap("source.onedrive.complete","Complete OneDrive connection","Exchange the browser authorization code and store encrypted delegated credentials.",scopes=["asset:write"],risk="medium",stage="00_intake"),
+    "source.onedrive.status":_cap("source.onedrive.status","Inspect OneDrive connection","Read sanitized connection and quota metadata without exposing credentials.",scopes=["asset:read"],stage="01_second_brain_ingest"),
+    "source.onedrive.disconnect":_cap("source.onedrive.disconnect","Disconnect OneDrive","Delete Montage-side credentials without changing remote OneDrive files.",scopes=["asset:write"],risk="high",approval="explicit",idempotency="supported",stage="10_qa_archive"),
 }
 
 
@@ -43,14 +48,16 @@ class HostedCapabilityRegistry:
 
 
 class HostedActionDispatcher(ActionDispatcher):
-    def __init__(self, *, auth: AuthService, assets: AssetService, **kwargs: Any) -> None:
-        self.auth=auth; self.assets=assets; super().__init__(**kwargs)
+    def __init__(self, *, auth: AuthService, assets: AssetService, sources: OneDriveService, **kwargs: Any) -> None:
+        self.auth=auth; self.assets=assets; self.sources=sources; super().__init__(**kwargs)
         self._handlers.update({
             "session.inspect":self._session_inspect,"token.create":self._token_create,"token.revoke":self._token_revoke,
             "asset.upload.request":self._asset_upload_request,"asset.upload.complete":self._asset_upload_complete,"asset.list":self._asset_list,"asset.get":self._asset_get,
             "asset.download.request":self._asset_download_request,"asset.metadata.update":self._asset_metadata,"asset.rights.attach":self._asset_rights,
             "asset.derivative.create":self._asset_derivative,"asset.archive":self._asset_archive,
             "asset.timeline.add":self._asset_timeline_add,
+            "source.onedrive.authorize":self._source_onedrive_authorize,"source.onedrive.complete":self._source_onedrive_complete,
+            "source.onedrive.status":self._source_onedrive_status,"source.onedrive.disconnect":self._source_onedrive_disconnect,
         })
 
     def dispatch(self, action_id: str, input_payload: dict[str,Any] | None=None, *, context: ActionContext | None=None) -> dict[str,Any]:
@@ -58,10 +65,11 @@ class HostedActionDispatcher(ActionDispatcher):
         except ActionProblem: raise
         except AuthenticationRequired as exc: raise ActionProblem("authentication_required",str(exc),401) from exc
         except AuthorizationDenied as exc: raise ActionProblem("authorization_denied",str(exc),403) from exc
-        except AuthConfigurationError as exc: raise ActionProblem("service_not_configured",str(exc),503) from exc
+        except (AuthConfigurationError,SourceConfigurationError) as exc: raise ActionProblem("service_not_configured",str(exc),503) from exc
+        except SourceAuthenticationError as exc: raise ActionProblem("source_authentication_failed",str(exc),401) from exc
         except (AssetNotFound,ObjectNotFound) as exc: raise ActionProblem("not_found",str(exc),404) from exc
         except TransferInvalid as exc: raise ActionProblem("invalid_transfer",str(exc),403) from exc
-        except (AssetError,StorageError) as exc: raise ActionProblem("invalid_request",str(exc),400) from exc
+        except (AssetError,StorageError,SourceError) as exc: raise ActionProblem("invalid_request",str(exc),400) from exc
         except AuthError as exc: raise ActionProblem("authentication_required",str(exc),401) from exc
 
     @staticmethod
@@ -85,3 +93,11 @@ class HostedActionDispatcher(ActionDispatcher):
     def _asset_derivative(self,p,c): return self.assets.create_derivative(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),parent_asset_ids=self.req(p,"parentAssetIds"),kind=self.req(p,"kind"),role=self.req(p,"role"),name=self.req(p,"name"),storage_key=self.req(p,"storageKey"),mime_type=p.get("mimeType"),bytes_count=self.req(p,"bytes"),checksum_sha256=self.req(p,"checksumSha256"),created_by=c.actor_id)
     def _asset_archive(self,p,c): return self.assets.archive(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"))
     def _asset_timeline_add(self,p,c): return self.assets.add_to_timeline(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"))
+    def _source_onedrive_authorize(self,p,c):
+        q=self._principal(c); return self.sources.begin(tenant_id=q.tenant_id,actor_id=q.actor_id)
+    def _source_onedrive_complete(self,p,c):
+        q=self._principal(c); return self.sources.complete(tenant_id=q.tenant_id,actor_id=q.actor_id,code=self.req(p,"code"),state=self.req(p,"state"))
+    def _source_onedrive_status(self,p,c):
+        q=self._principal(c); return self.sources.status(tenant_id=q.tenant_id)
+    def _source_onedrive_disconnect(self,p,c):
+        q=self._principal(c); return self.sources.disconnect(tenant_id=q.tenant_id)
