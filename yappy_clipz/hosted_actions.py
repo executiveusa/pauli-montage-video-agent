@@ -48,7 +48,7 @@ class HostedCapabilityRegistry:
 
 
 class HostedActionDispatcher(ActionDispatcher):
-    def __init__(self, *, auth: AuthService, assets: AssetService, sources: OneDriveService, **kwargs: Any) -> None:
+    def __init__(self, *, auth: AuthService, assets: AssetService, sources: OneDriveService | None = None, **kwargs: Any) -> None:
         self.auth=auth; self.assets=assets; self.sources=sources; super().__init__(**kwargs)
         self._handlers.update({
             "session.inspect":self._session_inspect,"token.create":self._token_create,"token.revoke":self._token_revoke,
@@ -76,6 +76,9 @@ class HostedActionDispatcher(ActionDispatcher):
     def _principal(context: ActionContext) -> Principal:
         if not context.tenant_id or not context.actor_id or context.scopes is None: raise ActionProblem("authentication_required","authenticated principal is required",401)
         now=int(time.time()); return Principal(context.tenant_id,context.actor_id,tuple(context.scopes),"context","session",now,now+3600)
+    def _source_service(self) -> OneDriveService:
+        if self.sources is None: raise SourceConfigurationError("external source service is not configured")
+        return self.sources
     def _session_inspect(self,p,c): q=self._principal(c); return {"tenantId":q.tenant_id,"actorId":q.actor_id,"scopes":list(q.scopes),"tokenType":q.token_type}
     def _token_create(self,p,c):
         q=self._principal(c); scopes=self.req(p,"scopes")
@@ -94,10 +97,10 @@ class HostedActionDispatcher(ActionDispatcher):
     def _asset_archive(self,p,c): return self.assets.archive(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"))
     def _asset_timeline_add(self,p,c): return self.assets.add_to_timeline(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),asset_id=self.req(p,"assetId"))
     def _source_onedrive_authorize(self,p,c):
-        q=self._principal(c); return self.sources.begin(tenant_id=q.tenant_id,actor_id=q.actor_id)
+        q=self._principal(c); return self._source_service().begin(tenant_id=q.tenant_id,actor_id=q.actor_id)
     def _source_onedrive_complete(self,p,c):
-        q=self._principal(c); return self.sources.complete(tenant_id=q.tenant_id,actor_id=q.actor_id,code=self.req(p,"code"),state=self.req(p,"state"))
+        q=self._principal(c); return self._source_service().complete(tenant_id=q.tenant_id,actor_id=q.actor_id,code=self.req(p,"code"),state=self.req(p,"state"))
     def _source_onedrive_status(self,p,c):
-        q=self._principal(c); return self.sources.status(tenant_id=q.tenant_id)
+        q=self._principal(c); return self._source_service().status(tenant_id=q.tenant_id)
     def _source_onedrive_disconnect(self,p,c):
-        q=self._principal(c); return self.sources.disconnect(tenant_id=q.tenant_id)
+        q=self._principal(c); return self._source_service().disconnect(tenant_id=q.tenant_id)
