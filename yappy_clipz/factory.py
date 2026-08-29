@@ -12,6 +12,7 @@ from .generation import GenerationService
 from .generation_actions import GenerationCapabilityRegistry
 from .hosted_actions import HostedCapabilityRegistry
 from .icm_runtime import IcmRuntime
+from .onedrive import JsonSourceConnectionStore,OneDriveService,PostgresSourceConnectionStore,SecretCipher
 from .operations import JsonOperationStore,PostgresOperationStore
 from .operations_actions import OperationsCapabilityRegistry
 from .postgres_auth import PostgresRevocationStore
@@ -29,7 +30,7 @@ from .storage import LocalObjectStorage,ObjectStorage,S3ObjectStorage,StorageNot
 
 @dataclass(frozen=True,slots=True)
 class ApplicationRuntime:
- settings:Settings;service:StudioService;capabilities:CapabilityRegistry;prompt_locker:PromptLocker;provider_catalog:ProviderCatalog;icm:IcmRuntime;fal:ExtendedFalProviderAdapter;auth:AuthService;accounts:AccountService;storage:ObjectStorage;assets:AssetService;operations:BudgetedOperationsService;router:OmniRouter;generation:GenerationService;rendering:RenderService;dispatcher:RenderActionDispatcher
+ settings:Settings;service:StudioService;capabilities:CapabilityRegistry;prompt_locker:PromptLocker;provider_catalog:ProviderCatalog;icm:IcmRuntime;fal:ExtendedFalProviderAdapter;auth:AuthService;accounts:AccountService;storage:ObjectStorage;assets:AssetService;sources:OneDriveService;operations:BudgetedOperationsService;router:OmniRouter;generation:GenerationService;rendering:RenderService;dispatcher:RenderActionDispatcher
 
 def create_repository(settings:Settings)->ProjectRepository:return PostgresProjectRepository(settings.database_url or "") if settings.repository_backend=="postgres" else FileProjectRepository(settings.project_root)
 def create_storage(settings:Settings)->ObjectStorage:return S3ObjectStorage(bucket=settings.storage_bucket or "",region=settings.storage_region,endpoint_url=settings.storage_endpoint_url) if settings.storage_backend=="s3" else LocalObjectStorage(settings.resolved_storage_root)
@@ -49,7 +50,10 @@ def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None
   if resolved.auth_mode=="hosted":raise StorageNotConfigured("hosted storage signing secret is not configured")
   signing_secret="local-owner-development-storage-signing-secret-0001"
  assets=AssetService(active_service.repository,storage,TransferSigner(signing_secret,ttl_seconds=resolved.storage_transfer_ttl_seconds),max_upload_bytes=resolved.max_upload_bytes)
+ source_store=PostgresSourceConnectionStore(resolved.database_url or "") if resolved.repository_backend=="postgres" else JsonSourceConnectionStore(resolved.resolved_source_store_path)
+ source_cipher=SecretCipher(os.environ.get(resolved.source_token_encryption_secret_env))
+ sources=OneDriveService(store=source_store,cipher=source_cipher,client_id=resolved.microsoft_client_id,client_secret=os.environ.get(resolved.microsoft_client_secret_env),redirect_uri=resolved.microsoft_redirect_uri,oauth_tenant=resolved.microsoft_oauth_tenant,http_client=http_client)
  operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=BudgetedOperationsService(operation_store);router=OmniRouter(provider_catalog);generation=GenerationService(repository=active_service.repository,catalog=provider_catalog,router=router,operations=operations,prompts=prompt_locker,fal=fal)
  rendering=RenderService(repository=active_service.repository,storage=storage,assets=assets,operations=operations,runner=render_runner,ffmpeg_binary=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe_binary=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"),workspace_root=resolved.project_root.parent/"renders")
- dispatcher=RenderActionDispatcher(service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering)
- return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering,dispatcher=dispatcher)
+ dispatcher=RenderActionDispatcher(service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,sources=sources,operations=operations,router=router,generation=generation,rendering=rendering)
+ return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,sources=sources,operations=operations,router=router,generation=generation,rendering=rendering,dispatcher=dispatcher)
