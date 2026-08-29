@@ -30,8 +30,21 @@ def build_mcp(service: StudioService | None = None, runtime: ApplicationRuntime 
     def action_run_tool(action_id: str,input: dict,tenant_id: str | None = None,approved: bool = False,
                         idempotency_key: str | None = None,correlation_id: str | None = None,
                         causation_id: str | None = None,request_id: str | None = None) -> dict:
-        context = ActionContext(tenant_id=tenant_id,actor_id="mcp",approved=approved,idempotency_key=idempotency_key,
-            correlation_id=correlation_id,causation_id=causation_id,request_id=request_id)
+        # The local MCP process is an owner-controlled transport and may use the
+        # same default scopes as the local API. Hosted MCP has no authenticated
+        # principal contract yet, so it receives an empty scope set and fails
+        # closed for protected actions such as external-source credentials.
+        local_owner = active_runtime.settings.auth_mode == "local"
+        context = ActionContext(
+            tenant_id=tenant_id,
+            actor_id="mcp:local-owner" if local_owner else "mcp:unauthenticated",
+            approved=approved,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            request_id=request_id,
+            scopes=tuple(active_runtime.auth.DEFAULT_SCOPES) if local_owner else (),
+        )
         try: return active_runtime.dispatcher.dispatch(action_id,input,context=context)
         except ActionProblem as exc: return exc.document(request_id=request_id or "req_mcp_error",correlation_id=correlation_id or "corr_mcp_error")
 
