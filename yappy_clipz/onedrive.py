@@ -21,6 +21,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from .repository import validate_identifier
+
 try:
     import psycopg
     from psycopg.rows import dict_row
@@ -163,8 +165,14 @@ class PostgresSourceConnectionStore:
     def _connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
+    @staticmethod
+    def _scope(connection: Any, tenant_id: str) -> None:
+        connection.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+
     def get(self, tenant_id: str, provider: str) -> dict[str, Any] | None:
+        tenant = validate_identifier(tenant_id, "tenant_id")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             row = connection.execute(
                 """
                 SELECT tenant_id, provider, actor_id, credential_ciphertext, metadata,
@@ -173,7 +181,7 @@ class PostgresSourceConnectionStore:
                 FROM yappy_source_connections
                 WHERE tenant_id = %s AND provider = %s
                 """,
-                (tenant_id, provider),
+                (tenant, provider),
             ).fetchone()
         if not row:
             return None
@@ -188,7 +196,9 @@ class PostgresSourceConnectionStore:
         }
 
     def upsert(self, record: dict[str, Any]) -> dict[str, Any]:
+        tenant = validate_identifier(record["tenantId"], "tenant_id")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             connection.execute(
                 """
                 INSERT INTO yappy_source_connections
@@ -201,20 +211,22 @@ class PostgresSourceConnectionStore:
                     updated_at = now()
                 """,
                 (
-                    record["tenantId"],
+                    tenant,
                     record["provider"],
                     record["actorId"],
                     record["credentialCiphertext"],
                     json.dumps(record.get("metadata", {})),
                 ),
             )
-        return self.get(record["tenantId"], record["provider"]) or record
+        return self.get(tenant, record["provider"]) or record
 
     def delete(self, tenant_id: str, provider: str) -> bool:
+        tenant = validate_identifier(tenant_id, "tenant_id")
         with self._connect() as connection:
+            self._scope(connection, tenant)
             result = connection.execute(
                 "DELETE FROM yappy_source_connections WHERE tenant_id = %s AND provider = %s",
-                (tenant_id, provider),
+                (tenant, provider),
             )
             return result.rowcount == 1
 
