@@ -174,7 +174,7 @@ class StoryboardQueryPlanner(BaseTool):
     tier = ToolTier.CORE
     capability = "analysis"
     provider = "montage"
-    stability = ToolStability.STABLE
+    stability = ToolStability.PRODUCTION
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
     dependencies: list[str] = []
