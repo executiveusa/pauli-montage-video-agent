@@ -1,0 +1,1 @@
+{"change":"onedrive-source","baselineSha":"bff2f5e26636db66cead949603b68f05c54d88ba","strategy":"revert the PR #45 squash commit; retain all local OneDrive source copies, provenance sidecars, proxies, and remote OneDrive files; local OAuth disconnect is a separate explicit operator action","destructiveRollback":false}
