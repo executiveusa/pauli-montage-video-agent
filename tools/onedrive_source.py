@@ -76,8 +76,6 @@ def _tenant() -> str:
 def _scopes() -> list[str]:
     raw = os.environ.get("ONEDRIVE_SCOPES", "").strip()
     scopes = raw.split() if raw else list(DEFAULT_SCOPES)
-    if "Files.Read" not in scopes:
-        raise OneDriveAuthError("OneDrive connector requires delegated Files.Read")
     forbidden = [
         scope
         for scope in scopes
@@ -88,6 +86,8 @@ def _scopes() -> list[str]:
             "write-capable Microsoft Graph scopes are forbidden for this source "
             f"connector: {', '.join(forbidden)}"
         )
+    if "Files.Read" not in scopes:
+        raise OneDriveAuthError("OneDrive connector requires delegated Files.Read")
     return scopes
 
 
