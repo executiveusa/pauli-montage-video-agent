@@ -7,7 +7,8 @@ from typing import Any
 from tools.onedrive_source import (
     OneDriveAuthError,
     OneDriveSourceError,
-    complete_device_login,
+    begin_device_login,
+    complete_login_flow,
     connection_status,
     disconnect,
     download_item,
@@ -15,7 +16,6 @@ from tools.onedrive_source import (
     import_proxy,
     list_children,
     search_items,
-    start_device_login,
 )
 
 from .actions import ActionContext
@@ -54,13 +54,13 @@ _EXTRA_CAPABILITIES = {
     "source.onedrive.login.start": _cap(
         "source.onedrive.login.start",
         "Start OneDrive login",
-        "Start Microsoft device-code sign-in for the local owner.",
+        "Start Microsoft device-code sign-in for the local owner and return only an opaque flow ID.",
         stage=None,
     ),
     "source.onedrive.login.complete": _cap(
         "source.onedrive.login.complete",
         "Complete OneDrive login",
-        "Complete Microsoft device-code sign-in after owner authorization.",
+        "Complete Microsoft device-code sign-in using local protected flow state.",
         stage=None,
     ),
     "source.onedrive.status": _cap(
@@ -87,7 +87,7 @@ _EXTRA_CAPABILITIES = {
     "source.onedrive.download": _cap(
         "source.onedrive.download",
         "Import OneDrive source copy",
-        "Download one protected immutable working copy without changing OneDrive.",
+        "Download one protected revision-addressed immutable working copy without changing OneDrive.",
         risk="medium",
     ),
     "source.onedrive.import-proxy": _cap(
@@ -99,7 +99,7 @@ _EXTRA_CAPABILITIES = {
     "source.onedrive.disconnect": _cap(
         "source.onedrive.disconnect",
         "Disconnect OneDrive locally",
-        "Remove only the local OAuth token cache; never mutate OneDrive.",
+        "Remove only local OAuth and pending-flow state; never mutate OneDrive.",
         risk="medium",
         stage=None,
     ),
@@ -172,33 +172,37 @@ class OneDriveActionDispatcher(RenderActionDispatcher):
                 403,
             )
 
-    def _onedrive_login_start(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_login_start(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
-        flow = start_device_login()
+        flow = begin_device_login()
         return {
             "verificationUri": flow["verification_uri"],
             "userCode": flow["user_code"],
-            "deviceCode": flow["device_code"],
+            "flowId": flow["flow_id"],
             "expiresIn": flow["expires_in"],
             "interval": flow.get("interval", 5),
             "message": flow.get("message"),
             "remoteWriteEnabled": False,
         }
 
-    def _onedrive_login_complete(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_login_complete(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
-        result = complete_device_login(
-            str(self.req(payload, "deviceCode")),
-            interval=int(payload.get("interval", 5)),
-            expires_in=int(payload.get("expiresIn", 60)),
-        )
+        result = complete_login_flow(str(self.req(payload, "flowId")))
         return {**result, "remoteWriteEnabled": False}
 
-    def _onedrive_status(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_status(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return connection_status()
 
-    def _onedrive_list(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_list(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return {
             "items": list_children(
@@ -209,7 +213,9 @@ class OneDriveActionDispatcher(RenderActionDispatcher):
             "remoteWriteEnabled": False,
         }
 
-    def _onedrive_search(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_search(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return {
             "items": search_items(
@@ -220,14 +226,18 @@ class OneDriveActionDispatcher(RenderActionDispatcher):
             "remoteWriteEnabled": False,
         }
 
-    def _onedrive_metadata(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_metadata(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return {
             "item": get_item(str(self.req(payload, "itemId"))),
             "remoteWriteEnabled": False,
         }
 
-    def _onedrive_download(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_download(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return {
             **download_item(
@@ -237,7 +247,9 @@ class OneDriveActionDispatcher(RenderActionDispatcher):
             "remoteWriteEnabled": False,
         }
 
-    def _onedrive_import_proxy(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_import_proxy(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return {
             **import_proxy(
@@ -248,6 +260,8 @@ class OneDriveActionDispatcher(RenderActionDispatcher):
             "remoteWriteEnabled": False,
         }
 
-    def _onedrive_disconnect(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+    def _onedrive_disconnect(
+        self, payload: dict[str, Any], context: ActionContext
+    ) -> dict[str, Any]:
         self._local_owner_only()
         return {**disconnect(), "remoteWriteEnabled": False}
