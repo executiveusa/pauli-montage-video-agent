@@ -34,11 +34,7 @@ def _login(_: argparse.Namespace) -> int:
     )
     result = _dispatch(
         "source.onedrive.login.complete",
-        {
-            "deviceCode": start["deviceCode"],
-            "interval": start.get("interval", 5),
-            "expiresIn": start.get("expiresIn", 900),
-        },
+        {"flowId": start["flowId"]},
     )
     _emit(result)
     return 0
@@ -152,7 +148,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     logout = sub.add_parser(
         "logout",
-        help="Remove only the local OAuth token cache; never changes OneDrive",
+        help="Remove only local OAuth state; never changes OneDrive",
     )
     logout.set_defaults(
         func=lambda _: (_emit(_dispatch("source.onedrive.disconnect", {})), 0)[1]
