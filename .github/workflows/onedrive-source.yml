@@ -1,0 +1,44 @@
+name: OneDrive source safety gates
+
+on:
+  pull_request:
+    paths:
+      - "tools/onedrive_source.py"
+      - "yappy_clipz/onedrive_actions.py"
+      - "yappy_clipz/factory.py"
+      - "scripts/onedrive_footage.py"
+      - "tests/test_onedrive_cli_source.py"
+      - ".agents/skills/onedrive-footage/**"
+      - ".github/workflows/onedrive-source.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tools/onedrive_source.py"
+      - "yappy_clipz/onedrive_actions.py"
+      - "yappy_clipz/factory.py"
+      - "scripts/onedrive_footage.py"
+      - "tests/test_onedrive_cli_source.py"
+      - ".agents/skills/onedrive-footage/**"
+      - ".github/workflows/onedrive-source.yml"
+
+jobs:
+  onedrive-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run OneDrive read-only connector tests
+        run: python -m pytest tests/test_onedrive_cli_source.py -q
+      - name: Compile connector and shared service boundary
+        run: |
+          python -m py_compile \
+            tools/onedrive_source.py \
+            yappy_clipz/onedrive_actions.py \
+            yappy_clipz/factory.py \
+            scripts/onedrive_footage.py \
+            tests/test_onedrive_cli_source.py
