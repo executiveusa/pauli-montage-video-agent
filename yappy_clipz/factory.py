@@ -12,6 +12,7 @@ from .generation import GenerationService
 from .generation_actions import GenerationCapabilityRegistry
 from .hosted_actions import HostedCapabilityRegistry
 from .icm_runtime import IcmRuntime
+from .onedrive_actions import OneDriveActionDispatcher,OneDriveCapabilityRegistry
 from .operations import JsonOperationStore,PostgresOperationStore
 from .operations_actions import OperationsCapabilityRegistry
 from .postgres_auth import PostgresRevocationStore
@@ -36,7 +37,7 @@ def create_storage(settings:Settings)->ObjectStorage:return S3ObjectStorage(buck
 def create_service(settings:Settings|None=None)->StudioService:
  resolved=settings or Settings.from_env();return StudioService(create_repository(resolved))
 def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None,http_client:Any|None=None,render_runner:Any|None=None)->ApplicationRuntime:
- resolved=settings or Settings.from_env();active_service=service or create_service(resolved);capabilities=RenderCapabilityRegistry(GenerationCapabilityRegistry(OperationsCapabilityRegistry(HostedCapabilityRegistry(default_registry()))));prompt_locker=PromptLocker(resolved.resolved_prompt_root);provider_catalog=ProviderCatalog(resolved.resolved_provider_root);icm=IcmRuntime(resolved.resolved_icm_runtime_root)
+ resolved=settings or Settings.from_env();active_service=service or create_service(resolved);capabilities=OneDriveCapabilityRegistry(RenderCapabilityRegistry(GenerationCapabilityRegistry(OperationsCapabilityRegistry(HostedCapabilityRegistry(default_registry())))));prompt_locker=PromptLocker(resolved.resolved_prompt_root);provider_catalog=ProviderCatalog(resolved.resolved_provider_root);icm=IcmRuntime(resolved.resolved_icm_runtime_root)
  revocations=PostgresRevocationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else MemoryRevocationStore();auth=AuthService(mode=resolved.auth_mode,signing_secret_env=resolved.auth_signing_secret_env,owner_username=resolved.auth_owner_username,owner_password_env=resolved.auth_owner_password_env,owner_tenant_id=resolved.auth_owner_tenant_id,session_ttl_seconds=resolved.auth_session_ttl_seconds,service_ttl_seconds=resolved.auth_service_ttl_seconds,revocations=revocations)
  account_store=PostgresAccountStore(resolved.database_url or "") if resolved.repository_backend=="postgres" else JsonAccountStore(resolved.resolved_account_store_path)
  recovery_delivery=None
@@ -51,5 +52,5 @@ def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None
  assets=AssetService(active_service.repository,storage,TransferSigner(signing_secret,ttl_seconds=resolved.storage_transfer_ttl_seconds),max_upload_bytes=resolved.max_upload_bytes)
  operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=BudgetedOperationsService(operation_store);router=OmniRouter(provider_catalog);generation=GenerationService(repository=active_service.repository,catalog=provider_catalog,router=router,operations=operations,prompts=prompt_locker,fal=fal)
  rendering=RenderService(repository=active_service.repository,storage=storage,assets=assets,operations=operations,runner=render_runner,ffmpeg_binary=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe_binary=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"),workspace_root=resolved.project_root.parent/"renders")
- dispatcher=RenderActionDispatcher(service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering)
+ dispatcher=OneDriveActionDispatcher(service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering)
  return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering,dispatcher=dispatcher)
