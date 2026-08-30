@@ -1,11 +1,11 @@
 """Read-only OneDrive source connector for documentary footage.
 
 Authentication uses Microsoft's OAuth 2.0 device authorization grant so the
-operator signs in directly with Microsoft.  The connector never asks for or
+operator signs in directly with Microsoft. The connector never asks for or
 stores a Microsoft password and never performs remote write operations.
 
-Downloaded source files are immutable working copies.  Editing is delegated to
-``LocalFootageTool``, which already refuses source overwrite.
+Downloaded source files are immutable working copies. Editing is delegated to
+``LocalFootageTool``, which refuses source overwrite.
 """
 
 from __future__ import annotations
@@ -76,11 +76,7 @@ def _tenant() -> str:
 def _scopes() -> list[str]:
     raw = os.environ.get("ONEDRIVE_SCOPES", "").strip()
     scopes = raw.split() if raw else list(DEFAULT_SCOPES)
-    forbidden = [
-        scope
-        for scope in scopes
-        if scope.lower().endswith(".readwrite") or "readwrite" in scope.lower()
-    ]
+    forbidden = [scope for scope in scopes if "readwrite" in scope.lower()]
     if forbidden:
         raise OneDriveAuthError(
             "write-capable Microsoft Graph scopes are forbidden for this source "
@@ -104,9 +100,9 @@ def _protect_parent(path: Path) -> None:
         pass
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_atomic(path: Path, payload: dict[str, Any], *, readonly: bool = False) -> None:
     _protect_parent(path)
-    fd, tmp_name = tempfile.mkstemp(prefix=".token-", suffix=".json", dir=str(path.parent))
+    fd, tmp_name = tempfile.mkstemp(prefix=".onedrive-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)
@@ -117,12 +113,22 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
             pass
         os.replace(tmp_name, path)
         try:
-            os.chmod(path, 0o600)
+            os.chmod(path, 0o400 if readonly else 0o600)
         except OSError:
             pass
     finally:
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
+
+
+def _read_json(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OneDriveSourceError(f"{label} is unreadable") from exc
+    if not isinstance(payload, dict):
+        raise OneDriveSourceError(f"{label} is invalid")
+    return payload
 
 
 def _load_token() -> dict[str, Any]:
@@ -149,7 +155,9 @@ def _store_token(payload: dict[str, Any]) -> None:
     _write_json_atomic(_cache_path(), safe)
 
 
-def _refresh_token(token: dict[str, Any], session: requests.Session | None = None) -> dict[str, Any]:
+def _refresh_token(
+    token: dict[str, Any], session: requests.Session | None = None
+) -> dict[str, Any]:
     refresh = str(token.get("refresh_token") or "")
     if not refresh:
         raise OneDriveAuthError("OneDrive session expired and has no refresh token")
@@ -169,6 +177,8 @@ def _refresh_token(token: dict[str, Any], session: requests.Session | None = Non
             f"Microsoft token refresh failed ({response.status_code})"
         )
     refreshed = response.json()
+    if not isinstance(refreshed, dict):
+        raise OneDriveAuthError("Microsoft token refresh returned invalid JSON")
     if "refresh_token" not in refreshed:
         refreshed["refresh_token"] = refresh
     _store_token(refreshed)
@@ -199,6 +209,8 @@ def start_device_login(session: requests.Session | None = None) -> dict[str, Any
             f"Microsoft device authorization failed ({response.status_code})"
         )
     payload = response.json()
+    if not isinstance(payload, dict):
+        raise OneDriveAuthError("Microsoft device authorization returned invalid JSON")
     required = {"device_code", "user_code", "verification_uri", "expires_in"}
     missing = sorted(required - set(payload))
     if missing:
@@ -233,6 +245,8 @@ def complete_device_login(
             timeout=30,
         )
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise OneDriveAuthError("Microsoft sign-in returned invalid JSON")
         if response.status_code < 400 and payload.get("access_token"):
             _store_token(payload)
             return {
@@ -362,14 +376,19 @@ def search_items(
 def get_item(
     item_id: str, *, session: requests.Session | None = None
 ) -> dict[str, Any]:
-    if not item_id.strip():
+    item_id = item_id.strip()
+    if not item_id:
         raise ValueError("item_id is required")
     encoded = quote(item_id, safe="")
-    return _graph_json(
+    payload = _graph_json(
         f"{GRAPH_ROOT}/me/drive/items/{encoded}",
         params={"$select": _selected_fields()},
         session=session,
     )
+    returned_id = str(payload.get("id") or "")
+    if returned_id and returned_id != item_id:
+        raise OneDriveSourceError("Microsoft Graph returned a different OneDrive item identity")
+    return payload
 
 
 def _safe_filename(name: str, fallback: str) -> str:
@@ -398,74 +417,63 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download_item(
-    item_id: str,
-    workspace: str | Path,
-    *,
-    session: requests.Session | None = None,
-) -> dict[str, Any]:
-    """Download one file into an immutable local source workspace."""
-    http = session or requests.Session()
-    metadata = get_item(item_id, session=http)
-    if "folder" in metadata:
-        raise OneDriveSourceError("folders cannot be downloaded as footage")
-    if "file" not in metadata:
-        raise OneDriveSourceError("OneDrive item is not a downloadable file")
+def _item_identity(item_id: str) -> str:
+    """Return a collision-resistant local identity derived from the complete remote ID."""
+    value = item_id.strip()
+    if not value:
+        raise OneDriveSourceError("OneDrive item identity is empty")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
-    root = Path(workspace).expanduser().resolve()
-    source_dir = root / "source"
-    source_dir.mkdir(parents=True, exist_ok=True)
-    name = _safe_filename(str(metadata.get("name") or ""), f"{item_id}.bin")
-    destination = _contained(root, source_dir / f"{item_id[:12]}-{name}")
 
-    if destination.exists():
-        existing_size = destination.stat().st_size
-        expected_size = int(metadata.get("size") or -1)
-        if expected_size < 0 or existing_size == expected_size:
-            return _download_manifest(metadata, destination, reused=True)
-        raise OneDriveSourceError(
-            "a local source copy already exists with a different size; refusing overwrite"
-        )
-
-    encoded = quote(item_id, safe="")
-    url = f"{GRAPH_ROOT}/me/drive/items/{encoded}/content"
-    response = http.get(url, headers=_headers(http), stream=True, allow_redirects=True, timeout=120)
-    if response.status_code == 401:
-        _refresh_token(_load_token(), session=http)
-        response = http.get(
-            url,
-            headers=_headers(http),
-            stream=True,
-            allow_redirects=True,
-            timeout=120,
-        )
-    if response.status_code >= 400:
-        raise OneDriveSourceError(
-            f"OneDrive download failed ({response.status_code})"
-        )
-
-    tmp = destination.with_suffix(destination.suffix + ".part")
-    if tmp.exists():
-        tmp.unlink()
+def _expected_size(metadata: dict[str, Any]) -> int:
     try:
-        with tmp.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    handle.write(chunk)
-        expected_size = int(metadata.get("size") or -1)
-        if expected_size >= 0 and tmp.stat().st_size != expected_size:
-            raise OneDriveSourceError(
-                f"downloaded size {tmp.stat().st_size} != expected {expected_size}"
-            )
-        os.replace(tmp, destination)
+        return int(metadata.get("size") if metadata.get("size") is not None else -1)
+    except (TypeError, ValueError) as exc:
+        raise OneDriveSourceError("OneDrive item size is invalid") from exc
+
+
+def _manifest_path(destination: Path) -> Path:
+    return destination.with_suffix(destination.suffix + ".source.json")
+
+
+def _validate_existing_source(
+    metadata: dict[str, Any], destination: Path
+) -> dict[str, Any]:
+    """Validate exact remote identity before reusing a protected local source."""
+    sidecar = _manifest_path(destination)
+    if not sidecar.is_file():
+        raise OneDriveSourceError(
+            "local source exists without provenance sidecar; refusing reuse"
+        )
+    manifest = _read_json(sidecar, label="OneDrive provenance sidecar")
+    remote_id = str(metadata.get("id") or "")
+    if not remote_id or manifest.get("remote_item_id") != remote_id:
+        raise OneDriveSourceError(
+            "local source provenance does not match the requested OneDrive item; refusing reuse"
+        )
+    expected_size = _expected_size(metadata)
+    existing_size = destination.stat().st_size
+    if expected_size >= 0 and existing_size != expected_size:
+        raise OneDriveSourceError(
+            "local source size does not match OneDrive metadata; refusing reuse"
+        )
+    manifest_size = manifest.get("remote_size")
+    if manifest_size is not None and expected_size >= 0:
         try:
-            os.chmod(destination, 0o400)
-        except OSError:
-            pass
-    finally:
-        if tmp.exists():
-            tmp.unlink()
-    return _download_manifest(metadata, destination, reused=False)
+            if int(manifest_size) != expected_size:
+                raise OneDriveSourceError(
+                    "provenance sidecar size conflicts with OneDrive metadata; refusing reuse"
+                )
+        except (TypeError, ValueError) as exc:
+            raise OneDriveSourceError(
+                "provenance sidecar remote size is invalid; refusing reuse"
+            ) from exc
+    recorded_sha = str(manifest.get("local_sha256") or "")
+    if recorded_sha and recorded_sha != _sha256(destination):
+        raise OneDriveSourceError(
+            "local source checksum conflicts with provenance sidecar; refusing reuse"
+        )
+    return manifest
 
 
 def _download_manifest(
@@ -489,14 +497,91 @@ def _download_manifest(
         "source_immutable": True,
         "reused": reused,
     }
-    sidecar = destination.with_suffix(destination.suffix + ".source.json")
+    sidecar = _manifest_path(destination)
     if not sidecar.exists():
-        sidecar.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _write_json_atomic(sidecar, manifest, readonly=True)
+    return {**manifest, "manifest": str(sidecar)}
+
+
+def download_item(
+    item_id: str,
+    workspace: str | Path,
+    *,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
+    """Download one file into an immutable local source workspace."""
+    item_id = item_id.strip()
+    if not item_id:
+        raise ValueError("item_id is required")
+    http = session or requests.Session()
+    metadata = get_item(item_id, session=http)
+    if "folder" in metadata:
+        raise OneDriveSourceError("folders cannot be downloaded as footage")
+    if "file" not in metadata:
+        raise OneDriveSourceError("OneDrive item is not a downloadable file")
+
+    remote_id = str(metadata.get("id") or item_id)
+    if remote_id != item_id:
+        raise OneDriveSourceError("OneDrive metadata identity does not match requested item")
+
+    root = Path(workspace).expanduser().resolve()
+    source_dir = root / "source"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    name = _safe_filename(str(metadata.get("name") or ""), f"{_item_identity(item_id)}.bin")[:120]
+    destination = _contained(root, source_dir / f"{_item_identity(item_id)}-{name}")
+    sidecar = _manifest_path(destination)
+
+    if destination.exists():
+        _validate_existing_source(metadata, destination)
+        return _download_manifest(metadata, destination, reused=True)
+    if sidecar.exists():
+        raise OneDriveSourceError(
+            "provenance sidecar exists without its local source; refusing overwrite"
+        )
+
+    encoded = quote(item_id, safe="")
+    url = f"{GRAPH_ROOT}/me/drive/items/{encoded}/content"
+    response = http.get(
+        url,
+        headers=_headers(http),
+        stream=True,
+        allow_redirects=True,
+        timeout=120,
+    )
+    if response.status_code == 401:
+        _refresh_token(_load_token(), session=http)
+        response = http.get(
+            url,
+            headers=_headers(http),
+            stream=True,
+            allow_redirects=True,
+            timeout=120,
+        )
+    if response.status_code >= 400:
+        raise OneDriveSourceError(f"OneDrive download failed ({response.status_code})")
+
+    tmp = destination.with_suffix(destination.suffix + ".part")
+    if tmp.exists():
+        tmp.unlink()
+    try:
+        with tmp.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
+        expected_size = _expected_size(metadata)
+        if expected_size >= 0 and tmp.stat().st_size != expected_size:
+            raise OneDriveSourceError(
+                f"downloaded size {tmp.stat().st_size} != expected {expected_size}"
+            )
+        os.replace(tmp, destination)
         try:
-            os.chmod(sidecar, 0o400)
+            os.chmod(destination, 0o400)
         except OSError:
             pass
-    return {**manifest, "manifest": str(sidecar)}
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return _download_manifest(metadata, destination, reused=False)
 
 
 def import_proxy(
@@ -549,11 +634,7 @@ def connection_status(session: requests.Session | None = None) -> dict[str, Any]
             session=session,
         )
     except Exception as exc:
-        return {
-            "connected": False,
-            "cache": str(path),
-            "error": str(exc),
-        }
+        return {"connected": False, "cache": str(path), "error": str(exc)}
     owner = drive.get("owner") or {}
     user = owner.get("user") or {}
     quota = drive.get("quota") or {}
@@ -588,7 +669,7 @@ class OneDriveSourceTool(BaseTool):
     """Read-only OneDrive source adapter for YAPPY-CLIPZ."""
 
     name = "onedrive_source"
-    version = "0.1.0"
+    version = "0.1.1"
     tier = ToolTier.SOURCE
     stability = ToolStability.BETA
     determinism = Determinism.DETERMINISTIC
@@ -657,15 +738,18 @@ class OneDriveSourceTool(BaseTool):
         try:
             if operation == "device_login_start":
                 data = start_device_login()
-                output = {
-                    "verification_uri": data["verification_uri"],
-                    "user_code": data["user_code"],
-                    "device_code": data["device_code"],
-                    "expires_in": data["expires_in"],
-                    "interval": data.get("interval", 5),
-                    "message": data.get("message"),
-                }
-                return self._result(started, operation, output)
+                return self._result(
+                    started,
+                    operation,
+                    {
+                        "verification_uri": data["verification_uri"],
+                        "user_code": data["user_code"],
+                        "device_code": data["device_code"],
+                        "expires_in": data["expires_in"],
+                        "interval": data.get("interval", 5),
+                        "message": data.get("message"),
+                    },
+                )
             if operation == "device_login_complete":
                 data = complete_device_login(
                     str(inputs.get("device_code") or ""),
@@ -700,22 +784,33 @@ class OneDriveSourceTool(BaseTool):
                     str(inputs.get("item_id") or ""),
                     str(inputs.get("workspace") or ""),
                 )
-                return self._result(started, operation, data, [data["local_source"], data["manifest"]])
+                return self._result(
+                    started,
+                    operation,
+                    data,
+                    [data["local_source"], data["manifest"]],
+                )
             if operation == "import_proxy":
                 data = import_proxy(
                     str(inputs.get("item_id") or ""),
                     str(inputs.get("workspace") or ""),
                     height=int(inputs.get("height", 720)),
                 )
-                artifacts = [
-                    data["source"]["local_source"],
-                    data["source"]["manifest"],
-                    data["proxy"],
-                ]
-                return self._result(started, operation, data, artifacts)
+                return self._result(
+                    started,
+                    operation,
+                    data,
+                    [
+                        data["source"]["local_source"],
+                        data["source"]["manifest"],
+                        data["proxy"],
+                    ],
+                )
             if operation == "disconnect":
                 return self._result(started, operation, disconnect())
-            raise ValueError(f"unsupported OneDrive source operation: {operation or '<missing>'}")
+            raise ValueError(
+                f"unsupported OneDrive source operation: {operation or '<missing>'}"
+            )
         except Exception as exc:
             return ToolResult(
                 success=False,
