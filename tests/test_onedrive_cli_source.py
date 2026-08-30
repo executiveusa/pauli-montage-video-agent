@@ -139,3 +139,56 @@ def test_tool_contract_explicitly_disables_remote_writes():
     assert supports["remote_move"] is False
     assert supports["remote_rename"] is False
     assert supports["remote_upload"] is False
+
+
+def test_item_identity_uses_complete_remote_id():
+    first = "01ABCDEF1234-same-prefix-but-item-A"
+    second = "01ABCDEF1234-same-prefix-but-item-B"
+    assert first[:12] == second[:12]
+    assert od._item_identity(first) != od._item_identity(second)
+    assert len(od._item_identity(first)) == 64
+
+
+def test_existing_source_reuse_requires_provenance_sidecar(tmp_path):
+    destination = tmp_path / "source.mp4"
+    destination.write_bytes(b"abc")
+    with pytest.raises(od.OneDriveSourceError, match="without provenance"):
+        od._validate_existing_source({"id": "remote-1", "size": 3}, destination)
+
+
+def test_existing_source_reuse_requires_exact_remote_identity(tmp_path):
+    destination = tmp_path / "source.mp4"
+    destination.write_bytes(b"abc")
+    sidecar = destination.with_suffix(destination.suffix + ".source.json")
+    sidecar.write_text(
+        json.dumps(
+            {
+                "remote_item_id": "remote-other",
+                "remote_size": 3,
+                "local_sha256": od._sha256(destination),
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(od.OneDriveSourceError, match="does not match"):
+        od._validate_existing_source({"id": "remote-1", "size": 3}, destination)
+
+
+def test_existing_source_reuse_accepts_exact_identity_size_and_checksum(tmp_path):
+    destination = tmp_path / "source.mp4"
+    destination.write_bytes(b"abc")
+    sidecar = destination.with_suffix(destination.suffix + ".source.json")
+    sidecar.write_text(
+        json.dumps(
+            {
+                "remote_item_id": "remote-1",
+                "remote_size": 3,
+                "local_sha256": od._sha256(destination),
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = od._validate_existing_source(
+        {"id": "remote-1", "size": 3}, destination
+    )
+    assert manifest["remote_item_id"] == "remote-1"
