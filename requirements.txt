@@ -5,4 +5,4 @@ jsonschema>=4.20
 python-dotenv>=1.0
 Pillow>=10.0
 requests>=2.31
-composio>=0.8.0
+composio==0.21.0
