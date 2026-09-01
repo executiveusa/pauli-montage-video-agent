@@ -34,9 +34,14 @@ READ_ONLY_TOOLS = frozenset(
 
 
 def _api_key() -> str:
-    value = os.environ.get("COMPOSIO_API_KEY", "").strip()
+    value = (
+        os.environ.get("COMPOSIO_API_TOKEN", "").strip()
+        or os.environ.get("COMPOSIO_API_KEY", "").strip()
+    )
     if not value:
-        raise ComposioOneDriveError("COMPOSIO_API_KEY is not configured")
+        raise ComposioOneDriveError(
+            "COMPOSIO_API_TOKEN or COMPOSIO_API_KEY is not configured"
+        )
     return value
 
 
