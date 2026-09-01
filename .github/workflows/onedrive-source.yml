@@ -4,20 +4,26 @@ on:
   pull_request:
     paths:
       - "tools/onedrive_source.py"
+      - "tools/composio_onedrive.py"
       - "yappy_clipz/onedrive_actions.py"
       - "yappy_clipz/factory.py"
       - "scripts/onedrive_footage.py"
       - "tests/test_onedrive_cli_source.py"
+      - "tests/test_composio_onedrive.py"
+      - "requirements.txt"
       - ".agents/skills/onedrive-footage/**"
       - ".github/workflows/onedrive-source.yml"
   push:
     branches: [main]
     paths:
       - "tools/onedrive_source.py"
+      - "tools/composio_onedrive.py"
       - "yappy_clipz/onedrive_actions.py"
       - "yappy_clipz/factory.py"
       - "scripts/onedrive_footage.py"
       - "tests/test_onedrive_cli_source.py"
+      - "tests/test_composio_onedrive.py"
+      - "requirements.txt"
       - ".agents/skills/onedrive-footage/**"
       - ".github/workflows/onedrive-source.yml"
 
@@ -35,12 +41,14 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest
       - name: Run OneDrive read-only connector tests
-        run: python -m pytest tests/test_onedrive_cli_source.py -q
+        run: python -m pytest tests/test_onedrive_cli_source.py tests/test_composio_onedrive.py -q
       - name: Compile connector and shared service boundary
         run: |
           python -m py_compile \
             tools/onedrive_source.py \
+            tools/composio_onedrive.py \
             yappy_clipz/onedrive_actions.py \
             yappy_clipz/factory.py \
             scripts/onedrive_footage.py \
-            tests/test_onedrive_cli_source.py
+            tests/test_onedrive_cli_source.py \
+            tests/test_composio_onedrive.py
