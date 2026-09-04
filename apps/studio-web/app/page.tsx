@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MontageHero } from "../components/MontageHero";
 
 const problems = [
   {
@@ -24,169 +25,139 @@ const problems = [
 ];
 
 const flow = [
-  ["01", "Bring it in", "Footage, interviews, screen recordings, audio, images, references."],
-  ["02", "Find the story", "Search what was said and what was seen. Build selects from real moments."],
-  ["03", "Shape the cut", "Edit the timeline, captions, framing, sound, graphics, and generated support media."],
-  ["04", "Ship versions", "Review, verify, export, repurpose, and keep the project ready for the next cut."],
+  ["01", "Bring in your clips", "Google Drive, OneDrive, local footage, interviews, screen recordings, audio, images, and references."],
+  ["02", "Find the best moments", "Search what was said and what was seen. Build selects from real moments instead of hunting the timeline."],
+  ["03", "Build the montage", "Shape the sequence, captions, framing, sound, graphics, and supporting media while source masters stay protected."],
+  ["04", "Export anywhere", "Review, verify, export, repurpose, and keep the project ready for the next cut."],
 ];
 
 const proof = [
-  ["01", "Bring real footage", "Upload source media into an owner-controlled project and keep the original immutable."],
-  ["02", "Transcribe locally", "Create time-coded transcript evidence with the local engine—no cloud transcription key required."],
+  ["01", "Bring real footage", "Use protected source media and keep the original immutable while Montage prepares working copies and proxies."],
+  ["02", "Understand the footage", "Create time-coded transcript and scene evidence so the library becomes searchable instead of opaque."],
   ["03", "Edit reversibly", "Cut, split, undo, redo, reopen, and keep captions synchronized with the canonical timeline."],
-  ["04", "Verify delivery", "Render a source-backed 9:16 review and validate the resulting media before calling it finished."],
+  ["04", "Verify delivery", "Render platform-ready reviews and validate the resulting media before calling it finished."],
 ] as const;
 
 const faqs = [
-  ["Is this another AI video generator?", "No. Montage starts with your footage and project state. Generative providers are optional, replaceable support tools—not the owner of the edit."],
-  ["Do I have to upload footage to a cloud vendor?", "The current verified workflow can keep processing on your computer through Montage Local Engine. Hosted collaboration and provider features are separate boundaries."],
-  ["What can I use today?", "The repository-verified beta covers project creation, local footage ingest, transcription, reversible timeline edits, captions, review rendering, and deterministic verification."],
-  ["Is it fully production-deployed?", "Not yet. The product is in a gated build sprint. The page distinguishes repository-verified capabilities from later hosted activation so you can judge it honestly."],
+  ["Is this another AI video generator?", "No. Montage starts with your footage and project state. Generative providers are optional, replaceable support tools — not the owner of the edit."],
+  ["Can Montage use Google Drive or OneDrive?", "Yes. The media library is designed to treat Google Drive and OneDrive as peer source providers feeding one protected asset registry."],
+  ["Does it overwrite my source footage?", "No. Source masters are treated as protected. Editing happens on copies, proxies, and derivatives, with review before consequential export or publishing."],
+  ["Can some of the editing intelligence run locally?", "Yes. Sage can use LM Studio/Bionic locally for private editorial reasoning while deterministic media tools handle probing, proxying, captions, cuts, and verification."],
 ] as const;
+
+function BrandMark() {
+  return (
+    <svg className="landing-logo-mark" viewBox="0 0 64 64" aria-hidden="true">
+      <g fill="none" stroke="currentColor" strokeLinecap="square" strokeLinejoin="miter">
+        <rect x="5" y="9" width="54" height="46" rx="1.5" strokeWidth="3.5" />
+        <path d="M15 46V20L32 38L49 20V46" strokeWidth="4.5" />
+      </g>
+    </svg>
+  );
+}
 
 export default function HomePage() {
   return (
     <main className="landing">
       <a className="skip-link landing-skip" href="#landing-content">Skip to main content</a>
       <header className="landing-nav">
-        <Link className="landing-logo" href="/">MONTAGE</Link>
+        <Link className="landing-logo" href="/" aria-label="Montage home"><BrandMark /><span>Montage</span></Link>
         <nav className="landing-nav-center" aria-label="Primary">
           <a href="#why">Why Montage</a>
           <a href="#flow">Workflow</a>
+          <Link href="/media">Media Library</Link>
           <a href="#proof">Proof</a>
-          <a href="#offer">Beta</a>
         </nav>
         <div className="landing-nav-actions">
           <Link href="/sign-in">Sign in</Link>
-          <Link className="nav-pill" href="/sign-in">Enter beta</Link>
+          <Link className="nav-pill" href="/sign-in">Start a Montage</Link>
         </div>
       </header>
 
       <div id="landing-content">
-      <section className="masthead">
-        <div className="masthead-kicker">
-          <span>AI video studio for real footage</span>
-          <span>Search · Edit · Repurpose · Deliver</span>
-        </div>
-        <h1 className="masthead-word">MONTAGE</h1>
-        <div className="masthead-bottom">
-          <p className="masthead-copy">
-            Find the right moment. Shape the story. Turn one body of footage into finished work without living in six different apps.
-          </p>
-          <div className="masthead-cta">
-            <p>
-              A calm production workspace for documentary footage, interviews, podcasts, campaigns, social clips, and AI-assisted finishing.
-            </p>
-            <Link className="hero-button" href="/sign-in"><span>Enter the private beta</span><span>↗</span></Link>
-          </div>
-        </div>
-      </section>
+        <MontageHero />
 
-      <section className="motion-stage" aria-label="Illustrated Montage source-to-story workflow">
-        <div className="motion-top"><span>One workspace</span><span>Footage → story</span></div>
-        <div className="motion-canvas">
-          <div className="editor-window">
-            <div className="editor-bar"><i className="editor-dot"/><i className="editor-dot"/><i className="editor-dot"/></div>
-            <div className="editor-body">
-              <aside className="editor-sidebar">
-                <div className="editor-thumb"/><div className="editor-thumb"/><div className="editor-thumb"/>
-              </aside>
-              <div className="editor-main">
-                <div className="preview"><div className="preview-copy">THE MOMENT<br/>YOU WERE LOOKING FOR.</div></div>
-                <div className="timeline">
-                  <div className="track"><i className="clip"/><i className="clip accent"/><i className="clip"/><i className="clip"/></div>
-                  <div className="track"><i className="clip"/><i className="clip"/><i className="clip accent"/></div>
-                  <i className="playhead"/>
-                </div>
-              </div>
+        <section className="problem-section" id="why">
+          <div className="section-rule"><span>The problem</span><span>Less software. More finished work.</span></div>
+          <div className="problem-grid">
+            <h2>Find<br/>what<br/>matters.</h2>
+            <div className="problem-list">
+              {problems.map((item) => (
+                <article className="problem-row" key={item.n}>
+                  <b>{item.n}</b>
+                  <div><h3>{item.title}</h3><p>{item.copy}</p></div>
+                </article>
+              ))}
             </div>
           </div>
-          <div className="floating-card card-search"><span><i/>Visual search</span><strong>“waterfront at dusk”</strong></div>
-          <div className="floating-card card-cut"><span><i/>Montage indexed</span><strong>Scene-level moments</strong></div>
-        </div>
-      </section>
+        </section>
 
-      <section className="problem-section" id="why">
-        <div className="section-rule"><span>The problem</span><span>Less software. More finished work.</span></div>
-        <div className="problem-grid">
-          <h2>Stop<br/>hunting.<br/>Start<br/>editing.</h2>
-          <div className="problem-list">
-            {problems.map((item) => (
-              <article className="problem-row" key={item.n}>
-                <b>{item.n}</b>
-                <div><h3>{item.title}</h3><p>{item.copy}</p></div>
-              </article>
+        <section className="flow-section" id="workflow-detail">
+          <div className="section-rule"><span>The workflow</span><span>Many moments → one story</span></div>
+          <h2 className="flow-title">From scattered clips to one clear story.</h2>
+          <div className="flow-steps">
+            {flow.map(([n, title, copy]) => (
+              <article className="flow-step" key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="flow-section" id="flow">
-        <div className="section-rule"><span>The workflow</span><span>Built to be remembered</span></div>
-        <h2 className="flow-title">One flow from source to story.</h2>
-        <div className="flow-steps">
-          {flow.map(([n, title, copy]) => (
-            <article className="flow-step" key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>
-          ))}
-        </div>
-      </section>
-
-      <section className="proof-section" id="proof">
-        <div className="section-rule"><span>Verified product path</span><span>Working code, not a concept reel</span></div>
-        <div className="proof-heading">
-          <h2>One real path.<br/>Proven end to end.</h2>
-          <p>Every claim below is backed by executable repository tests. Hosted production activation is tracked separately.</p>
-        </div>
-        <div className="proof-grid">
-          {proof.map(([n, title, copy]) => (
-            <article className="proof-card" key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>
-          ))}
-        </div>
-      </section>
-
-      <section className="offer-section" id="offer">
-        <div className="offer-copy">
-          <span className="offer-label">Private local-first beta</span>
-          <h2>Bring the footage.<br/>Keep the project.</h2>
-          <p>Use the verified local workflow while hosted collaboration, billing, and wider provider activation move through their own release gates.</p>
-        </div>
-        <div className="offer-card">
-          <div><span>Beta access</span><strong>$0</strong><small>during the gated build</small></div>
-          <ul>
-            <li>Local source ingest and transcription</li>
-            <li>Reversible timeline editing</li>
-            <li>Captions and vertical review renders</li>
-            <li>Owner-controlled project state</li>
-          </ul>
-          <Link className="offer-button" href="/sign-in">Sign in to Montage <span>→</span></Link>
-        </div>
-      </section>
-
-      <section className="faq-section" id="faq">
-        <div className="section-rule"><span>Questions</span><span>Straight answers</span></div>
-        <div className="faq-layout">
-          <h2>Before you<br/>bring the footage.</h2>
-          <div className="faq-list">
-            {faqs.map(([question, answer], index) => (
-              <details key={question} open={index === 0}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>
+        <section className="proof-section" id="proof">
+          <div className="section-rule"><span>Verified product path</span><span>Protected sources. Reviewable output.</span></div>
+          <div className="proof-heading">
+            <h2>AI prepares.<br/>You decide.</h2>
+            <p>Montage uses intelligence to remove unnecessary editing work while keeping source footage protected and consequential output reviewable.</p>
+          </div>
+          <div className="proof-grid">
+            {proof.map(([n, title, copy]) => (
+              <article className="proof-card" key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="final-cta">
-        <div>
-          <h2>MAKE<br/>THE CUT.</h2>
-          <p>Bring the footage. Montage helps you understand it, find the best moments, shape the edit, and deliver the versions.</p>
-          <Link href="/sign-in">Enter the private beta →</Link>
-        </div>
-      </section>
+        <section className="offer-section" id="offer">
+          <div className="offer-copy">
+            <span className="offer-label">Montage workspace</span>
+            <h2>Bring the footage.<br/>Find the story.</h2>
+            <p>Start with the media you already have. Connect a source, find the strongest moments, shape the cut, review it, and export the version you need.</p>
+          </div>
+          <div className="offer-card">
+            <div><span>Start</span><strong>Now</strong><small>with your footage</small></div>
+            <ul>
+              <li>Google Drive + OneDrive media sources</li>
+              <li>Protected source masters</li>
+              <li>Searchable scenes and transcripts</li>
+              <li>Reversible editing and verified exports</li>
+            </ul>
+            <Link className="offer-button" href="/sign-in">Start a Montage <span>→</span></Link>
+          </div>
+        </section>
 
+        <section className="faq-section" id="faq">
+          <div className="section-rule"><span>Questions</span><span>Straight answers</span></div>
+          <div className="faq-layout">
+            <h2>Before you<br/>bring the footage.</h2>
+            <div className="faq-list">
+              {faqs.map(([question, answer], index) => (
+                <details key={question} open={index === 0}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="final-cta">
+          <div>
+            <p className="final-cta-kicker">Montage /mänˈtäZH/</p>
+            <h2>Many moments.<br/>One story.</h2>
+            <p>Bring the footage. Montage helps you understand it, find the best moments, shape the edit, and deliver the versions.</p>
+            <Link href="/sign-in">Start a Montage →</Link>
+          </div>
+        </section>
       </div>
 
       <footer className="landing-footer">
-        <span>MONTAGE / Yappyverse Studio</span>
-        <span>Owner-controlled video production</span>
+        <span>Montage</span>
+        <span>Protected-source video storytelling</span>
       </footer>
     </main>
   );
