@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./landing.css";
+import "./brand-launch.css";
 import "./timeline.css";
 import "./generation.css";
 import "./footage.css";
@@ -9,23 +10,23 @@ import "./design-system.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "MONTAGE — Find the story in your footage",
-    template: "%s · MONTAGE",
+    default: "Montage — Many moments. One story.",
+    template: "%s · Montage",
   },
   description:
-    "A calm AI video studio for finding moments, shaping edits, creating clips, and delivering finished stories from real footage.",
-  applicationName: "MONTAGE",
-  keywords: ["video editing", "transcript editing", "local-first video", "AI video workflow"],
+    "Turn raw clips into social-ready stories, walkthroughs, reels, and highlight edits. Bring in footage, find the best moments, build the montage, and export anywhere.",
+  applicationName: "Montage",
+  keywords: ["montage maker", "video editing", "AI video workflow", "social reels", "video highlights", "walkthrough video", "Google Drive video", "OneDrive video"],
   openGraph: {
     type: "website",
-    title: "MONTAGE — Find the story in your footage",
-    description: "Search real footage, shape reversible edits, and deliver verified versions from one owner-controlled project.",
-    siteName: "MONTAGE",
+    title: "Montage — Many moments. One story.",
+    description: "Turn scattered footage into one clear story with protected source media, searchable moments, reversible edits, and format-ready exports.",
+    siteName: "Montage",
   },
   twitter: {
-    card: "summary",
-    title: "MONTAGE — Find the story in your footage",
-    description: "A local-first video workspace for source, story, edits, review, and delivery.",
+    card: "summary_large_image",
+    title: "Montage — Many moments. One story.",
+    description: "Bring in your clips. Find the best moments. Build the montage. Export anywhere.",
   },
 };
 
