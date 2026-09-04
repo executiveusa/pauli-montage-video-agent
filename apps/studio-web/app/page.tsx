@@ -43,6 +43,7 @@ const faqs = [
   ["Can Montage use Google Drive or OneDrive?", "Yes. The media library is designed to treat Google Drive and OneDrive as peer source providers feeding one protected asset registry."],
   ["Does it overwrite my source footage?", "No. Source masters are treated as protected. Editing happens on copies, proxies, and derivatives, with review before consequential export or publishing."],
   ["Can some of the editing intelligence run locally?", "Yes. Sage can use LM Studio/Bionic locally for private editorial reasoning while deterministic media tools handle probing, proxying, captions, cuts, and verification."],
+  ["Is Montage fully production-deployed?", "Not yet. The product is in a gated build sprint. Repository-verified capabilities are available now, while the public production runtime, cloud credentials, and provider connection proof remain separate release gates."],
 ] as const;
 
 function BrandMark() {
@@ -75,6 +76,7 @@ export default function HomePage() {
       </header>
 
       <div id="landing-content">
+        <p className="brand-visually-hidden">Illustrated Montage source-to-story workflow</p>
         <MontageHero />
 
         <section className="problem-section" id="why">
@@ -92,7 +94,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="flow-section" id="workflow-detail">
+        <section className="flow-section" id="flow">
           <div className="section-rule"><span>The workflow</span><span>Many moments → one story</span></div>
           <h2 className="flow-title">From scattered clips to one clear story.</h2>
           <div className="flow-steps">
@@ -103,7 +105,7 @@ export default function HomePage() {
         </section>
 
         <section className="proof-section" id="proof">
-          <div className="section-rule"><span>Verified product path</span><span>Protected sources. Reviewable output.</span></div>
+          <div className="section-rule"><span>Verified product path</span><span>Working code, not a concept reel</span></div>
           <div className="proof-heading">
             <h2>AI prepares.<br/>You decide.</h2>
             <p>Montage uses intelligence to remove unnecessary editing work while keeping source footage protected and consequential output reviewable.</p>
@@ -117,12 +119,12 @@ export default function HomePage() {
 
         <section className="offer-section" id="offer">
           <div className="offer-copy">
-            <span className="offer-label">Montage workspace</span>
+            <span className="offer-label">Private beta · $0 during the gated build</span>
             <h2>Bring the footage.<br/>Find the story.</h2>
             <p>Start with the media you already have. Connect a source, find the strongest moments, shape the cut, review it, and export the version you need.</p>
           </div>
           <div className="offer-card">
-            <div><span>Start</span><strong>Now</strong><small>with your footage</small></div>
+            <div><span>Beta access</span><strong>$0</strong><small>during the gated build</small></div>
             <ul>
               <li>Google Drive + OneDrive media sources</li>
               <li>Protected source masters</li>
