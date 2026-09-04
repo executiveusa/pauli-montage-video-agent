@@ -85,7 +85,7 @@ export function MontageHero() {
         <button type="button" onClick={() => setSlide((slide + 1) % arrangements.length)} aria-label="Next montage">→</button>
       </div>
 
-      <div className="brand-workflow-rail" id="flow">
+      <div className="brand-workflow-rail">
         <div><b>01</b><span><strong>Bring in your clips</strong><small>Drive, OneDrive, local footage.</small></span></div>
         <div><b>02</b><span><strong>Find the best moments</strong><small>Search, transcript, scenes, selects.</small></span></div>
         <div><b>03</b><span><strong>Build the montage</strong><small>Sequence, captions, sound, review.</small></span></div>
