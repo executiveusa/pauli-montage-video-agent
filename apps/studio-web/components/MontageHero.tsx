@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const scenes = [
@@ -59,7 +58,7 @@ export function MontageHero() {
       </div>
 
       <div className="brand-hero-content">
-        <p className="brand-hero-kicker">Many moments. One story.</p>
+        <p className="brand-hero-kicker">Private beta · Many moments. One story.</p>
         <h1 id="brand-hero-title">Montage</h1>
         <div className="brand-definition">
           <p className="brand-pronunciation">/mänˈtäZH/</p>
@@ -67,8 +66,8 @@ export function MontageHero() {
         </div>
         <p className="brand-promise">Turn raw clips into social-ready stories, walkthroughs, reels, and highlight edits. Compress a big idea into a powerful 30-second video.</p>
         <div className="brand-hero-actions">
-          <Link className="brand-primary-action" href="/sign-in">Start a Montage <span aria-hidden="true">→</span></Link>
-          <a className="brand-secondary-action" href="#proof">Watch how it works</a>
+          <a className="brand-primary-action" href="#waitlist">Join the private beta <span aria-hidden="true">→</span></a>
+          <a className="brand-secondary-action" href="#proof">See how it works</a>
         </div>
       </div>
 
