@@ -43,7 +43,7 @@ const faqs = [
   ["Can Montage use Google Drive or OneDrive?", "Yes. The media library is designed to treat Google Drive and OneDrive as peer source providers feeding one protected asset registry."],
   ["Does it overwrite my source footage?", "No. Source masters are treated as protected. Editing happens on copies, proxies, and derivatives, with review before consequential export or publishing."],
   ["Can some of the editing intelligence run locally?", "Yes. Sage can use LM Studio/Bionic locally for private editorial reasoning while deterministic media tools handle probing, proxying, captions, cuts, and verification."],
-  ["Is Montage fully production-deployed?", "Not yet. The product is in a gated build sprint. Repository-verified capabilities are available now, while the public production runtime, cloud credentials, and provider connection proof remain separate release gates."],
+  ["Can I use Montage today?", "Montage is in private beta. We are opening access in small groups while the public runtime and provider connections are verified. Join the waitlist and we will invite people in as capacity opens."],
 ] as const;
 
 function BrandMark() {
@@ -66,12 +66,12 @@ export default function HomePage() {
         <nav className="landing-nav-center" aria-label="Primary">
           <a href="#why">Why Montage</a>
           <a href="#flow">Workflow</a>
-          <Link href="/media">Media Library</Link>
-          <a href="#proof">Proof</a>
+          <a href="#proof">How it works</a>
+          <a href="#faq">FAQ</a>
         </nav>
         <div className="landing-nav-actions">
-          <Link href="/sign-in">Sign in</Link>
-          <Link className="nav-pill" href="/sign-in">Start a Montage</Link>
+          <span className="beta-nav-label">Private beta</span>
+          <a className="nav-pill" href="#waitlist">Join the waitlist</a>
         </div>
       </header>
 
@@ -117,21 +117,40 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="offer-section" id="offer">
+        <section className="offer-section" id="waitlist">
           <div className="offer-copy">
-            <span className="offer-label">Private beta · $0 during the gated build</span>
+            <span className="offer-label">Private beta · invitations opening now</span>
             <h2>Bring the footage.<br/>Find the story.</h2>
-            <p>Start with the media you already have. Connect a source, find the strongest moments, shape the cut, review it, and export the version you need.</p>
+            <p>Montage is opening in small groups. Join the waitlist for early access to the protected-source workflow, cloud media library, searchable scenes, Sage-assisted editing, and verified exports.</p>
           </div>
-          <div className="offer-card">
-            <div><span>Beta access</span><strong>$0</strong><small>during the gated build</small></div>
-            <ul>
-              <li>Google Drive + OneDrive media sources</li>
-              <li>Protected source masters</li>
-              <li>Searchable scenes and transcripts</li>
-              <li>Reversible editing and verified exports</li>
-            </ul>
-            <Link className="offer-button" href="/sign-in">Start a Montage <span>→</span></Link>
+          <div className="offer-card waitlist-card">
+            <div><span>Beta access</span><strong>Join</strong><small>no charge while access is gated</small></div>
+            <form className="waitlist-form" name="montage-waitlist" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thanks">
+              <input type="hidden" name="form-name" value="montage-waitlist" />
+              <p className="waitlist-honeypot" aria-hidden="true">
+                <label>Do not fill this out: <input name="bot-field" tabIndex={-1} autoComplete="off" /></label>
+              </p>
+              <label>
+                <span>Name</span>
+                <input name="name" type="text" autoComplete="name" placeholder="Your name" required />
+              </label>
+              <label>
+                <span>Email</span>
+                <input name="email" type="email" autoComplete="email" placeholder="you@company.com" required />
+              </label>
+              <label>
+                <span>What do you want to make?</span>
+                <select name="use-case" defaultValue="social">
+                  <option value="social">Social clips / reels</option>
+                  <option value="documentary">Documentary / long-form</option>
+                  <option value="walkthrough">Walkthrough / product demo</option>
+                  <option value="brand">Brand / campaign content</option>
+                  <option value="other">Something else</option>
+                </select>
+              </label>
+              <button className="offer-button waitlist-submit" type="submit">Join the waitlist <span>→</span></button>
+              <small className="waitlist-note">Early beta invites are reviewed in small batches. No spam.</small>
+            </form>
           </div>
         </section>
 
@@ -152,14 +171,14 @@ export default function HomePage() {
             <p className="final-cta-kicker">Montage /mänˈtäZH/</p>
             <h2>Many moments.<br/>One story.</h2>
             <p>Bring the footage. Montage helps you understand it, find the best moments, shape the edit, and deliver the versions.</p>
-            <Link href="/sign-in">Start a Montage →</Link>
+            <a href="#waitlist">Join the private beta →</a>
           </div>
         </section>
       </div>
 
       <footer className="landing-footer">
         <span>Montage</span>
-        <span>Protected-source video storytelling</span>
+        <span>Protected-source video storytelling · Private beta</span>
       </footer>
     </main>
   );
