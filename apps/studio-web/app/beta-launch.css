@@ -1,0 +1,24 @@
+.beta-nav-label { color:rgba(255,255,255,.72); font-size:11px; text-transform:uppercase; letter-spacing:.11em; font-weight:700; }
+
+.waitlist-card { align-self:start; }
+.waitlist-form { display:grid; gap:14px; margin-top:24px; }
+.waitlist-form label { display:grid; gap:7px; }
+.waitlist-form label>span { font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:750; color:rgba(10,10,10,.66); }
+.waitlist-form input,.waitlist-form select { width:100%; min-height:52px; border:1px solid rgba(10,10,10,.16); border-radius:10px; background:#fff; color:#0a0a0a; padding:0 14px; font:inherit; outline:none; }
+.waitlist-form input:focus,.waitlist-form select:focus { border-color:#0a0a0a; box-shadow:0 0 0 2px rgba(10,10,10,.07); }
+.waitlist-submit { border:0; cursor:pointer; width:100%; margin-top:4px; }
+.waitlist-note { color:rgba(10,10,10,.54); line-height:1.45; }
+.waitlist-honeypot { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
+
+.beta-thanks { min-height:100svh; background:var(--montage-paper); color:var(--montage-ink); display:grid; place-items:center; padding:40px 20px; }
+.beta-thanks-inner { width:min(760px,100%); }
+.beta-thanks-mark { width:54px; height:54px; margin-bottom:46px; }
+.beta-thanks-kicker { text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:750; color:#747474; }
+.beta-thanks h1 { margin:12px 0 20px; font-family:var(--montage-display); font-weight:400; font-size:clamp(4.5rem,11vw,9rem); line-height:.82; letter-spacing:-.055em; }
+.beta-thanks p { max-width:620px; font-size:1.15rem; line-height:1.55; color:#4f4f4f; }
+.beta-thanks a { display:inline-flex; margin-top:28px; min-height:48px; align-items:center; padding:0 16px; border-radius:10px; background:#0a0a0a; color:#fff; text-decoration:none; font-weight:750; }
+
+@media (max-width:620px) {
+  .beta-nav-label { display:none; }
+  .waitlist-form { margin-top:18px; }
+}
