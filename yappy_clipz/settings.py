@@ -58,6 +58,12 @@ class Settings:
     smtp_username: str | None = None
     smtp_password_env: str = "YAPPY_SMTP_PASSWORD"
     smtp_tls: bool = True
+    source_store_path: Path | None = None
+    source_token_encryption_secret_env: str = "YAPPY_SOURCE_TOKEN_ENCRYPTION_SECRET"
+    microsoft_client_id: str | None = None
+    microsoft_client_secret_env: str = "YAPPY_MICROSOFT_CLIENT_SECRET"
+    microsoft_redirect_uri: str | None = None
+    microsoft_oauth_tenant: str = "consumers"
 
     @property
     def resolved_prompt_root(self) -> Path:
@@ -77,6 +83,9 @@ class Settings:
     @property
     def resolved_recovery_outbox_path(self) -> Path:
         return (self.recovery_outbox_path or self.project_root.parent / "recovery-outbox").expanduser().resolve()
+    @property
+    def resolved_source_store_path(self) -> Path:
+        return (self.source_store_path or self.project_root.parent / "sources.json").expanduser().resolve()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -92,6 +101,7 @@ class Settings:
         if storage_backend not in {"local", "s3"}: storage_backend = "local"
         storage_root = os.environ.get("YAPPY_STORAGE_ROOT")
         account_store_path = os.environ.get("YAPPY_ACCOUNT_STORE_PATH")
+        source_store_path = os.environ.get("YAPPY_SOURCE_STORE_PATH")
         recovery_delivery = os.environ.get("YAPPY_RECOVERY_DELIVERY", "disabled").strip().lower()
         if recovery_delivery not in {"disabled", "file", "smtp"}: recovery_delivery = "disabled"
         origins = tuple(value.strip() for value in os.environ.get("YAPPY_CORS_ORIGINS", "").split(",") if value.strip())
@@ -114,4 +124,10 @@ class Settings:
             recovery_delivery=recovery_delivery,recovery_outbox_path=Path(os.environ["YAPPY_RECOVERY_OUTBOX_PATH"]).expanduser().resolve() if os.environ.get("YAPPY_RECOVERY_OUTBOX_PATH") else None,
             recovery_reset_base_url=os.environ.get("YAPPY_RECOVERY_RESET_BASE_URL"),smtp_host=os.environ.get("YAPPY_SMTP_HOST"),smtp_port=_env_int("YAPPY_SMTP_PORT",587,1,65535),
             smtp_sender=os.environ.get("YAPPY_SMTP_SENDER"),smtp_username=os.environ.get("YAPPY_SMTP_USERNAME"),smtp_password_env=os.environ.get("YAPPY_SMTP_PASSWORD_ENV","YAPPY_SMTP_PASSWORD"),smtp_tls=_env_bool("YAPPY_SMTP_TLS",True),
+            source_store_path=Path(source_store_path).expanduser().resolve() if source_store_path else None,
+            source_token_encryption_secret_env=os.environ.get("YAPPY_SOURCE_TOKEN_ENCRYPTION_SECRET_ENV","YAPPY_SOURCE_TOKEN_ENCRYPTION_SECRET"),
+            microsoft_client_id=os.environ.get("YAPPY_MICROSOFT_CLIENT_ID"),
+            microsoft_client_secret_env=os.environ.get("YAPPY_MICROSOFT_CLIENT_SECRET_ENV","YAPPY_MICROSOFT_CLIENT_SECRET"),
+            microsoft_redirect_uri=os.environ.get("YAPPY_MICROSOFT_REDIRECT_URI"),
+            microsoft_oauth_tenant=os.environ.get("YAPPY_MICROSOFT_OAUTH_TENANT","consumers"),
         )
