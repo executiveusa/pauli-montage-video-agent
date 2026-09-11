@@ -6,8 +6,11 @@
 .waitlist-form label>span { font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:750; color:rgba(10,10,10,.66); }
 .waitlist-form input,.waitlist-form select { width:100%; min-height:52px; border:1px solid rgba(10,10,10,.16); border-radius:10px; background:#fff; color:#0a0a0a; padding:0 14px; font:inherit; outline:none; }
 .waitlist-form input:focus,.waitlist-form select:focus { border-color:#0a0a0a; box-shadow:0 0 0 2px rgba(10,10,10,.07); }
+.waitlist-form input:disabled,.waitlist-form select:disabled { opacity:.64; cursor:not-allowed; }
 .waitlist-submit { border:0; cursor:pointer; width:100%; margin-top:4px; }
+.waitlist-submit:disabled { cursor:wait; opacity:.68; }
 .waitlist-note { color:rgba(10,10,10,.54); line-height:1.45; }
+.waitlist-error { margin:0; color:#8a241f; font-size:.9rem; line-height:1.45; }
 .waitlist-honeypot { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
 
 .beta-thanks { min-height:100svh; background:var(--montage-paper); color:var(--montage-ink); display:grid; place-items:center; padding:40px 20px; }
