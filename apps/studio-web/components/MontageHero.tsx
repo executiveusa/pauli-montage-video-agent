@@ -41,11 +41,29 @@ const proofPoints = [
 
 export function MontageHero() {
   const [slide, setSlide] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [autoAdvanceAllowed, setAutoAdvanceAllowed] = useState(false);
 
   useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const compactViewport = window.matchMedia("(max-width: 620px)");
+    const updateMotionPolicy = () => setAutoAdvanceAllowed(!reducedMotion.matches && !compactViewport.matches);
+
+    updateMotionPolicy();
+    reducedMotion.addEventListener("change", updateMotionPolicy);
+    compactViewport.addEventListener("change", updateMotionPolicy);
+
+    return () => {
+      reducedMotion.removeEventListener("change", updateMotionPolicy);
+      compactViewport.removeEventListener("change", updateMotionPolicy);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (paused || !autoAdvanceAllowed) return;
     const timer = window.setInterval(() => setSlide((value) => (value + 1) % arrangements.length), 6500);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [paused, autoAdvanceAllowed]);
 
   const ordered = arrangements[slide].map((index) => scenes[index]);
 
@@ -88,10 +106,21 @@ export function MontageHero() {
       <div className="brand-hero-controls" aria-label="Hero slides">
         <button type="button" onClick={() => setSlide((slide - 1 + arrangements.length) % arrangements.length)} aria-label="Previous montage">←</button>
         <span>{String(slide + 1).padStart(2, "0")} / {String(arrangements.length).padStart(2, "0")}</span>
+        {autoAdvanceAllowed && (
+          <button
+            className="brand-hero-pause"
+            type="button"
+            aria-pressed={paused}
+            aria-label={paused ? "Resume hero montage" : "Pause hero montage"}
+            onClick={() => setPaused((value) => !value)}
+          >
+            {paused ? "Play" : "Pause"}
+          </button>
+        )}
+        <button type="button" onClick={() => setSlide((slide + 1) % arrangements.length)} aria-label="Next montage">→</button>
         <div className="brand-hero-dots" aria-hidden="true">
           {arrangements.map((_, index) => <i key={index} className={index === slide ? "active" : ""} />)}
         </div>
-        <button type="button" onClick={() => setSlide((slide + 1) % arrangements.length)} aria-label="Next montage">→</button>
       </div>
 
       <div className="brand-workflow-rail" aria-label="Montage workflow">
