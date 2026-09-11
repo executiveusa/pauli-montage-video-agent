@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BetaWaitlistForm } from "../components/BetaWaitlistForm";
 import { MontageHero } from "../components/MontageHero";
 
 const problems = [
@@ -125,32 +126,7 @@ export default function HomePage() {
           </div>
           <div className="offer-card waitlist-card">
             <div><span>Beta access</span><strong>Request</strong><small>no charge while access is gated</small></div>
-            <form className="waitlist-form" name="montage-waitlist" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thanks">
-              <input type="hidden" name="form-name" value="montage-waitlist" />
-              <p className="waitlist-honeypot" aria-hidden="true">
-                <label>Do not fill this out: <input name="bot-field" tabIndex={-1} autoComplete="off" /></label>
-              </p>
-              <label>
-                <span>Name</span>
-                <input name="name" type="text" autoComplete="name" placeholder="Your name" required />
-              </label>
-              <label>
-                <span>Email</span>
-                <input name="email" type="email" autoComplete="email" placeholder="you@company.com" required />
-              </label>
-              <label>
-                <span>What do you want to make?</span>
-                <select name="use-case" defaultValue="social">
-                  <option value="social">Social clips / reels</option>
-                  <option value="documentary">Documentary / long-form</option>
-                  <option value="walkthrough">Walkthrough / product demo</option>
-                  <option value="brand">Brand / campaign content</option>
-                  <option value="other">Something else</option>
-                </select>
-              </label>
-              <button className="offer-button waitlist-submit" type="submit">Request beta access <span>→</span></button>
-              <small className="waitlist-note">Early beta invites are reviewed in small batches. No spam.</small>
-            </form>
+            <BetaWaitlistForm />
           </div>
         </section>
 
