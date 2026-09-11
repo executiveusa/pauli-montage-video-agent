@@ -33,7 +33,7 @@ const arrangements = [
 ] as const;
 
 const proofPoints = [
-  "Search speech + visuals",
+  "Transcript + scene evidence",
   "Protected source masters",
   "Reversible edits",
   "Verified exports",
@@ -87,7 +87,7 @@ export function MontageHero() {
         <p className="brand-hero-name" aria-hidden="true">Montage</p>
         <h1 id="brand-hero-title">Turn hours of raw footage into one finished story.</h1>
         <p className="brand-promise">
-          Search what was said and seen. Build selects, edit reversibly, and export verified versions while your source masters stay protected.
+          Review transcripts and indexed scene evidence. Build selects, edit reversibly, and export verified versions while your source masters stay protected.
         </p>
         <div className="brand-hero-actions">
           <a className="brand-primary-action" href="#waitlist">Request beta access <span aria-hidden="true">→</span></a>
@@ -125,7 +125,7 @@ export function MontageHero() {
 
       <div className="brand-workflow-rail" aria-label="Montage workflow">
         <div><b>01</b><span><strong>Bring in your footage</strong><small>Drive, OneDrive, or local sources.</small></span></div>
-        <div><b>02</b><span><strong>Find the moments</strong><small>Search transcripts, scenes, and selects.</small></span></div>
+        <div><b>02</b><span><strong>Find the moments</strong><small>Review transcripts, scene evidence, and selects.</small></span></div>
         <div><b>03</b><span><strong>Shape the story</strong><small>Sequence, captions, sound, and review.</small></span></div>
         <div><b>04</b><span><strong>Verify the export</strong><small>Review the result before calling it finished.</small></span></div>
       </div>
