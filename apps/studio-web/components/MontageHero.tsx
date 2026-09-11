@@ -32,13 +32,38 @@ const arrangements = [
   [1, 3, 0, 4, 2],
 ] as const;
 
+const proofPoints = [
+  "Transcript + scene evidence",
+  "Protected source masters",
+  "Reversible edits",
+  "Verified exports",
+] as const;
+
 export function MontageHero() {
   const [slide, setSlide] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [autoAdvanceAllowed, setAutoAdvanceAllowed] = useState(false);
 
   useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const compactViewport = window.matchMedia("(max-width: 620px)");
+    const updateMotionPolicy = () => setAutoAdvanceAllowed(!reducedMotion.matches && !compactViewport.matches);
+
+    updateMotionPolicy();
+    reducedMotion.addEventListener("change", updateMotionPolicy);
+    compactViewport.addEventListener("change", updateMotionPolicy);
+
+    return () => {
+      reducedMotion.removeEventListener("change", updateMotionPolicy);
+      compactViewport.removeEventListener("change", updateMotionPolicy);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (paused || !autoAdvanceAllowed) return;
     const timer = window.setInterval(() => setSlide((value) => (value + 1) % arrangements.length), 6500);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [paused, autoAdvanceAllowed]);
 
   const ordered = arrangements[slide].map((index) => scenes[index]);
 
@@ -58,37 +83,51 @@ export function MontageHero() {
       </div>
 
       <div className="brand-hero-content">
-        <p className="brand-hero-kicker">Private beta · Many moments. One story.</p>
-        <h1 id="brand-hero-title">Montage</h1>
-        <div className="brand-definition">
-          <p className="brand-pronunciation">/mänˈtäZH/</p>
-          <p>A montage is <strong>an artistic technique or process of combining multiple separate images, video clips, or pieces of media into a single, unified composition.</strong></p>
-        </div>
-        <p className="brand-promise">Turn raw clips into social-ready stories, walkthroughs, reels, and highlight edits. Compress a big idea into a powerful 30-second video.</p>
+        <p className="brand-hero-kicker">AI-assisted video editing · Private beta</p>
+        <p className="brand-hero-name" aria-hidden="true">Montage</p>
+        <h1 id="brand-hero-title">Turn hours of raw footage into one finished story.</h1>
+        <p className="brand-promise">
+          Review transcripts and indexed scene evidence. Build selects, edit reversibly, and export verified versions while your source masters stay protected.
+        </p>
         <div className="brand-hero-actions">
-          <a className="brand-primary-action" href="#waitlist">Join the private beta <span aria-hidden="true">→</span></a>
-          <a className="brand-secondary-action" href="#proof">See how it works</a>
+          <a className="brand-primary-action" href="#waitlist">Request beta access <span aria-hidden="true">→</span></a>
+          <a className="brand-secondary-action" href="#proof">See the product path</a>
+        </div>
+        <div className="brand-definition" aria-label="Montage brand definition">
+          <p className="brand-pronunciation">Montage /mänˈtäZH/</p>
+          <p><strong>Many moments. One story.</strong> Separate clips, scenes, and media assembled into one coherent composition.</p>
         </div>
       </div>
 
-      <div className="brand-output-row" aria-label="Common Montage outputs">
-        <span>9:16 Reels</span><span>16:9 Video</span><span>1:1 Social</span><span>Captions</span><span>Highlights</span><span>Walkthroughs</span>
+      <div className="brand-output-row" aria-label="Verified Montage workflow qualities">
+        {proofPoints.map((point) => <span key={point}>{point}</span>)}
       </div>
 
       <div className="brand-hero-controls" aria-label="Hero slides">
         <button type="button" onClick={() => setSlide((slide - 1 + arrangements.length) % arrangements.length)} aria-label="Previous montage">←</button>
         <span>{String(slide + 1).padStart(2, "0")} / {String(arrangements.length).padStart(2, "0")}</span>
+        {autoAdvanceAllowed && (
+          <button
+            className="brand-hero-pause"
+            type="button"
+            aria-pressed={paused}
+            aria-label={paused ? "Resume hero montage" : "Pause hero montage"}
+            onClick={() => setPaused((value) => !value)}
+          >
+            {paused ? "Play" : "Pause"}
+          </button>
+        )}
+        <button type="button" onClick={() => setSlide((slide + 1) % arrangements.length)} aria-label="Next montage">→</button>
         <div className="brand-hero-dots" aria-hidden="true">
           {arrangements.map((_, index) => <i key={index} className={index === slide ? "active" : ""} />)}
         </div>
-        <button type="button" onClick={() => setSlide((slide + 1) % arrangements.length)} aria-label="Next montage">→</button>
       </div>
 
-      <div className="brand-workflow-rail">
-        <div><b>01</b><span><strong>Bring in your clips</strong><small>Drive, OneDrive, local footage.</small></span></div>
-        <div><b>02</b><span><strong>Find the best moments</strong><small>Search, transcript, scenes, selects.</small></span></div>
-        <div><b>03</b><span><strong>Build the montage</strong><small>Sequence, captions, sound, review.</small></span></div>
-        <div><b>04</b><span><strong>Export anywhere</strong><small>Social, walkthroughs, highlights.</small></span></div>
+      <div className="brand-workflow-rail" aria-label="Montage workflow">
+        <div><b>01</b><span><strong>Bring in your footage</strong><small>Drive, OneDrive, or local sources.</small></span></div>
+        <div><b>02</b><span><strong>Find the moments</strong><small>Review transcripts, scene evidence, and selects.</small></span></div>
+        <div><b>03</b><span><strong>Shape the story</strong><small>Sequence, captions, sound, and review.</small></span></div>
+        <div><b>04</b><span><strong>Verify the export</strong><small>Review the result before calling it finished.</small></span></div>
       </div>
     </section>
   );

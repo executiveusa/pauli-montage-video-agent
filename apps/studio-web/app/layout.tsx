@@ -11,23 +11,26 @@ import "./design-system.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Montage — Many moments. One story.",
+    default: "Montage — Turn raw footage into one finished story",
     template: "%s · Montage",
   },
   description:
-    "Turn raw clips into social-ready stories, walkthroughs, reels, and highlight edits. Montage is opening in private beta.",
+    "AI-assisted video editing for real footage. Review transcripts and indexed scene evidence, protect source masters, edit reversibly, and request private beta access.",
   applicationName: "Montage",
-  keywords: ["montage maker", "video editing", "AI video workflow", "social reels", "video highlights", "walkthrough video", "Google Drive video", "OneDrive video"],
+  keywords: ["video editing", "AI video editor", "video transcription", "scene indexing", "documentary footage", "Google Drive video", "OneDrive video", "protected source media"],
+  icons: {
+    icon: "/brand/montage-mark.svg",
+  },
   openGraph: {
     type: "website",
-    title: "Montage — Many moments. One story.",
-    description: "Turn scattered footage into one clear story. Join the Montage private beta.",
+    title: "Montage — Turn raw footage into one finished story",
+    description: "Review transcript and scene evidence, build the edit, keep source masters protected, and verify the result. Private beta.",
     siteName: "Montage",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Montage — Many moments. One story.",
-    description: "Bring in your clips. Find the best moments. Build the montage. Export anywhere. Private beta now opening.",
+    title: "Montage — Turn raw footage into one finished story",
+    description: "Many moments. One story. AI-assisted editing for real footage, now opening in private beta.",
   },
 };
 

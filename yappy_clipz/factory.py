@@ -12,6 +12,7 @@ from .generation import GenerationService
 from .generation_actions import GenerationCapabilityRegistry
 from .hosted_actions import HostedCapabilityRegistry
 from .icm_runtime import IcmRuntime
+from .onedrive import JsonSourceConnectionStore,OneDriveService,PostgresSourceConnectionStore,SecretCipher
 from .onedrive_actions import OneDriveActionDispatcher,OneDriveCapabilityRegistry
 from .operations import JsonOperationStore,PostgresOperationStore
 from .operations_actions import OperationsCapabilityRegistry
@@ -56,4 +57,4 @@ def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None
  operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=BudgetedOperationsService(operation_store);router=OmniRouter(provider_catalog);generation=GenerationService(repository=active_service.repository,catalog=provider_catalog,router=router,operations=operations,prompts=prompt_locker,fal=fal)
  rendering=RenderService(repository=active_service.repository,storage=storage,assets=assets,operations=operations,runner=render_runner,ffmpeg_binary=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe_binary=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"),workspace_root=resolved.project_root.parent/"renders")
  dispatcher=OneDriveActionDispatcher(service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering)
- return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering,dispatcher=dispatcher)
+ return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,sources=sources,operations=operations,router=router,generation=generation,rendering=rendering,dispatcher=dispatcher)

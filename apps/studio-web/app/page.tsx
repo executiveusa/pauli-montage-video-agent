@@ -5,7 +5,7 @@ const problems = [
   {
     n: "01",
     title: "Hours of footage. No map.",
-    copy: "Montage turns source media into searchable scenes so you can find the moment instead of scrubbing the timeline blind.",
+    copy: "Montage turns source media into time-coded transcript and scene evidence so you can find useful moments without scrubbing the timeline blind.",
   },
   {
     n: "02",
@@ -15,7 +15,7 @@ const problems = [
   {
     n: "03",
     title: "AI tools create more tabs, not less work.",
-    copy: "Use AI where it helps — transcription, visual search, selects, cleanup, B-roll, captions — inside one understandable production flow.",
+    copy: "Use AI where it helps — transcription, scene indexing, selects, cleanup, B-roll, captions — inside one understandable production flow.",
   },
   {
     n: "04",
@@ -26,14 +26,14 @@ const problems = [
 
 const flow = [
   ["01", "Bring in your clips", "Google Drive, OneDrive, local footage, interviews, screen recordings, audio, images, and references."],
-  ["02", "Find the best moments", "Search what was said and what was seen. Build selects from real moments instead of hunting the timeline."],
+  ["02", "Find the best moments", "Review time-coded transcripts and indexed scene evidence. Build selects from real moments instead of hunting the timeline."],
   ["03", "Build the montage", "Shape the sequence, captions, framing, sound, graphics, and supporting media while source masters stay protected."],
   ["04", "Export anywhere", "Review, verify, export, repurpose, and keep the project ready for the next cut."],
 ];
 
 const proof = [
   ["01", "Bring real footage", "Use protected source media and keep the original immutable while Montage prepares working copies and proxies."],
-  ["02", "Understand the footage", "Create time-coded transcript and scene evidence so the library becomes searchable instead of opaque."],
+  ["02", "Understand the footage", "Create time-coded transcript and scene evidence so the library becomes navigable instead of opaque."],
   ["03", "Edit reversibly", "Cut, split, undo, redo, reopen, and keep captions synchronized with the canonical timeline."],
   ["04", "Verify delivery", "Render platform-ready reviews and validate the resulting media before calling it finished."],
 ] as const;
@@ -43,7 +43,7 @@ const faqs = [
   ["Can Montage use Google Drive or OneDrive?", "Yes. The media library is designed to treat Google Drive and OneDrive as peer source providers feeding one protected asset registry."],
   ["Does it overwrite my source footage?", "No. Source masters are treated as protected. Editing happens on copies, proxies, and derivatives, with review before consequential export or publishing."],
   ["Can some of the editing intelligence run locally?", "Yes. Sage can use LM Studio/Bionic locally for private editorial reasoning while deterministic media tools handle probing, proxying, captions, cuts, and verification."],
-  ["Can I use Montage today?", "Montage is in private beta. We are opening access in small groups while the public runtime and provider connections are verified. Join the waitlist and we will invite people in as capacity opens."],
+  ["Can I use Montage today?", "Montage is in private beta. We are opening access in small groups while the public runtime and provider connections are verified. Request beta access and we will invite people in as capacity opens."],
 ] as const;
 
 function BrandMark() {
@@ -71,7 +71,7 @@ export default function HomePage() {
         </nav>
         <div className="landing-nav-actions">
           <span className="beta-nav-label">Private beta</span>
-          <a className="nav-pill" href="#waitlist">Join the waitlist</a>
+          <a className="nav-pill" href="#waitlist">Request beta access</a>
         </div>
       </header>
 
@@ -105,7 +105,7 @@ export default function HomePage() {
         </section>
 
         <section className="proof-section" id="proof">
-          <div className="section-rule"><span>Verified product path</span><span>Working code, not a concept reel</span></div>
+          <div className="section-rule"><span>Verified product path</span><span>Real editing infrastructure · private beta</span></div>
           <div className="proof-heading">
             <h2>AI prepares.<br/>You decide.</h2>
             <p>Montage uses intelligence to remove unnecessary editing work while keeping source footage protected and consequential output reviewable.</p>
@@ -119,12 +119,12 @@ export default function HomePage() {
 
         <section className="offer-section" id="waitlist">
           <div className="offer-copy">
-            <span className="offer-label">Private beta · invitations opening now</span>
+            <span className="offer-label">Private beta · invitations opening in small groups</span>
             <h2>Bring the footage.<br/>Find the story.</h2>
-            <p>Montage is opening in small groups. Join the waitlist for early access to the protected-source workflow, cloud media library, searchable scenes, Sage-assisted editing, and verified exports.</p>
+            <p>Request early access to the protected-source workflow, cloud media library, time-coded transcript and scene evidence, Sage-assisted editing, and verified exports.</p>
           </div>
           <div className="offer-card waitlist-card">
-            <div><span>Beta access</span><strong>Join</strong><small>no charge while access is gated</small></div>
+            <div><span>Beta access</span><strong>Request</strong><small>no charge while access is gated</small></div>
             <form className="waitlist-form" name="montage-waitlist" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thanks">
               <input type="hidden" name="form-name" value="montage-waitlist" />
               <p className="waitlist-honeypot" aria-hidden="true">
@@ -148,7 +148,7 @@ export default function HomePage() {
                   <option value="other">Something else</option>
                 </select>
               </label>
-              <button className="offer-button waitlist-submit" type="submit">Join the waitlist <span>→</span></button>
+              <button className="offer-button waitlist-submit" type="submit">Request beta access <span>→</span></button>
               <small className="waitlist-note">Early beta invites are reviewed in small batches. No spam.</small>
             </form>
           </div>
@@ -171,7 +171,7 @@ export default function HomePage() {
             <p className="final-cta-kicker">Montage /mänˈtäZH/</p>
             <h2>Many moments.<br/>One story.</h2>
             <p>Bring the footage. Montage helps you understand it, find the best moments, shape the edit, and deliver the versions.</p>
-            <a href="#waitlist">Join the private beta →</a>
+            <a href="#waitlist">Request beta access →</a>
           </div>
         </section>
       </div>
