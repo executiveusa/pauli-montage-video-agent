@@ -17,8 +17,8 @@ export default function ThanksPage() {
       <div className="beta-thanks-inner">
         <BrandMark />
         <p className="beta-thanks-kicker">Montage · Private beta</p>
-        <h1>You’re on the list.</h1>
-        <p>We’re opening Montage in small groups while we finish production connection proof for the cloud media workflow. We’ll use the email you submitted when your beta invite is ready.</p>
+        <h1>Request received.</h1>
+        <p>We’re opening Montage in small groups while we finish production connection proof for the cloud media workflow. We’ll use the email you submitted if your beta request is selected for an opening.</p>
         <Link href="/">Back to Montage</Link>
       </div>
     </main>
