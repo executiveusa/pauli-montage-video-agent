@@ -15,16 +15,16 @@ export const metadata: Metadata = {
     template: "%s · Montage",
   },
   description:
-    "AI-assisted video editing for real footage. Search what was said and seen, protect source masters, edit reversibly, and request private beta access.",
+    "AI-assisted video editing for real footage. Review transcripts and indexed scene evidence, protect source masters, edit reversibly, and request private beta access.",
   applicationName: "Montage",
-  keywords: ["video editing", "AI video editor", "searchable footage", "video transcription", "video scene search", "Google Drive video", "OneDrive video", "protected source media"],
+  keywords: ["video editing", "AI video editor", "video transcription", "scene indexing", "documentary footage", "Google Drive video", "OneDrive video", "protected source media"],
   icons: {
     icon: "/brand/montage-mark.svg",
   },
   openGraph: {
     type: "website",
     title: "Montage — Turn raw footage into one finished story",
-    description: "Search what was said and seen, build the edit, keep source masters protected, and verify the result. Private beta.",
+    description: "Review transcript and scene evidence, build the edit, keep source masters protected, and verify the result. Private beta.",
     siteName: "Montage",
   },
   twitter: {
