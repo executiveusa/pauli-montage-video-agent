@@ -5,7 +5,7 @@ const problems = [
   {
     n: "01",
     title: "Hours of footage. No map.",
-    copy: "Montage turns source media into searchable scenes so you can find the moment instead of scrubbing the timeline blind.",
+    copy: "Montage turns source media into time-coded transcript and scene evidence so you can find useful moments without scrubbing the timeline blind.",
   },
   {
     n: "02",
@@ -15,7 +15,7 @@ const problems = [
   {
     n: "03",
     title: "AI tools create more tabs, not less work.",
-    copy: "Use AI where it helps — transcription, visual search, selects, cleanup, B-roll, captions — inside one understandable production flow.",
+    copy: "Use AI where it helps — transcription, scene indexing, selects, cleanup, B-roll, captions — inside one understandable production flow.",
   },
   {
     n: "04",
@@ -26,14 +26,14 @@ const problems = [
 
 const flow = [
   ["01", "Bring in your clips", "Google Drive, OneDrive, local footage, interviews, screen recordings, audio, images, and references."],
-  ["02", "Find the best moments", "Search what was said and what was seen. Build selects from real moments instead of hunting the timeline."],
+  ["02", "Find the best moments", "Review time-coded transcripts and indexed scene evidence. Build selects from real moments instead of hunting the timeline."],
   ["03", "Build the montage", "Shape the sequence, captions, framing, sound, graphics, and supporting media while source masters stay protected."],
   ["04", "Export anywhere", "Review, verify, export, repurpose, and keep the project ready for the next cut."],
 ];
 
 const proof = [
   ["01", "Bring real footage", "Use protected source media and keep the original immutable while Montage prepares working copies and proxies."],
-  ["02", "Understand the footage", "Create time-coded transcript and scene evidence so the library becomes searchable instead of opaque."],
+  ["02", "Understand the footage", "Create time-coded transcript and scene evidence so the library becomes navigable instead of opaque."],
   ["03", "Edit reversibly", "Cut, split, undo, redo, reopen, and keep captions synchronized with the canonical timeline."],
   ["04", "Verify delivery", "Render platform-ready reviews and validate the resulting media before calling it finished."],
 ] as const;
@@ -121,7 +121,7 @@ export default function HomePage() {
           <div className="offer-copy">
             <span className="offer-label">Private beta · invitations opening in small groups</span>
             <h2>Bring the footage.<br/>Find the story.</h2>
-            <p>Request early access to the protected-source workflow, cloud media library, searchable scenes, Sage-assisted editing, and verified exports.</p>
+            <p>Request early access to the protected-source workflow, cloud media library, time-coded transcript and scene evidence, Sage-assisted editing, and verified exports.</p>
           </div>
           <div className="offer-card waitlist-card">
             <div><span>Beta access</span><strong>Request</strong><small>no charge while access is gated</small></div>
