@@ -82,6 +82,8 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
         except Exception as exc: raise _http_error(exc) from exc
     @app.post("/api/v1/accounts",status_code=201)
     def sign_up(payload:SignUpRequest):
+        allowed={e.strip().lower() for e in os.environ.get("YAPPY_SIGNUP_ALLOWED_EMAILS","").split(",") if e.strip()}
+        if allowed and payload.email.strip().lower() not in allowed: raise HTTPException(status_code=403,detail="sign-up is invite-only")
         try:return active_runtime.accounts.sign_up(email=payload.email,password=payload.password,display_name=payload.display_name)
         except Exception as exc: raise _http_error(exc) from exc
     @app.post("/api/v1/accounts/recovery",status_code=202)

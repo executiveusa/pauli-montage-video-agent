@@ -12,7 +12,7 @@ COPY requirements.txt requirements-studio.txt ./
 RUN pip install --no-cache-dir -r requirements-studio.txt
 COPY . .
 COPY --from=remotion /app/remotion-composer/node_modules /app/remotion-composer/node_modules
-RUN useradd --create-home --uid 10001 app && mkdir -p /data/projects /app/output && chown -R app:app /data /app
+RUN useradd --create-home --uid 10001 app && mkdir -p /data/projects /data/objects /app/output && chown -R app:app /data /app
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD curl -fsS http://127.0.0.1:8000/healthz || exit 1

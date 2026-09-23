@@ -1,0 +1,120 @@
+# Montage on prod-city-1 (Coolify "Docker Compose" resource).
+# Images are built by .github/workflows/montage-images.yml; the box only pulls.
+# Coolify magic vars (SERVICE_PASSWORD_*, SERVICE_BASE64_*) are generated and stored by Coolify.
+# Domains are assigned in the Coolify UI: web -> montage.<ip>.sslip.io:3000, api -> montage-api.<ip>.sslip.io:8000
+services:
+  web:
+    image: ghcr.io/executiveusa/montage-web:prod-city-1
+    restart: unless-stopped
+    environment:
+      YAPPY_STUDIO_API_URL: http://api:8000
+      YAPPY_DEFAULT_TENANT: owner-studio
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M }
+
+  api:
+    image: ghcr.io/executiveusa/montage-api:prod-city-1
+    restart: unless-stopped
+    command: ["sh", "-c", "python scripts/apply_studio_migrations.py && exec uvicorn yappy_clipz.api:app --host 0.0.0.0 --port 8000 --workers 2"]
+    environment: &appenv
+      YAPPY_PROJECT_ROOT: /data/projects
+      REDIS_URL: redis://redis:6379/0
+      YAPPY_AUTH_MODE: hosted
+      YAPPY_AUTH_SIGNING_SECRET: ${SERVICE_BASE64_64_AUTHSIGNING}
+      YAPPY_REPOSITORY_BACKEND: postgres
+      YAPPY_DATABASE_URL: postgresql://montage:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/montage
+      # Object storage: local disk on a named volume for phase 1 (MinIO stopped shipping
+      # images Oct 2025). Switch to s3 + R2 by setting YAPPY_STORAGE_BACKEND=s3 and bucket vars.
+      YAPPY_STORAGE_BACKEND: local
+      YAPPY_STORAGE_ROOT: /data/objects
+      YAPPY_STORAGE_SIGNING_SECRET: ${SERVICE_BASE64_64_STORAGESIGNING}
+      YAPPY_SOURCE_TOKEN_ENCRYPTION_SECRET: ${SERVICE_BASE64_64_SOURCETOKEN}
+      YAPPY_SIGNUP_ALLOWED_EMAILS: ${YAPPY_SIGNUP_ALLOWED_EMAILS:-executiveusa@gmail.com}
+      YAPPY_RECOVERY_DELIVERY: disabled
+      YAPPY_MAX_UPLOAD_BYTES: "2147483648"
+    volumes:
+      - montage_projects:/data/projects
+      - montage_objects:/data/objects
+      - montage_output:/app/output
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 1536M }
+
+  worker:
+    image: ghcr.io/executiveusa/montage-api:prod-city-1
+    restart: unless-stopped
+    command: ["python", "-m", "yappy_clipz.worker"]
+    environment: *appenv
+    volumes:
+      - montage_projects:/data/projects
+      - montage_objects:/data/objects
+      - montage_output:/app/output
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,redis;redis.Redis.from_url(os.environ['REDIS_URL']).ping()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 2048M }
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: montage
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+      POSTGRES_DB: montage
+    volumes:
+      - montage_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U montage -d montage"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M }
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - montage_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 192M }
+
+volumes:
+  montage_projects:
+  montage_output:
+  montage_pg:
+  montage_redis:
+  montage_objects:

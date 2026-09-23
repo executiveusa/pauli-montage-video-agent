@@ -1,0 +1,44 @@
+name: montage-images
+# Builds the Montage API/worker and studio-web images in CI and pushes them to GHCR.
+# prod-city-1 only pulls finished images (house rule: nothing builds on the box).
+on:
+  push:
+    branches: [deploy/prod-city-1]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: montage-images-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: montage-api
+            dockerfile: Dockerfile
+          - name: montage-web
+            dockerfile: apps/studio-web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/executiveusa/${{ matrix.name }}:prod-city-1
+            ghcr.io/executiveusa/${{ matrix.name }}:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
