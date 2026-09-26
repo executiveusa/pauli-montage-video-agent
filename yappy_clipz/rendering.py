@@ -85,7 +85,7 @@ def _asset_map(project: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {item["id"]: item for item in project.get("assets", [])}
 
 
-def _asset_uri(asset: dict[str, Any]) -> str:
+def _asset_uri(asset: dict[str, Any], *, mount_visible: bool = False) -> str:
     storage = asset.get("storage", {})
     if storage.get("url"):
         return str(storage["url"])
@@ -93,7 +93,7 @@ def _asset_uri(asset: dict[str, Any]) -> str:
     if not key:
         raise RenderError(f"asset {asset.get('id')} has no usable storage reference")
     if str(key).startswith("medialibrary://"):
-        if os.environ.get("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE") == "1":
+        if mount_visible:
             host_path = (asset.get("extensions", {}).get("medialibrary") or {}).get("hostPath")
             if host_path:
                 return str(host_path)
@@ -121,6 +121,7 @@ class RenderService:
         ffmpeg_binary: str = "ffmpeg",
         ffprobe_binary: str = "ffprobe",
         workspace_root: Path | str = ".yappy-clipz/renders",
+        media_library_mount_visible: bool = False,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -130,6 +131,7 @@ class RenderService:
         self.ffmpeg_binary = ffmpeg_binary
         self.ffprobe_binary = ffprobe_binary
         self.workspace_root = Path(workspace_root).expanduser().resolve()
+        self.media_library_mount_visible = media_library_mount_visible
 
     def plan(self, *, tenant_id: str, project_id: str, preset_id: str, mode: str) -> dict[str, Any]:
         project = self.repository.get(tenant_id, project_id)
@@ -161,7 +163,7 @@ class RenderService:
                     "trackType": track["type"],
                     "itemId": item["id"],
                     "assetId": asset_id,
-                    "uri": _asset_uri(asset),
+                    "uri": _asset_uri(asset, mount_visible=self.media_library_mount_visible),
                     "checksum": checksum,
                     "startSeconds": item.get("startSeconds", 0),
                     "durationSeconds": item["durationSeconds"],

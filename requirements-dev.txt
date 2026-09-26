@@ -2,3 +2,5 @@
 -r requirements.txt
 pytest>=8.0
 pytest-asyncio>=0.23
+httpx>=0.24
+mcp<2  # tests/studio/test_application_services.py imports mcp.server.fastmcp (v1 API)

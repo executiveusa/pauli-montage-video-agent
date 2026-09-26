@@ -51,7 +51,7 @@ _LIBRARY_CAPS = {
         "library.media.register",
         "Register library footage",
         "Register media library clips into a project as reference assets; never copies, moves, or deletes source footage.",
-        scopes=["asset:write", "project:read"],
+        scopes=["asset:write", "project:write"],
         risk="medium",
         idempotency="supported",
         stage="01_second_brain_ingest",
@@ -106,10 +106,22 @@ class MediaLibraryActionDispatcher(OneDriveActionDispatcher):
         except MediaLibraryError as exc:
             raise ActionProblem("invalid_request", str(exc), 400) from exc
 
+    def _require_owner(self, context: ActionContext) -> str:
+        # The media library snapshot is the owner's private index: account
+        # identifiers, Drive links, vision metadata, host paths. In hosted
+        # mode every tenant holds asset:read, so gate the whole surface to
+        # the configured owner tenant.
+        tenant = self.tenant(context)
+        if tenant != self.auth.owner_tenant_id:
+            raise ActionProblem("forbidden", "media library is restricted to the owner tenant", 403)
+        return tenant
+
     def _library_status(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+        self._require_owner(context)
         return self.media_library.status()
 
     def _library_list(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+        self._require_owner(context)
         return self.media_library.list_clips(
             kind=payload.get("kind") or None,
             tier=payload.get("tier") or None,
@@ -119,6 +131,7 @@ class MediaLibraryActionDispatcher(OneDriveActionDispatcher):
         )
 
     def _library_search(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+        self._require_owner(context)
         return self.media_library.search(
             query=str(self.req(payload, "query")),
             limit=int(payload.get("limit", 50)),
@@ -126,9 +139,11 @@ class MediaLibraryActionDispatcher(OneDriveActionDispatcher):
         )
 
     def _library_get(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+        self._require_owner(context)
         return {"clip": self.media_library.get_clip(str(self.req(payload, "clipId"))), "remoteWriteEnabled": False}
 
     def _library_register(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+        self._require_owner(context)
         project_id = str(self.req(payload, "projectId"))
         clip_ids = self.req(payload, "clipIds")
         if not isinstance(clip_ids, list) or not clip_ids:
