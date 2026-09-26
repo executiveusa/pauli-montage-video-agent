@@ -7,6 +7,8 @@ scene classification. Primary use case: visual QA for automated video review.
 
 from __future__ import annotations
 
+import re
+
 import subprocess
 import tempfile
 import time
@@ -262,9 +264,25 @@ class VideoUnderstand(BaseTool):
                 capture_output=True, text=True, timeout=30,
             ).stdout.strip()
             duration = float(out)
-            return duration if duration > 0 else None
+            if duration > 0:
+                return duration
         except (ValueError, OSError, subprocess.SubprocessError):
+            pass
+        # Installations with ffmpeg but no ffprobe still report the duration on
+        # ffmpeg's own stderr banner; losing it here silently degrades frame
+        # sampling to the opening seconds (PR 56 review).
+        try:
+            probe = subprocess.run(
+                ["ffmpeg", "-i", str(video_path)],
+                capture_output=True, text=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
             return None
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", probe.stderr or "")
+        if not match:
+            return None
+        duration = int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
+        return duration if duration > 0 else None
 
     def _extract_video_frames(
         self,
@@ -318,10 +336,13 @@ class VideoUnderstand(BaseTool):
                         capture_output=True, text=True, timeout=60,
                     )
             else:
-                # No duration — a stream, or no ffprobe on PATH. Fall back to
-                # an even pass over the file rather than returning nothing.
+                # No duration from either probe — a true stream. `-frames:v N`
+                # alone emits the first N consecutive frames (the opening-only
+                # bug), so decimate by time instead: one frame per second,
+                # capped at N, which covers far more of the clip.
                 subprocess.run(
                     ["ffmpeg", "-i", str(video_path),
+                     "-vf", "fps=1",
                      "-vsync", "vfr", "-frames:v", str(max_frames),
                      str(tmp / "frame_%04d.png"),
                      "-y", "-loglevel", "error"],
