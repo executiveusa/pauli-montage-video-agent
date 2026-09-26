@@ -33,3 +33,13 @@ A new runtime dependency must document:
 ## Default service boundary
 
 External specialist repos are adapted as services/packages behind YAPPY contracts. They do not receive authority over authentication, billing, tenant ownership, project truth, or global provider routing.
+
+## HyperFrames CLI (npm `hyperframes`, pinned `hyperframes@0.8.79`)
+
+- **Role:** self-hosted HTML-to-MP4 render engine for the `render.hyperframes.*` lane (lint, browser check, render) via `npx --yes hyperframes@0.8.79`.
+- **License/cost:** free, self-hostable, no API keys; `paidProvider: false` stamped on every render result.
+- **Version policy:** exact pin in `tools/video/hyperframes_compose.py` (`_NPM_SPEC`, env override `YAPPY_HYPERFRAMES_NPM_SPEC`); upgrades are a code change plus re-verification of the lane's end-to-end render proof.
+- **Network:** fetches the pinned package from the public npm registry on first use (per-worker npx cache); renders run locally, no third-party data egress beyond that fetch. Playwright Chromium download on first browser check/render.
+- **Fallback:** the existing ffmpeg render lane (`RenderService`) remains the default engine; HyperFrames is opt-in per render action.
+- **Tenant isolation:** actions are scope-gated (`render.hyperframes.check` requires `render:write`; `render` requires `render:write` + `job:write` + `asset:write` with explicit approval) and idempotent; renders write only into per-tenant workspace roots.
+- **Removal:** delete the lane (`yappy_clipz/hyperframes*.py`, `tools/video/hyperframes_compose.py`); no state outside workspace roots and durable job records.

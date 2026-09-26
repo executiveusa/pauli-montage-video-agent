@@ -28,7 +28,8 @@ _HYPERFRAMES_CAPS = {
         "render.hyperframes.check",
         "Check HyperFrames composition",
         "Run the HyperFrames lint and browser quality gates against an authored HTML composition without rendering.",
-        scopes=["project:read", "render:read"],
+        # Executes authored HTML in backend Chromium: an execution scope, not a read scope.
+        scopes=["project:read", "render:write"],
         risk="medium",
         idempotency="supported",
         stage="07_render",

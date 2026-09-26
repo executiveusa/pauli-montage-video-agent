@@ -212,11 +212,24 @@ class HyperframesRenderService:
             correlation_id=None,
             icm_stage="07_render",
         )
+        # Durable idempotency: create_job returns the EXISTING job when the
+        # idempotency key was seen before (process restart, second worker,
+        # concurrent retry). Never reset a running/succeeded job - return the
+        # recorded outcome instead.
+        if job.get("state") != "queued":
+            return {
+                "engine": "hyperframes",
+                "job": job,
+                "idempotentReplay": True,
+                "outputRefs": job.get("outputRefs", []),
+                "paidProvider": False,
+            }
         job_id = job["id"]
         job["state"] = "claimed"
         job["claimedBy"] = created_by or "hyperframes-lane"
         self.operations.store.put_job(job)
         self.operations.transition(tenant_id, job_id, "running")
+        stored_key = None
         try:
             workspace = self._materialize_workspace(tenant_id, job_id, html)
             output_path = workspace / "renders" / output_name
@@ -245,6 +258,7 @@ class HyperframesRenderService:
                 f"renders/{_safe_segment(tenant_id)}/{_safe_segment(project_id)}/{job_id}/{output_name}"
             )
             info = self.storage.put_bytes(storage_key, data, content_type="video/mp4")
+            stored_key = storage_key
             asset = self.assets.create_derivative(
                 tenant_id=tenant_id,
                 project_id=project_id,
@@ -258,7 +272,15 @@ class HyperframesRenderService:
                 checksum_sha256=info.checksum_sha256,
                 created_by=created_by,
             )
-        except HyperframesError as exc:
+        except Exception as exc:
+            # Any failure across the whole render-and-register transaction -
+            # render errors, storage I/O, derivative registration - must mark
+            # the durable job failed, never leave it running forever.
+            if stored_key:
+                try:
+                    self.storage.delete(stored_key)
+                except Exception:
+                    pass  # best-effort cleanup of the partially stored object
             self.operations.transition(tenant_id, job_id, "failed", error=str(exc))
             raise
         job = self.operations.transition(
