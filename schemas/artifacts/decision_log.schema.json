@@ -28,6 +28,8 @@
               "pipeline_selection",
               "provider_selection",
               "renderer_family_selection",
+              "render_runtime_selection",
+              "composition_mode",
               "playbook_selection",
               "fallback_decision",
               "budget_tradeoff",

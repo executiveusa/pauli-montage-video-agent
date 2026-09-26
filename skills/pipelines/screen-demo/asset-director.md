@@ -4,6 +4,23 @@
 
 This stage produces the minimal but high-leverage assets that make a screen demo easier to follow: subtitles, audio cleanup, reusable overlays, masks, and optional light-weight support cards.
 
+## Two production modes — pick before generating assets
+
+**Read the brief's `production_mode` field.** If `idea` didn't set one, decide here:
+
+| Mode | When | Asset production looks like |
+|---|---|---|
+| **`real_capture`** | Real app UI (browser, design tool, IDE with plugins); live behavior; user asked for their own screen recorded | Clean audio + subtitles + callout overlays (arrows, highlight masks) applied on top of the captured MP4 |
+| **`synthetic_terminal`** | CLI, terminal, install flow, make targets, git/npm commands, `.env` config — anything scriptable | **No capture at all.** Author a `terminal_scene` cut for `video_compose` (Remotion). Commands type char-by-char, output scrolls, pills announce completions. See `.agents/skills/synthetic-screen-recording/SKILL.md`. |
+
+**Mode selection heuristic:** *"Can I predict every command and its output before shooting?"* If yes → synthetic. If no → real capture.
+
+For synthetic mode, the asset stage produces:
+- **narration (tts_selector)** aligned to the exact video-time each command should type
+- **a `steps` list** (cmd/out/pause/pill primitives) that paces with narration cues
+- **a pacing verification** via `lib.verify_scene_pacing.assert_alignment(...)` — must pass before render
+- **no** screen-recorder footage, no callout arrows, no zoom-crop regions (those are real-capture concepts)
+
 ## Prerequisites
 
 | Layer | Resource | Purpose |
@@ -142,8 +159,17 @@ If you encounter a generation technique, provider behavior, or prompting pattern
 
 This is especially important for:
 - **Video generation prompting** — models respond to specific vocabularies that change with each version
-- **Image model parameters** — optimal settings for FLUX, DALL-E, Imagen differ and evolve
+- **Image model parameters** — optimal settings for FLUX, GPT Image, Imagen differ and evolve
 - **Audio provider quirks** — voice cloning, music generation, and TTS each have model-specific best practices
 - **Remotion component patterns** — new composition techniques emerge as the framework evolves
 
 Do not rely on stale knowledge. When in doubt, search first.
+
+---
+
+## Gate Reminder (Binding)
+
+This stage gates on human approval (`human_approval_default: true`). After review passes:
+checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
+the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
+Approval is per-gate — an earlier "go ahead" does not cover this gate.

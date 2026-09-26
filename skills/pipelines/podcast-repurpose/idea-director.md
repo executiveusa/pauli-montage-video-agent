@@ -6,6 +6,12 @@ Use this pipeline when the source is a podcast episode, either audio-only or vid
 
 Your first responsibility is to decide what is feasible from the source that actually exists.
 
+## Runtime Selection (MANDATORY — present the constraint, don't silently pick)
+
+Lock `render_runtime = "remotion"` (audiograms and composed outputs) or `"ffmpeg"` (pure-audio-led clip exports). **HyperFrames is NOT a valid runtime on this pipeline in Phase 1** — podcast outputs lean on Remotion's word-level caption stack, which has no HyperFrames parity yet.
+
+Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": surface the constraint to the user — "HyperFrames is available on your machine, but podcast-repurpose depends on Remotion caption burn, so remotion is the only viable choice here". Record a `render_runtime_selection` decision with hyperframes `rejected_because: "caption-burn parity deferred on podcast-repurpose"`.
+
 ## Reference Inputs
 
 - `docs/podcast-repurposing-best-practices.md`
@@ -84,3 +90,12 @@ Use `brief.metadata` for the richer podcast-specific contract:
 - Treating audio-only and video-podcast sources as the same production problem.
 - Planning too many deliverables from a weak episode.
 - Promising a rich full-episode visual treatment without the assets to support it.
+
+---
+
+## Gate Reminder (Binding)
+
+This stage gates on human approval (`human_approval_default: true`). After review passes:
+checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
+the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
+Approval is per-gate — an earlier "go ahead" does not cover this gate.

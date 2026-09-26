@@ -203,6 +203,7 @@ proposal_packet = {
     "production_plan": {
         "pipeline": "animated-explainer",
         "playbook": "clean-professional",
+        "render_runtime": "remotion",
         "stages": [
             {"stage": "script", "tools": [{"tool_name": "tts_selector", "role": "narration", "available": True}], "approach": "AI-written script with TTS narration"},
             {"stage": "scene_plan", "tools": [], "approach": "5 scenes with motion graphics"},
@@ -233,7 +234,7 @@ except Exception as e:
     check("Proposal packet validates against schema", False, str(e))
 
 cp_path = write_checkpoint(
-    PIPELINE_DIR, PROJECT_ID, "proposal", "completed",
+    PIPELINE_DIR, PROJECT_ID, "proposal", "completed", human_approved=True,
     artifacts={"proposal_packet": proposal_packet},
     pipeline_type="animated-explainer",
     style_playbook="clean-professional",
@@ -282,7 +283,7 @@ except Exception as e:
     check("Script validates against schema", False, str(e))
 
 write_checkpoint(
-    PIPELINE_DIR, PROJECT_ID, "script", "completed",
+    PIPELINE_DIR, PROJECT_ID, "script", "completed", human_approved=True,
     artifacts={"script": script},
     pipeline_type="animated-explainer",
 )
@@ -321,7 +322,7 @@ except Exception as e:
     check("Scene plan validates against schema", False, str(e))
 
 write_checkpoint(
-    PIPELINE_DIR, PROJECT_ID, "scene_plan", "completed",
+    PIPELINE_DIR, PROJECT_ID, "scene_plan", "completed", human_approved=True,
     artifacts={"scene_plan": scene_plan},
     pipeline_type="animated-explainer",
 )
@@ -400,7 +401,7 @@ tracker.reconcile(eid, 0.0, success=True)
 print(f"  Cost snapshot: {tracker.cost_snapshot()}")
 
 write_checkpoint(
-    PIPELINE_DIR, PROJECT_ID, "assets", "completed",
+    PIPELINE_DIR, PROJECT_ID, "assets", "completed", human_approved=True,
     artifacts={"asset_manifest": asset_manifest},
     pipeline_type="animated-explainer",
     cost_snapshot=tracker.cost_snapshot(),
@@ -423,6 +424,7 @@ for i, scene in enumerate(scene_plan["scenes"]):
 
 edit_decisions = {
     "version": "1.0",
+    "render_runtime": proposal_packet["production_plan"]["render_runtime"],
     "cuts": [
         {
             "id": f"cut_{scene['id']}",
@@ -613,7 +615,7 @@ except Exception as e:
     check("Publish log validates against schema", False, str(e))
 
 write_checkpoint(
-    PIPELINE_DIR, PROJECT_ID, "publish", "completed",
+    PIPELINE_DIR, PROJECT_ID, "publish", "completed", human_approved=True,
     artifacts={"publish_log": publish_log},
     pipeline_type="animated-explainer",
 )
