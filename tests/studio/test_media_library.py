@@ -214,14 +214,9 @@ class MediaLibraryRegistrationTests(unittest.TestCase):
     def test_render_uri_stays_blocked_until_mount_enabled(self):
         outcome = self.assets.register_library_reference(tenant_id="tenant_owner", project_id=self.project_id, clip=self._clip(), role="source")
         asset = outcome["asset"]
-        os.environ.pop("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE", None)
         with self.assertRaises(RenderError):
             _asset_uri(asset)
-        os.environ["YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE"] = "1"
-        try:
-            self.assertEqual(_asset_uri(asset), asset["extensions"]["medialibrary"]["hostPath"])
-        finally:
-            os.environ.pop("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE", None)
+        self.assertEqual(_asset_uri(asset, mount_visible=True), asset["extensions"]["medialibrary"]["hostPath"])
 
 
 class MediaLibraryDispatchTests(unittest.TestCase):
@@ -238,7 +233,7 @@ class MediaLibraryDispatchTests(unittest.TestCase):
         self.runtime = create_runtime(settings=self.settings)
         project = self.runtime.service.create_project(tenant_id="tenant_owner", slug="dispatch", title="Dispatch", objective="Wire the library", deliverables=["master"])
         self.project_id = project["project"]["id"]
-        self.context = ActionContext(tenant_id="tenant_owner", actor_id="user:test", scopes=("project:read", "asset:read", "asset:write"))
+        self.context = ActionContext(tenant_id="tenant_owner", actor_id="user:test", scopes=("project:read", "project:write", "asset:read", "asset:write"))
 
     def tearDown(self) -> None:
         self.temp.cleanup()

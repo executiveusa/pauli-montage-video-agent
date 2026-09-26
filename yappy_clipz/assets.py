@@ -158,11 +158,6 @@ class AssetService:
         name = str(clip.get("name") or "").strip()
         host_path = str(clip.get("hostPath") or "").strip()
         if not external_id or not name or not host_path: raise AssetError("library clip record is incomplete")
-        current = self.repository.get(tenant, project_id)
-        for item in current.get("assets", []):
-            source = item.get("source", {})
-            if source.get("provider") == "medialibrary" and source.get("externalId") == external_id and not item.get("extensions", {}).get("archived"):
-                return {"asset": json.loads(json.dumps(item)), "duplicate": True}
         asset_id = f"ast_{uuid4().hex[:24]}"
         asset = {
             "id": asset_id, "tenantId": tenant, "projectId": project_id,
@@ -187,11 +182,24 @@ class AssetService:
                 },
             },
         }
+        outcome: dict[str, Any] = {}
         def mutate(project: dict[str, Any]) -> dict[str, Any]:
-            if any(entry.get("id") == asset["id"] for entry in project.get("assets", [])): return project
-            project.setdefault("assets", []).append(asset); project["project"]["updatedAt"] = _now(); return project
+            # The duplicate check must live inside the serialized mutation: two
+            # concurrent registrations of the same clip otherwise both pass an
+            # unlocked pre-check and append duplicates.
+            for entry in project.get("assets", []):
+                source = entry.get("source", {})
+                if source.get("provider") == "medialibrary" and source.get("externalId") == external_id and not entry.get("extensions", {}).get("archived"):
+                    outcome["asset"] = json.loads(json.dumps(entry)); outcome["duplicate"] = True
+                    return project
+            if any(entry.get("id") == asset["id"] for entry in project.get("assets", [])):
+                outcome["asset"] = asset; outcome["duplicate"] = False
+                return project
+            project.setdefault("assets", []).append(asset); project["project"]["updatedAt"] = _now()
+            outcome["asset"] = asset; outcome["duplicate"] = False
+            return project
         self.repository.mutate(tenant, project_id, mutate)
-        return {"asset": asset, "duplicate": False}
+        return {"asset": outcome["asset"], "duplicate": outcome["duplicate"]}
 
     def archive(self, *, tenant_id: str, project_id: str, asset_id: str) -> dict[str, Any]:
         def mutate(project: dict[str, Any]) -> dict[str, Any]:

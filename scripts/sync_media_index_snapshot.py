@@ -47,6 +47,9 @@ def main(argv: list[str]) -> int:
             clips = source_connection.execute("SELECT count(*) FROM clips").fetchone()[0]
         finally:
             source_connection.close()
+        # The runtime containers read this snapshot as UID 10001; mkstemp's
+        # 0600 default would lock them out after the first sync.
+        os.chmod(temporary, 0o644)
         os.replace(temporary, target)
     except BaseException:
         try:
