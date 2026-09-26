@@ -4,7 +4,7 @@ description: >
   Retrieval-first thematic montage pipeline. Builds a semantic corpus of real-world
   footage from Pexels, Archive.org (Prelinger et al.), NASA, Wikimedia Commons, and
   Unsplash, then uses CLIP-based retrieval to fill slot descriptions from a thematic brief.
-category: cinematic
+category: documentary
 stability: beta
 default_checkpoint_policy: guided
 
@@ -70,7 +70,7 @@ stages:
     optional_tools: [direct_clip_search, corpus_builder, clip_search, music_gen]
     tools_available: [direct_clip_search, corpus_builder, clip_search, music_gen]
     checkpoint_required: true
-    human_approval_default: false
+    human_approval_default: true
     review_focus:
       - Every slot has exactly one picked clip
       - No clip_id is picked for two slots
