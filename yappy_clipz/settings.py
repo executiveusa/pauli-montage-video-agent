@@ -64,6 +64,10 @@ class Settings:
     microsoft_client_secret_env: str = "YAPPY_MICROSOFT_CLIENT_SECRET"
     microsoft_redirect_uri: str | None = None
     microsoft_oauth_tenant: str = "consumers"
+    media_library_enabled: bool = False
+    media_library_index: str | None = None
+    media_library_host_root: str = "/mnt/mb-gdrive-samsung"
+    media_library_mount_visible: bool = False
 
     @property
     def resolved_prompt_root(self) -> Path:
@@ -83,6 +87,10 @@ class Settings:
     @property
     def resolved_recovery_outbox_path(self) -> Path:
         return (self.recovery_outbox_path or self.project_root.parent / "recovery-outbox").expanduser().resolve()
+    @property
+    def resolved_media_library_index_path(self) -> Path:
+        return Path(self.media_library_index).expanduser().resolve() if self.media_library_index else (self.project_root.parent / "media-index.snapshot.db").expanduser().resolve()
+
     @property
     def resolved_source_store_path(self) -> Path:
         return (self.source_store_path or self.project_root.parent / "sources.json").expanduser().resolve()
@@ -130,4 +138,8 @@ class Settings:
             microsoft_client_secret_env=os.environ.get("YAPPY_MICROSOFT_CLIENT_SECRET_ENV","YAPPY_MICROSOFT_CLIENT_SECRET"),
             microsoft_redirect_uri=os.environ.get("YAPPY_MICROSOFT_REDIRECT_URI"),
             microsoft_oauth_tenant=os.environ.get("YAPPY_MICROSOFT_OAUTH_TENANT","consumers"),
+            media_library_enabled=_env_bool("YAPPY_MEDIA_LIBRARY_ENABLED", False),
+            media_library_index=os.environ.get("YAPPY_MEDIA_LIBRARY_INDEX"),
+            media_library_host_root=os.environ.get("YAPPY_MEDIA_LIBRARY_HOST_ROOT", "/mnt/mb-gdrive-samsung"),
+            media_library_mount_visible=_env_bool("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE", False),
         )
