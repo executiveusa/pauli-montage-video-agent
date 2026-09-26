@@ -4,16 +4,47 @@
 
 This stage prepares the usable media for the final cinematic edit: source selects, title-card assets, optional support inserts, music, ambience, and subtitle assets when needed.
 
+## Animation authoring for cinematic titles and overlays
+
+Before authoring title cards, name plates, or SVG overlays, read **`skills/meta/animation-runtime-selector.md`** for runtime routing. Cinematic pieces lean on a handful of high-craft motion patterns:
+
+| Cinematic need | Recommended approach |
+|---|---|
+| Hero title with subtle reveal | Remotion `HeroTitle` component (existing) |
+| Logo build / cinematic sting on SVG | GSAP DrawSVG + MotionPath — read `.agents/skills/gsap-plugins/SKILL.md` |
+| Curved camera move across a wide still or overlay | GSAP MotionPath — read `.agents/skills/gsap-plugins/SKILL.md` |
+| Per-character title reveal (prestige / trailer style) | GSAP SplitText — read `.agents/skills/gsap-plugins/SKILL.md` |
+| Cinematic easings (Unreal-style, stuttering, weighted) | GSAP CustomEase / EasePack — read `.agents/skills/gsap-plugins/SKILL.md` |
+| Name plate lower-third with elastic settle | Remotion `spring()` is usually enough; GSAP CustomEase if you need stutter |
+| Film grain / particle overlay | Remotion `ParticleOverlay` (existing) |
+| Color grade / LUT | `tools/enhancement/color_grade.py` (not an animation concern) |
+
+**Cinematic is where GSAP earns its weight most often** — the genre rewards crafted easings and precise curved motion that primitive `interpolate()` struggles to express cleanly. Don't over-use it either: for a fade-in title, Remotion `spring()` still beats a whole GSAP dependency.
+
 ## Prerequisites
 
 | Layer | Resource | Purpose |
 |-------|----------|---------|
 | Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
 | Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["proposal"]["proposal_packet"]` | Scene intent and beat plan |
-| Tools | `subtitle_gen`, `audio_enhance`, `image_selector`, `video_selector`, `music_gen` — selectors auto-discover all available providers from the registry | Optional support asset creation |
+| Tools | `subtitle_gen`, `audio_enhance`, `image_selector`, `video_selector`, `pixabay_music` (free, default), `freesound_music` (free), `music_gen` (ElevenLabs, paid) — selectors auto-discover all available providers from the registry. **Default to `pixabay_music` before reaching for `music_gen`.** | Optional support asset creation |
 | Playbook | Active style playbook | Brand and typography consistency |
 
 ## Process
+
+### Explicit 3D-world path
+
+When the approved delivery promise is a continuous, free-viewpoint 3D world,
+`threejs_world` satisfies semantic planning and browser-native motion: it creates
+a real scene graph and time-driven camera, not a still-image fallback. Read
+`skills/creative/3d-world-generation.md` and `.agents/skills/threejs-world-generation/SKILL.md`,
+build into `projects/<id>/hyperframes/`, and review global, regional, walk,
+semantic, and wireframe views before the assets gate. Keep
+`render_runtime="hyperframes"` and `composition_mode="atelier"` locked for a
+browser-native deliverable. For reference-grade video, lock Blender as the 3D
+renderer and `render_runtime="ffmpeg"` solely as the image-sequence/audio packager.
+
+For hero/reference-driven work, `quality_tier="production"` is mandatory. Install licensed catalogs with `threejs_asset_catalog`, generate unique meshes with Atlas/fal when useful, assemble and render in Blender, and reject the asset gate if dominant primitives, flat untextured ground, low regional object density, or obvious repetition remain. `blockout` exists only for layout/camera approval.
 
 ### 1. Prioritize Source Selects
 
@@ -37,7 +68,7 @@ If `proposal_packet.metadata.motion_required = true`, actual moving footage or g
 Before batch-generating support assets, produce one sample of each expensive generated type and show the user:
 
 1. **Generated insert sample** (if using `image_selector` or `video_selector`): Generate one representative visual. Confirm it complements the source footage before batching.
-2. **Music sample** (if using `music_gen`): Generate a short clip. Confirm mood and energy match the beat plan.
+2. **Music sample** (try `pixabay_music` first — free, searchable by mood/BPM; fall back to `freesound_music` for cues and ambience; only reach for `music_gen` when the search tools miss the brief): sample or retrieve a short clip. Confirm mood and energy match the beat plan.
 
 If `motion_required = true`, the representative visual must be a video clip sample, not a still image sample.
 
@@ -84,6 +115,22 @@ Recommended metadata keys:
 - `generated_support_assets`
 - `rights_notes`
 
+### Pre/Post Self-Review for Generation Prompts
+
+> Before sending a prompt to any image or video generation tool, run a three-step self-review modeled on the CHAI oversight loop ("Building a Precise Video Language with Human-AI Oversight", arXiv 2604.21718v2). Cost is small (no extra tool calls); benefit is large (avoids wasted generations). For cinematic, this matters most for **hero-frame prompts** — one bad hero frame ruins the piece, and hero frames are the most expensive shots to regenerate.
+>
+> **Step 1 — Pre-caption pass.** Write the prompt the way you'd write it today. Do not over-edit; aim for a complete first draft.
+>
+> **Step 2 — Critique pass.** Score the draft against the 5-aspect checklist (Subject / Subject Motion / Scene / Spatial Framing / Camera). For each aspect:
+> - Is it specified? If not, is the omission deliberate (e.g., "no subject — scenery shot") or accidental?
+> - Are confusable terms disambiguated? (dolly vs zoom, pan vs truck, bird's-eye vs aerial, fisheye vs barrel, full shot vs close-up)
+> - Are emotional adjectives ("epic", "moody", "cinematic") replaced with their visual causes (low-key lighting, slow push-in, anamorphic flare, deep shadows)?
+> - For multi-shot prompts and identity-anchored hero frames: is identity anchored verbatim across shots?
+>
+> **Step 3 — Post-caption pass.** Rewrite filling the missing aspects, fixing confusable terms, and replacing subjective language. The post-caption is what gets sent to the generation tool.
+>
+> Log the (pre, critique, post) triplet in the asset metadata for traceability. This mirrors the CHAI workflow and creates a record the reviewer can audit.
+
 ### 5. Quality Gate
 
 - source and support assets are clearly distinguished,
@@ -124,8 +171,17 @@ If you encounter a generation technique, provider behavior, or prompting pattern
 
 This is especially important for:
 - **Video generation prompting** — models respond to specific vocabularies that change with each version
-- **Image model parameters** — optimal settings for FLUX, DALL-E, Imagen differ and evolve
+- **Image model parameters** — optimal settings for FLUX, GPT Image, Imagen differ and evolve
 - **Audio provider quirks** — voice cloning, music generation, and TTS each have model-specific best practices
 - **Remotion component patterns** — new composition techniques emerge as the framework evolves
 
 Do not rely on stale knowledge. When in doubt, search first.
+
+---
+
+## Gate Reminder (Binding)
+
+This stage gates on human approval (`human_approval_default: true`). After review passes:
+checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
+the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
+Approval is per-gate — an earlier "go ahead" does not cover this gate.

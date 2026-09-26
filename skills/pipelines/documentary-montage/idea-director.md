@@ -7,6 +7,12 @@ downstream stage will read. For this pipeline, the brief is the
 thematic core: what the montage is ABOUT, what it should feel like,
 and how long it should run.
 
+## Runtime Selection (MANDATORY — present the constraint, don't silently pick)
+
+Lock `render_runtime = "remotion"`. **HyperFrames is NOT a valid runtime on this pipeline in Phase 1** — documentary-montage depends on the Remotion `CinematicRenderer` composition and its ProRes-4444 alpha end-tag overlay stack, neither of which has HyperFrames parity.
+
+Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": do NOT silently default. Tell the user: "HyperFrames is available on your machine as an alternative runtime, but documentary-montage depends on the Remotion CinematicRenderer + end-tag overlay stack, so remotion is the only viable choice here — OK to proceed?" Record a `render_runtime_selection` decision in `decision_log` listing both runtimes in `options_considered`, with hyperframes `rejected_because: "CinematicRenderer + end-tag overlay parity deferred on documentary-montage"`.
+
 ## Prerequisites
 
 | Layer | Resource | Purpose |
@@ -83,11 +89,14 @@ like abandoned footage at compose time. Do not assume silence will earn
 itself. If the user has not mentioned music, ASSUME THEY WANT IT and pick:
 
 - user-provided track (put path in `music_plan.source_path`),
-- music library pick (list what's in `music_library/`),
+- music library pick (query `registry.get_by_capability("music_library")` and list tracks),
+- royalty-free search (query `registry.get_by_capability("music_search")`, report provider and license),
 - generated (name the tool and prompt seed with register),
 - explicit opt-out (`source: "none"` + `opt_out_reason`).
 
-**Warn the user if no music source is available.** Do not silently
+Before declaring no source available, also query
+`registry.get_by_capability("music_generation")`. **Warn the user if no music
+source is available.** Do not silently
 defer this — it becomes an expensive surprise at the asset stage.
 
 ### 5. Note End-Tag Intent (MANDATORY)
@@ -205,3 +214,12 @@ open for the scene director to decide per slot.
   the user explicitly says no.
 - Skipping the end-tag because "the images speak for themselves". They
   don't — the end-tag is the thesis. Propose one every time.
+
+---
+
+## Gate Reminder (Binding)
+
+This stage gates on human approval (`human_approval_default: true`). After review passes:
+checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
+the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
+Approval is per-gate — an earlier "go ahead" does not cover this gate.

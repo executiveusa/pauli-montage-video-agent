@@ -20,7 +20,7 @@ class ImageSelector(BaseTool):
     provider = "selector"
     stability = ToolStability.BETA
     runtime = ToolRuntime.HYBRID
-    agent_skills = ["flux-best-practices", "bfl-api"]
+    agent_skills = ["flux-best-practices", "bfl-api", "atlas-cloud"]
 
     capabilities = [
         "generate_image", "search_image", "download_image",
@@ -61,6 +61,18 @@ class ImageSelector(BaseTool):
                 "type": "string",
                 "description": "Resolution tier for providers that support named resolutions.",
             },
+            "api_family": {
+                "type": "string",
+                "description": "Provider-specific API family hint passed through when supported.",
+            },
+            "model_name": {
+                "type": "string",
+                "description": "Provider-specific model name passed through when supported.",
+            },
+            "model": {
+                "type": "string",
+                "description": "Exact provider model id, e.g. an Atlas Cloud live model route.",
+            },
             "generation_mode": {
                 "type": "string",
                 "enum": ["generate", "edit"],
@@ -79,6 +91,46 @@ class ImageSelector(BaseTool):
                 "items": {"type": "string"},
                 "description": "Multiple local source image paths for compositing edits.",
             },
+            "image_list": {
+                "type": "array",
+                "description": "Provider-specific image reference list, e.g. Kling Official Image Omni.",
+            },
+            "element_list": {
+                "type": "array",
+                "description": "Provider-specific element references, e.g. Kling Official element_id objects.",
+            },
+            "image_reference": {
+                "type": "string",
+                "description": "Provider-specific reference type, e.g. subject or face.",
+            },
+            "image_fidelity": {
+                "type": "number",
+                "description": "Provider-specific reference image fidelity hint.",
+            },
+            "human_fidelity": {
+                "type": "number",
+                "description": "Provider-specific human or face fidelity hint.",
+            },
+            "result_type": {
+                "type": "string",
+                "description": "Provider-specific result type, e.g. single or series.",
+            },
+            "series_amount": {
+                "type": "string",
+                "description": "Provider-specific series amount for image series generation.",
+            },
+            "watermark": {
+                "type": "boolean",
+                "description": "Provider-specific watermark toggle passed through when supported.",
+            },
+            "callback_url": {
+                "type": "string",
+                "description": "Provider-specific callback URL. Current OpenMontage providers still poll by default.",
+            },
+            "external_task_id": {
+                "type": "string",
+                "description": "Provider-specific idempotency/provenance task id.",
+            },
             "preferred_provider": {
                 "type": "string",
                 "description": "Provider name or 'auto'. Valid values are discovered at runtime from the registry.",
@@ -93,6 +145,38 @@ class ImageSelector(BaseTool):
                 "enum": ["generate", "rank"],
                 "default": "generate",
                 "description": "Operation mode. 'rank' returns scored provider rankings without generating.",
+            },
+            "workflow_json": {
+                "type": "string",
+                "description": (
+                    "Optional full ComfyUI workflow JSON. Routes to a custom-workflow-capable "
+                    "provider (e.g. comfyui_image) based on server availability, not bundled "
+                    "model readiness. Requires output_node."
+                ),
+            },
+            "workflow_path": {
+                "type": "string",
+                "description": (
+                    "Optional path to a ComfyUI workflow JSON file. Routes to a custom-workflow-"
+                    "capable provider based on server availability. Requires output_node."
+                ),
+            },
+            "output_node": {
+                "type": "string",
+                "description": "ComfyUI output node ID for a custom workflow_json/workflow_path.",
+            },
+            "workflow_name": {
+                "type": "string",
+                "description": "Optional human-readable provenance label for a custom workflow.",
+            },
+            "workflow_model": {
+                "type": "string",
+                "description": "Optional model/provenance label for a custom workflow.",
+            },
+            "workflow_model_stack": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Optional provenance metadata for custom workflow dependencies.",
             },
             "output_path": {"type": "string"},
         },
@@ -162,6 +246,27 @@ class ImageSelector(BaseTool):
             props = tool.input_schema.get("properties", {})
             if "query" in props and "query" not in adapted:
                 adapted["query"] = adapted.get("prompt", "")
+            # Normalize the selector's shared reference-image inputs for
+            # providers whose native contract accepts an ``images`` array.
+            if "images" in props and "images" not in adapted:
+                refs = (
+                    adapted.get("image_paths")
+                    or adapted.get("image_urls")
+                    or ([adapted["image_path"]] if adapted.get("image_path") else None)
+                    or ([adapted["image_url"]] if adapted.get("image_url") else None)
+                )
+                if refs:
+                    adapted["images"] = refs
+            # The selector exposes a provider-neutral ``model_name`` field,
+            # while several providers call the same input ``model``.
+            if (
+                "model_name" in adapted
+                and "model" in props
+                and "model" not in adapted
+            ):
+                adapted["model"] = adapted["model_name"]
+            if "n" in adapted and "num_images" in props and "num_images" not in adapted:
+                adapted["num_images"] = adapted["n"]
 
         # Strip selector-only keys that downstream tools don't understand
         adapted.pop("preferred_provider", None)
@@ -184,6 +289,25 @@ class ImageSelector(BaseTool):
                 "image_path",
                 "image_urls",
                 "image_paths",
+                "image_list",
+                "element_list",
+                "api_family",
+                "model_name",
+                "model",
+                "image_reference",
+                "image_fidelity",
+                "human_fidelity",
+                "result_type",
+                "series_amount",
+                "watermark",
+                "callback_url",
+                "external_task_id",
+                "workflow_json",
+                "workflow_path",
+                "output_node",
+                "workflow_name",
+                "workflow_model",
+                "workflow_model_stack",
             ):
                 if passthrough_key in adapted and passthrough_key not in props:
                     stripped.append(f"{passthrough_key}={adapted.pop(passthrough_key)}")
@@ -226,7 +350,7 @@ class ImageSelector(BaseTool):
 
         tool_by_provider: dict[str, BaseTool] = {}
         for tool in candidates:
-            if tool.provider not in tool_by_provider and tool.get_status() == ToolStatus.AVAILABLE:
+            if tool.provider not in tool_by_provider and self._tool_selectable(tool, inputs):
                 tool_by_provider[tool.provider] = tool
 
         if preferred != "auto":
@@ -277,6 +401,22 @@ class ImageSelector(BaseTool):
         return serialized
 
     def _filter_candidates(self, inputs: dict[str, Any], candidates: list[BaseTool]) -> list[BaseTool]:
+        exact_model = inputs.get("model")
+        if exact_model:
+            model_matches = [
+                tool for tool in candidates
+                if exact_model in getattr(tool, "input_schema", {}).get("properties", {}).get("model", {}).get("enum", [])
+                or exact_model in tool.get_info().get("model_catalog", {})
+            ]
+            if model_matches:
+                candidates = model_matches
+
+        # A caller-supplied custom workflow is provider-specific (ComfyUI graph
+        # JSON). Route it only to custom-workflow-capable providers whose server
+        # is reachable — bundled-model readiness is irrelevant in that case.
+        if self._has_custom_workflow(inputs):
+            return [t for t in candidates if self._custom_workflow_eligible(t, inputs)]
+
         wants_edit = (
             inputs.get("generation_mode") == "edit"
             or inputs.get("image_url")
@@ -296,3 +436,31 @@ class ImageSelector(BaseTool):
             ):
                 filtered.append(tool)
         return filtered or candidates
+
+    @staticmethod
+    def _has_custom_workflow(inputs: dict[str, Any]) -> bool:
+        return bool(inputs.get("workflow_json") or inputs.get("workflow_path"))
+
+    def _custom_workflow_eligible(self, tool: BaseTool, inputs: dict[str, Any]) -> bool:
+        """Whether a tool can run the caller-supplied custom workflow.
+
+        Eligibility is based on server availability, not bundled-model readiness:
+        a provider qualifies when it advertises ``custom_workflow`` support, an
+        ``output_node`` is supplied, and its backend is reachable (status is not
+        UNAVAILABLE).
+        """
+        if not self._has_custom_workflow(inputs):
+            return False
+        if not inputs.get("output_node"):
+            return False
+        supports = getattr(tool, "supports", {})
+        if not supports.get("custom_workflow"):
+            return False
+        return tool.get_status() != ToolStatus.UNAVAILABLE
+
+    def _tool_selectable(self, tool: BaseTool, inputs: dict[str, Any]) -> bool:
+        """A provider is selectable if it is AVAILABLE, or if it can serve a
+        caller-supplied custom workflow even while bundled models report DEGRADED."""
+        if tool.get_status() == ToolStatus.AVAILABLE:
+            return True
+        return self._custom_workflow_eligible(tool, inputs)

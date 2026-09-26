@@ -6,6 +6,12 @@ Use this pipeline when the source is long-form footage and the goal is multiple 
 
 You are not planning one video. You are planning a ranked portfolio of clips.
 
+## Runtime Selection (MANDATORY — present the constraint, don't silently pick)
+
+Lock `render_runtime = "remotion"` (for composed clips with word-level captions) or `"ffmpeg"` (for pure concat/trim with no composition). **HyperFrames is NOT a valid runtime on this pipeline in Phase 1** — clip-factory depends on Remotion's word-level caption burn, which has no HyperFrames parity yet.
+
+Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": do NOT silently lock remotion. Surface the constraint to the user: "HyperFrames is an available runtime on your machine, but clip-factory depends on Remotion caption burn that doesn't have HyperFrames parity yet, so remotion is the only viable choice here — OK to proceed?" Record the decision in `decision_log` with category `render_runtime_selection`, including hyperframes as a rejected option (`rejected_because: "caption-burn parity deferred on clip-factory"`).
+
 ## Reference Inputs
 
 - `docs/clip-factory-best-practices.md`
@@ -96,3 +102,12 @@ Recommended metadata keys:
 - Assuming every source can produce vertical clips cleanly.
 - Treating all clips as interchangeable instead of intentionally varied.
 - Starting extraction without defining what "good" means for this batch.
+
+---
+
+## Gate Reminder (Binding)
+
+This stage gates on human approval (`human_approval_default: true`). After review passes:
+checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
+the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
+Approval is per-gate — an earlier "go ahead" does not cover this gate.
