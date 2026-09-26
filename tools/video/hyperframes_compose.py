@@ -241,6 +241,10 @@ class HyperFramesCompose(BaseTool):
 
     _NODE_FLOOR_MAJOR = 22
     _NPM_PACKAGE = "hyperframes"  # published npm name (NOT @hyperframes/cli — that's 404)
+    # Pinned runtime: a fresh worker must execute the tested CLI version, not
+    # whatever npm currently serves. Override only via env for a deliberate
+    # upgrade that goes through the dependency register.
+    _NPM_SPEC = os.environ.get("YAPPY_HYPERFRAMES_NPM_SPEC", "hyperframes@0.8.79")
     # Process-level cache for the npm resolve check. Shape:
     #   {"version": "0.4.5"}   → package resolves
     #   {"error": "<short>"}   → resolution failed (offline, unpublished, etc.)
@@ -342,7 +346,7 @@ class HyperFramesCompose(BaseTool):
 
         try:
             proc = subprocess.run(
-                [npx, "--yes", cls._NPM_PACKAGE, "doctor", "--json"],
+                [npx, "--yes", cls._NPM_SPEC, "doctor", "--json"],
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -1360,7 +1364,7 @@ class HyperFramesCompose(BaseTool):
         want to raise CalledProcessError on non-zero exits — the caller
         parses lint/validate/render exit codes itself.
         """
-        cmd = ["npx", "--yes", "hyperframes", *args]
+        cmd = ["npx", "--yes", self._NPM_SPEC, *args]
         # On Windows, resolve the .cmd wrapper so subprocess can find it
         # without shell=True.
         if os.name == "nt":

@@ -68,6 +68,7 @@ class Settings:
     media_library_index: str | None = None
     media_library_host_root: str = "/mnt/mb-gdrive-samsung"
     media_library_mount_visible: bool = False
+    hyperframes_workspace_root: str | None = None
 
     @property
     def resolved_prompt_root(self) -> Path:
@@ -90,6 +91,10 @@ class Settings:
     @property
     def resolved_media_library_index_path(self) -> Path:
         return Path(self.media_library_index).expanduser().resolve() if self.media_library_index else (self.project_root.parent / "media-index.snapshot.db").expanduser().resolve()
+
+    @property
+    def resolved_hyperframes_workspace_root(self) -> Path:
+        return Path(self.hyperframes_workspace_root).expanduser().resolve() if self.hyperframes_workspace_root else (self.project_root.parent / "renders" / "hyperframes").expanduser().resolve()
 
     @property
     def resolved_source_store_path(self) -> Path:
@@ -142,4 +147,5 @@ class Settings:
             media_library_index=os.environ.get("YAPPY_MEDIA_LIBRARY_INDEX"),
             media_library_host_root=os.environ.get("YAPPY_MEDIA_LIBRARY_HOST_ROOT", "/mnt/mb-gdrive-samsung"),
             media_library_mount_visible=_env_bool("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE", False),
+            hyperframes_workspace_root=os.environ.get("YAPPY_HYPERFRAMES_WORKSPACE_ROOT"),
         )
