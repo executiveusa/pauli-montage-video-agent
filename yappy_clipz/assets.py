@@ -139,6 +139,60 @@ class AssetService:
         def mutate(doc: dict[str, Any]) -> dict[str, Any]: doc.setdefault("assets",[]).append(asset); doc["project"]["updatedAt"]=_now(); return doc
         self.repository.mutate(tenant_id, project_id, mutate); return asset
 
+    def register_library_reference(self, *, tenant_id: str, project_id: str, clip: dict[str, Any], role: str, created_by: str | None = None) -> dict[str, Any]:
+        """Register one MediaBrain library clip as a provenance-carrying reference asset.
+
+        Never copies, moves, or deletes source footage. The asset records the
+        library's derived host path inside extensions.medialibrary so renders
+        stay blocked until the owner approves a read-only library mount. The
+        index md5 is kept as attestation metadata, not as a verified checksum:
+        asset.checksum stays null until bytes are verified against storage.
+        """
+        tenant = validate_identifier(tenant_id, "tenant_id")
+        project_id = validate_identifier(project_id, "project_id")
+        if not role: raise AssetError("role is required")
+        mime = str(clip.get("mime") or "").lower()
+        kind = next((candidate for candidate, prefix in _MEDIA_PREFIX.items() if mime.startswith(prefix)), None)
+        if kind not in {"video", "audio", "image"}: raise AssetError("library registration supports video, audio, and image clips")
+        external_id = str(clip.get("id") or "").strip()
+        name = str(clip.get("name") or "").strip()
+        host_path = str(clip.get("hostPath") or "").strip()
+        if not external_id or not name or not host_path: raise AssetError("library clip record is incomplete")
+        current = self.repository.get(tenant, project_id)
+        for item in current.get("assets", []):
+            source = item.get("source", {})
+            if source.get("provider") == "medialibrary" and source.get("externalId") == external_id and not item.get("extensions", {}).get("archived"):
+                return {"asset": json.loads(json.dumps(item)), "duplicate": True}
+        asset_id = f"ast_{uuid4().hex[:24]}"
+        asset = {
+            "id": asset_id, "tenantId": tenant, "projectId": project_id,
+            "kind": kind, "role": role, "name": name,
+            "mimeType": mime or None, "bytes": int(clip.get("bytes") or 0), "checksum": None,
+            "storage": {"type": "provider", "key": f"medialibrary://{external_id}", "bucket": None, "url": None},
+            "source": {"type": "imported", "provider": "medialibrary", "externalId": external_id, "parentAssetIds": [], "license": None, "attribution": None, "sourceUrl": clip.get("link") or None},
+            "media": {},
+            "rights": {"commercialUse": None, "consentRecordIds": [], "releaseAssetIds": [], "expiresAt": None},
+            "tags": ["medialibrary"], "createdAt": _now(), "createdBy": created_by,
+            "extensions": {
+                "archived": False,
+                "medialibrary": {
+                    "account": clip.get("account"), "remote": clip.get("remote"),
+                    "path": clip.get("path"), "hostPath": host_path,
+                    "md5": clip.get("md5"), "md5Attestation": "media-brain-index",
+                    "modtime": clip.get("modtime"), "captureDate": clip.get("captureDate"),
+                    "dateBasis": clip.get("dateBasis"), "libraryKind": clip.get("kind"),
+                    "tier": clip.get("tier"), "vision": clip.get("vision"),
+                    "canonicalId": clip.get("canonicalId"),
+                    "byteAccess": "deferred-mount-pending",
+                },
+            },
+        }
+        def mutate(project: dict[str, Any]) -> dict[str, Any]:
+            if any(entry.get("id") == asset["id"] for entry in project.get("assets", [])): return project
+            project.setdefault("assets", []).append(asset); project["project"]["updatedAt"] = _now(); return project
+        self.repository.mutate(tenant, project_id, mutate)
+        return {"asset": asset, "duplicate": False}
+
     def archive(self, *, tenant_id: str, project_id: str, asset_id: str) -> dict[str, Any]:
         def mutate(project: dict[str, Any]) -> dict[str, Any]:
             item=_asset(project,asset_id); item.setdefault("extensions",{})["archived"]=True; item["extensions"]["archivedAt"]=_now(); project["project"]["updatedAt"]=_now(); return project

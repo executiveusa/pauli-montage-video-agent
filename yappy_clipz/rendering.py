@@ -92,6 +92,14 @@ def _asset_uri(asset: dict[str, Any]) -> str:
     key = storage.get("key")
     if not key:
         raise RenderError(f"asset {asset.get('id')} has no usable storage reference")
+    if str(key).startswith("medialibrary://"):
+        if os.environ.get("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE") == "1":
+            host_path = (asset.get("extensions", {}).get("medialibrary") or {}).get("hostPath")
+            if host_path:
+                return str(host_path)
+        raise RenderError(
+            f"asset {asset.get('id')} references the media library, which is not mounted into the render runtime"
+        )
     return f"storage://{key}"
 
 
