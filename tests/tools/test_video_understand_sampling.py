@@ -119,3 +119,58 @@ def test_duration_probe_survives_a_missing_ffprobe(monkeypatch, tmp_path):
 
     monkeypatch.setattr("tools.analysis.video_understand.subprocess.run", boom)
     assert VideoUnderstand._video_duration_seconds(tmp_path / "c.mp4") is None
+
+
+class _DurationFake:
+    """Fake subprocess where ffprobe is absent and ffmpeg reports a banner."""
+
+    def __init__(self, banner: str):
+        self.banner = banner
+        self.calls: list[list[str]] = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(list(cmd))
+        if cmd and cmd[0] == "ffprobe":
+            raise OSError("ffprobe not on PATH")
+        import types as _types
+        return _types.SimpleNamespace(returncode=1, stdout="", stderr=self.banner)
+
+
+def test_duration_falls_back_to_ffmpeg_banner(monkeypatch, tmp_path):
+    """PR 56 review: ffmpeg-only installs must not lose even sampling."""
+    fake = _DurationFake("Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'clip.mp4':\n  Duration: 00:01:40.00, start: 0.000000, bitrate: 1000 kb/s\n")
+    monkeypatch.setattr("tools.analysis.video_understand.subprocess.run", fake)
+    assert VideoUnderstand()._extract_video_frames.__self__ is not None  # sanity
+    assert VideoUnderstand._video_duration_seconds(tmp_path / "clip.mp4") == 100.0
+
+
+def test_duration_returns_none_when_neither_probe_knows_it(monkeypatch, tmp_path):
+    fake = _DurationFake("Input #0, mpegts, from 'stream':\n  Duration: N/A, start: 1.4, bitrate: 200 kb/s\n")
+    monkeypatch.setattr("tools.analysis.video_understand.subprocess.run", fake)
+    assert VideoUnderstand._video_duration_seconds(tmp_path / "stream.ts") is None
+
+
+def test_no_duration_branch_decimates_by_time(monkeypatch, tmp_path):
+    """PR 56 review: the last-resort branch must not emit N consecutive frames."""
+    monkeypatch.setattr(VideoUnderstand, "_video_duration_seconds", staticmethod(lambda _p: None))
+    calls: list[list[str]] = []
+
+    import types as _types
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        if cmd and cmd[0] == "ffmpeg":
+            target = Path(cmd[-4])
+            for index in range(2):
+                target.with_name(target.name.replace("%04d", f"{index:04d}")).write_bytes(b"x")
+        return _types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("tools.analysis.video_understand.subprocess.run", fake_run)
+    fake_image_module = _types.SimpleNamespace(open=FakePIL)
+    monkeypatch.setitem(__import__("sys").modules, "PIL", _types.SimpleNamespace(Image=fake_image_module))
+
+    VideoUnderstand()._extract_video_frames(tmp_path / "clip.mp4", None, 4)
+
+    ffmpeg_calls = [cmd for cmd in calls if cmd and cmd[0] == "ffmpeg"]
+    assert ffmpeg_calls, "expected an ffmpeg invocation"
+    assert any("fps=1" in cmd for cmd in ffmpeg_calls for cmd in [list(cmd)])

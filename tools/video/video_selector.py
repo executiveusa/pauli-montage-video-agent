@@ -12,6 +12,14 @@ import os
 from tools.base_tool import BaseTool, ToolResult, ToolRuntime, ToolStability, ToolStatus, ToolTier
 
 
+# Selector operation names do not always match provider-native spellings:
+# the Gemini tools declare edit_video where the selector says video_edit.
+# Aliases are checked in order against every capability signal.
+_OPERATION_ALIASES: dict[str, tuple[str, ...]] = {
+    "video_edit": ("video_edit", "edit_video"),
+}
+
+
 class VideoSelector(BaseTool):
     name = "video_selector"
     version = "0.3.1"
@@ -525,11 +533,39 @@ class VideoSelector(BaseTool):
                     filtered.append(tool)
                 continue
 
+            # Generic branch: admit a provider only on positive evidence that
+            # it handles the operation (PR 56 review, P1). A missing
+            # is_operation_available() checker must not read as support.
+            aliases = _OPERATION_ALIASES.get(str(operation), (str(operation),))
+            if not self._operation_declared(tool, aliases):
+                continue
             matched_operation = True
-            if self._operation_ready(tool, str(operation)):
+            if self._operation_ready_any(tool, aliases):
                 filtered.append(tool)
 
         return filtered if matched_operation else candidates
+
+    @staticmethod
+    def _operation_declared(tool: BaseTool, operations: tuple[str, ...]) -> bool:
+        """Positive capability evidence: a provider checker, supports flags, or the operation enum."""
+        if callable(getattr(tool, "is_operation_available", None)):
+            return True
+        supports = getattr(tool, "supports", {}) or {}
+        if any(supports.get(name) for name in operations):
+            return True
+        schema_enum = (
+            getattr(tool, "input_schema", {}).get("properties", {}).get("operation", {}).get("enum", [])
+        )
+        return any(name in schema_enum for name in operations)
+
+    @classmethod
+    def _operation_ready_any(cls, tool: BaseTool, operations: tuple[str, ...]) -> bool:
+        checker = getattr(tool, "is_operation_available", None)
+        if callable(checker):
+            return any(bool(checker(name)) for name in operations)
+        # No provider checker: fall back to the declared capability surface
+        # instead of assuming support.
+        return cls._operation_declared(tool, operations)
 
     @staticmethod
     def _operation_ready(tool: BaseTool, operation: str) -> bool:

@@ -15,5 +15,10 @@ setup(
         "requests>=2.31",
         "google-genai>=1.0.0",
         "openai>=2.44.0",
+        # Backlot board server runtime (PR 56 review): pip install . does not
+        # read requirements.txt, so these must live in install_requires.
+        "fastapi>=0.110",
+        "uvicorn>=0.29",
+        "watchfiles>=0.21",
     ],
 )
