@@ -56,9 +56,16 @@ def main() -> int:
             # uses throwaway CI credentials and proves the signed session gate
             # before it touches any studio route.
             page.goto(f"{BASE_URL}/sign-in", wait_until="networkidle")
-            page.get_by_label("Email").fill(TEST_EMAIL)
-            page.get_by_label("Password").fill(TEST_PASSWORD)
-            page.get_by_role("button", name="Enter Montage").click()
+            # Owner sign-in lives in a collapsed <details>. Open it the way a user
+            # would and prove the fields are visible before filling them.
+            page.get_by_text("Owner sign-in", exact=True).click()
+            email_input = page.get_by_label("Email")
+            password_input = page.get_by_label("Password")
+            expect(email_input).to_be_visible(timeout=5_000)
+            expect(password_input).to_be_visible(timeout=5_000)
+            email_input.fill(TEST_EMAIL)
+            password_input.fill(TEST_PASSWORD)
+            page.get_by_role("button", name="Enter owner studio").click()
             page.wait_for_url(re.compile(r"/studio$"), timeout=15_000)
 
             page.goto(f"{BASE_URL}/studio/new", wait_until="networkidle")

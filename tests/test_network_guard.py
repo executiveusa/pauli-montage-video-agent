@@ -5,6 +5,7 @@ If these fail, every other test in the suite is one bug away from spending money
 
 from __future__ import annotations
 
+import os
 import socket
 
 import pytest
@@ -70,6 +71,10 @@ class TestLiveApiMarkerIsSkipped:
 
     @pytest.mark.live_api
     def test_this_should_never_run_by_default(self):
+        if os.environ.get("OPENMONTAGE_ALLOW_NETWORK") == "1":
+            # Opt-in live run: the collection hook intentionally let this
+            # through. The sentinel only guards the default skipped case.
+            return
         raise AssertionError(
             "A @live_api test executed without OPENMONTAGE_ALLOW_NETWORK=1 — "
             "the opt-in gate is broken and real spending is possible."
