@@ -15,7 +15,8 @@
 .label { display:grid; gap:8px; font-size:12px; font-weight:800; }
 .input { width:100%; border:1px solid #0c0d0d2e; background:#ffffff80; border-radius:12px; padding:14px 15px; font:inherit; outline:none; }
 .input:focus { border-color:#0c0d0d; box-shadow:0 0 0 3px #dfff4566; }
-.button { margin-top:6px; border:0; border-radius:999px; background:#0c0d0d; color:white; padding:15px 18px; font:inherit; font-weight:850; cursor:pointer; }
+.button { display:inline-block; text-align:center; text-decoration:none; margin-top:6px; border:0; border-radius:999px; background:#0c0d0d; color:white; padding:15px 18px; font:inherit; font-weight:850; cursor:pointer; }
+.button + .copy { margin-top:26px; }
 .error { margin:0 0 20px; border-left:3px solid #ef5a45; background:#fff3ef; padding:12px 14px; font-size:13px; line-height:1.45; }
 .config { border-left-color:#d3a800; background:#fff8d8; }
 .back { display:inline-block; margin-top:24px; color:#0c0d0d; text-underline-offset:4px; font-size:12px; font-weight:800; }
