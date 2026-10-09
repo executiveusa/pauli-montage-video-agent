@@ -41,9 +41,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          from lib.pipeline_loader import load_pipeline_definition
+          from lib.pipeline_loader import load_pipeline
           for path in sorted(Path('pipeline_defs').glob('*.yaml')):
-              load_pipeline_definition(path)
+              load_pipeline(path.stem, path.parent)
               print('validated', path)
           PY
       - name: Install web and renderer dependencies
