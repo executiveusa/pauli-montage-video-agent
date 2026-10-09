@@ -61,9 +61,13 @@ jobs:
       - name: Build studio
         run: npm run build:studio
       - name: Verify Remotion browser and bundle
+        # Run from remotion-composer so npx resolves the locally installed
+        # remotion CLI (node_modules/.bin). From the repo root there is no
+        # such package and npx cannot determine an executable.
+        working-directory: remotion-composer
         run: |
-          npx remotion browser ensure --prefix remotion-composer
-          npx remotion compositions remotion-composer/src/index.tsx --log=error
+          npx --no-install remotion browser ensure
+          npx --no-install remotion compositions src/index.tsx --log=error
       - name: Build production container
         run: docker build -t yappy-clipz:${{ github.sha }} .
       - name: Compose configuration validation
