@@ -36,7 +36,8 @@ jobs:
       - name: Run Python tests with timeout
         run: timeout 15m python -m pytest -q --disable-warnings --maxfail=1
       - name: Validate pipeline definitions
-        run: python - <<'PY'
+        run: |
+          python - <<'PY'
           from pathlib import Path
           from lib.pipeline_loader import load_pipeline_definition
           for path in sorted(Path('pipeline_defs').glob('*.yaml')):
