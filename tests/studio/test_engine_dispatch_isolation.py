@@ -68,9 +68,24 @@ class DispatcherIsolationTests(unittest.TestCase):
             self.run_a("animator.job.create", {"projectId": self.pid, "spec": {"op": "extract", "inputs": ["ast_x"], "pages": "1"}})
         self.assertEqual(self.rt.pdfcraft.get("t1", pdf["id"])["id"], pdf["id"])
 
+    def test_image_engines_create_in_their_own_stores(self):
+        specs = {"photocraft": {"title": "T", "input": "ast_x", "steps": [{"op": "rotate90cw"}]},
+                 "lightcraft": {"title": "T", "input": "ast_x", "controls": {"wb.temp": 6000}}}
+        for eng, spec in specs.items():
+            job = self.run_a(f"{eng}.job.create", {"projectId": self.pid, "spec": spec})
+            self.assertEqual(job["engine"], eng)
+            self.assertEqual(getattr(self.rt, eng).get("t1", job["id"])["id"], job["id"])
+            other = "lightcraft" if eng == "photocraft" else "photocraft"
+            with self.assertRaises(Exception):
+                getattr(self.rt, other).get("t1", job["id"])
+        foreign = {"photocraft": specs["lightcraft"], "lightcraft": specs["photocraft"], "pdfcraft": specs["photocraft"]}
+        for eng, spec in foreign.items():
+            with self.assertRaises(ActionProblem, msg=eng):  # an engine rejects another engine's spec
+                self.run_a(f"{eng}.job.create", {"projectId": self.pid, "spec": spec})
+
     def test_handler_table_is_complete_and_unshadowed(self):
         d = self.rt.dispatcher
         for aid in self.rt.capabilities.action_ids():
-            if aid.split(".")[0] in {"animator", "pdfcraft"}:
+            if aid.split(".")[0] in {"animator", "pdfcraft", "photocraft", "lightcraft"}:
                 self.assertIn(aid, d._handlers, aid)
         self.assertIsNot(d._handlers["animator.job.create"].__func__, d._handlers["pdfcraft.job.create"].__func__)

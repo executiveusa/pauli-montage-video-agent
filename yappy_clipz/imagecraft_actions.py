@@ -66,13 +66,20 @@ class ImageCraftActionDispatcher(PdfCraftActionDispatcher):
         for engine, svc in self.images.items():
             self._handlers.update(self._handlers_for(engine, svc))
 
+    @staticmethod
+    def _img_spec(q: dict[str, Any]) -> dict[str, Any]:
+        spec = q.get("spec")
+        if not isinstance(spec, dict):
+            raise ActionProblem("invalid_request", "spec must be an object", 400)
+        return spec
+
     def _handlers_for(self, engine: str, svc: ImageCraftService) -> dict[str, Any]:
         p = engine + "."
         jid = lambda q: str(self.req(q, "jobId"))  # noqa: E731
         return {
             p + "options.get": lambda q, c: svc.options(),
-            p + "job.create": lambda q, c: svc.create(tenant=self.tenant(c), project=str(self.req(q, "projectId")), actor=c.actor_id, spec=self._spec(q)),
-            p + "job.revise": lambda q, c: svc.revise(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id, spec=self._spec(q)),
+            p + "job.create": lambda q, c: svc.create(tenant=self.tenant(c), project=str(self.req(q, "projectId")), actor=c.actor_id, spec=self._img_spec(q)),
+            p + "job.revise": lambda q, c: svc.revise(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id, spec=self._img_spec(q)),
             p + "job.get": lambda q, c: svc.get(self.tenant(c), jid(q)),
             p + "job.list": lambda q, c: svc.list(self.tenant(c), q.get("projectId")),
             p + "plan.run": lambda q, c: svc.run_plan(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id),
