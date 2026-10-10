@@ -14,7 +14,8 @@ from .hosted_actions import HostedCapabilityRegistry
 from .icm_runtime import IcmRuntime
 from .media_library import MediaLibraryService
 from .media_library_actions import MediaLibraryActionDispatcher,MediaLibraryCapabilityRegistry
-from .engine_actions import EngineActionDispatcher,EngineCapabilityRegistry
+from .pdfcraft_actions import PdfCraftActionDispatcher,PdfCraftCapabilityRegistry
+from .crafts.pipeline import PdfCraftService
 from .engines import EngineRegistry
 from .code_animator.pipeline import AnimatorService
 from .onedrive import JsonSourceConnectionStore,OneDriveService,PostgresSourceConnectionStore,SecretCipher
@@ -36,18 +37,34 @@ from .storage import LocalObjectStorage,ObjectStorage,S3ObjectStorage,StorageNot
 
 @dataclass(frozen=True,slots=True)
 class ApplicationRuntime:
- settings:Settings;service:StudioService;capabilities:CapabilityRegistry;prompt_locker:PromptLocker;provider_catalog:ProviderCatalog;icm:IcmRuntime;fal:ExtendedFalProviderAdapter;auth:AuthService;accounts:AccountService;storage:ObjectStorage;assets:AssetService;sources:OneDriveService;operations:BudgetedOperationsService;router:OmniRouter;generation:GenerationService;rendering:RenderService;media_library:MediaLibraryService;animator:AnimatorService;engines:EngineRegistry;dispatcher:RenderActionDispatcher
+ settings:Settings;service:StudioService;capabilities:CapabilityRegistry;prompt_locker:PromptLocker;provider_catalog:ProviderCatalog;icm:IcmRuntime;fal:ExtendedFalProviderAdapter;auth:AuthService;accounts:AccountService;storage:ObjectStorage;assets:AssetService;sources:OneDriveService;operations:BudgetedOperationsService;router:OmniRouter;generation:GenerationService;rendering:RenderService;media_library:MediaLibraryService;animator:AnimatorService;pdfcraft:PdfCraftService;engines:EngineRegistry;dispatcher:RenderActionDispatcher
 
 def create_repository(settings:Settings)->ProjectRepository:return PostgresProjectRepository(settings.database_url or "") if settings.repository_backend=="postgres" else FileProjectRepository(settings.project_root)
 def create_storage(settings:Settings)->ObjectStorage:return S3ObjectStorage(bucket=settings.storage_bucket or "",region=settings.storage_region,endpoint_url=settings.storage_endpoint_url) if settings.storage_backend=="s3" else LocalObjectStorage(settings.resolved_storage_root)
 def create_service(settings:Settings|None=None)->StudioService:
  resolved=settings or Settings.from_env();return StudioService(create_repository(resolved))
-def build_engines(animator)->EngineRegistry:
+def build_engines(animator,pdfcraft)->EngineRegistry:
  reg=EngineRegistry()
  reg.register("code-animator",animator.engine_descriptor,route="/studio/projects/{projectId}/animator",action_prefix="animator.")
- for eid,label,kind,note in (("pdfcraft","PdfCraft","document","Planned: PDF info, text, render, extract, combine, edit."),("photocraft","PhotoCraft","image","Planned: image convert, filters, batch."),("lightcraft","LightCraft","image","Planned: photo develop and export."),("vectorcraft","VectorCraft","vector","Planned: vector edit and SVG/PDF export."),("effectcraft","EffectCraft","video","Planned: motion graphics (half-res and chunked on the small box)."),("filmcraft","FilmCraft","video","Planned: cut and assemble, an option next to ffmpeg.")):
+ reg.register("pdfcraft",pdfcraft.engine_descriptor,route="/studio/projects/{projectId}/pdfcraft",action_prefix="pdfcraft.")
+ for eid,label,kind,note in (("photocraft","PhotoCraft","image","Planned: image convert, filters, batch."),("lightcraft","LightCraft","image","Planned: photo develop and export."),("vectorcraft","VectorCraft","vector","Planned: vector edit and SVG/PDF export."),("effectcraft","EffectCraft","video","Planned: motion graphics (half-res and chunked on the small box)."),("filmcraft","FilmCraft","video","Planned: cut and assemble, an option next to ffmpeg.")):
   reg.plan(eid,label=label,kind=kind,note=note)
  return reg
+
+def build_pdfcraft(resolved,storage,assets,repository)->PdfCraftService:
+ from .crafts import pdfcraft as engine
+ from .crafts.remote import LocalCraftRunner,RemoteCraftRunner
+ root=os.environ.get("YAPPY_PDFCRAFT_ROOT") or str(resolved.project_root.parent/"pdfcraft")
+ common=dict(root=root,storage=storage,assets=assets,repository=repository)
+ url=os.environ.get("YAPPY_CRAFT_RENDERER_URL")
+ if url:
+  runner=RemoteCraftRunner(url);return PdfCraftService(runner=runner,available=runner.healthy,**common)
+ if os.environ.get("YAPPY_CRAFT_REQUIRE_REMOTE")=="1":
+  def refuse(*a,**k):
+   raise engine.CraftRunError("the isolated craft service is not configured (YAPPY_CRAFT_RENDERER_URL)")
+  return PdfCraftService(runner=refuse,available=lambda:False,**common)
+ import tempfile;from pathlib import Path
+ local=LocalCraftRunner(Path(tempfile.gettempdir())/"yappy-pdfcraft");return PdfCraftService(runner=local,available=local.healthy,**common)
 
 def build_animator(resolved,storage,assets,repository)->AnimatorService:
  """Render in the isolated render service when configured; in production the local path is refused."""
@@ -65,7 +82,7 @@ def build_animator(resolved,storage,assets,repository)->AnimatorService:
  return AnimatorService(**common)
 
 def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None,http_client:Any|None=None,render_runner:Any|None=None)->ApplicationRuntime:
- resolved=settings or Settings.from_env();active_service=service or create_service(resolved);capabilities=EngineCapabilityRegistry(MediaLibraryCapabilityRegistry(OneDriveCapabilityRegistry(RenderCapabilityRegistry(GenerationCapabilityRegistry(OperationsCapabilityRegistry(HostedCapabilityRegistry(default_registry())))))));prompt_locker=PromptLocker(resolved.resolved_prompt_root);provider_catalog=ProviderCatalog(resolved.resolved_provider_root);icm=IcmRuntime(resolved.resolved_icm_runtime_root)
+ resolved=settings or Settings.from_env();active_service=service or create_service(resolved);capabilities=PdfCraftCapabilityRegistry(MediaLibraryCapabilityRegistry(OneDriveCapabilityRegistry(RenderCapabilityRegistry(GenerationCapabilityRegistry(OperationsCapabilityRegistry(HostedCapabilityRegistry(default_registry())))))));prompt_locker=PromptLocker(resolved.resolved_prompt_root);provider_catalog=ProviderCatalog(resolved.resolved_provider_root);icm=IcmRuntime(resolved.resolved_icm_runtime_root)
  revocations=PostgresRevocationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else MemoryRevocationStore();auth=AuthService(mode=resolved.auth_mode,signing_secret_env=resolved.auth_signing_secret_env,owner_username=resolved.auth_owner_username,owner_password_env=resolved.auth_owner_password_env,owner_tenant_id=resolved.auth_owner_tenant_id,session_ttl_seconds=resolved.auth_session_ttl_seconds,service_ttl_seconds=resolved.auth_service_ttl_seconds,revocations=revocations)
  account_store=PostgresAccountStore(resolved.database_url or "") if resolved.repository_backend=="postgres" else JsonAccountStore(resolved.resolved_account_store_path)
  recovery_delivery=None
@@ -85,5 +102,5 @@ def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None
  operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=BudgetedOperationsService(operation_store);router=OmniRouter(provider_catalog);generation=GenerationService(repository=active_service.repository,catalog=provider_catalog,router=router,operations=operations,prompts=prompt_locker,fal=fal)
  rendering=RenderService(repository=active_service.repository,storage=storage,assets=assets,operations=operations,runner=render_runner,ffmpeg_binary=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe_binary=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"),workspace_root=resolved.project_root.parent/"renders",media_library_mount_visible=resolved.media_library_mount_visible)
  animator=build_animator(resolved,storage,assets,active_service.repository)
- engines=build_engines(animator);dispatcher=EngineActionDispatcher(engines=engines,animator=animator,service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering,media_library=media_library)
- return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,sources=sources,operations=operations,router=router,generation=generation,rendering=rendering,media_library=media_library,animator=animator,engines=engines,dispatcher=dispatcher)
+ pdfcraft=build_pdfcraft(resolved,storage,assets,active_service.repository);engines=build_engines(animator,pdfcraft);dispatcher=PdfCraftActionDispatcher(pdfcraft=pdfcraft,engines=engines,animator=animator,service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering,media_library=media_library)
+ return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,sources=sources,operations=operations,router=router,generation=generation,rendering=rendering,media_library=media_library,animator=animator,pdfcraft=pdfcraft,engines=engines,dispatcher=dispatcher)

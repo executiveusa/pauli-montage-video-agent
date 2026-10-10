@@ -50,13 +50,16 @@ class RegistryActions(unittest.TestCase):
         self.assertIn("engine.options.get", ids)
         self.assertIn("animator.job.create", ids)
 
-    def test_list_has_code_animator_first_and_planned_rest(self):
+    def test_list_has_code_animator_then_pdfcraft_then_planned(self):
         rows = self.run_a("engine.list", {})["engines"]
         self.assertEqual(rows[0]["id"], "code-animator")
         self.assertEqual(rows[0]["actionPrefix"], "animator.")
         self.assertIn("{projectId}", rows[0]["route"])
-        planned = [r for r in rows[1:]]
-        self.assertEqual({r["id"] for r in planned}, {"pdfcraft", "photocraft", "lightcraft", "vectorcraft", "effectcraft", "filmcraft"})
+        self.assertEqual(rows[1]["id"], "pdfcraft")
+        self.assertEqual(rows[1]["actionPrefix"], "pdfcraft.")
+        self.assertIn(rows[1]["status"], {"ready", "unavailable"})
+        planned = rows[2:]
+        self.assertEqual({r["id"] for r in planned}, {"photocraft", "lightcraft", "vectorcraft", "effectcraft", "filmcraft"})
         self.assertTrue(all(r["status"] == "planned" and not r["available"] and r["route"] is None for r in planned))
 
     def test_options_match_the_animator_descriptor_exactly(self):
@@ -76,7 +79,7 @@ class RegistryActions(unittest.TestCase):
 
     def test_planned_engine_has_no_actions(self):
         ids = self.rt.capabilities.action_ids()
-        self.assertFalse([i for i in ids if i.startswith(("pdfcraft.", "photocraft.", "lightcraft.", "vectorcraft.", "effectcraft.", "filmcraft."))])
+        self.assertFalse([i for i in ids if i.startswith(("photocraft.", "lightcraft.", "vectorcraft.", "effectcraft.", "filmcraft."))])
 
 
 if __name__ == "__main__":
