@@ -77,14 +77,26 @@ def main() -> int:
         facts = runner("pdfcraft", "build", inputs=blobs, spec=spec, out_dir=case_dir)
         facts2 = runner("pdfcraft", "build", inputs=blobs, spec=spec, out_dir=out / f"{name}-again")
         check = pdfcraft.check_build(spec, facts)
-        same = facts["sha256"] == facts2["sha256"] and facts["outPageHashes"] == facts2["outPageHashes"]
+        same_bytes = facts["sha256"] == facts2["sha256"]
+        same_pages = facts["outPageHashes"] == facts2["outPageHashes"]
         on_disk = hashlib.sha256((case_dir / "out.pdf").read_bytes()).hexdigest() == facts["sha256"]
-        good = all(check["mechanical"].values()) and on_disk and facts["outInfo"]["pages"] == len(pdfcraft.expected_pages(spec, [d["pages"] for d in info["documents"]]))
+        # Every comparison the receipt reports is named here. A False in GATE fails the case; INFO is recorded only.
+        # Byte identity is INFO: the PDF producer embeds ModDate, so bytes can differ between runs while every page is identical.
+        gate = {
+            "mechanicalAllTrue": all(check["mechanical"].values()),
+            "outputOnDiskMatchesReportedSha": on_disk,
+            "pageCountMatchesPlan": facts["outInfo"]["pages"] == len(pdfcraft.expected_pages(spec, [d["pages"] for d in info["documents"]])),
+            "samePageHashesTwice": same_pages,
+        }
+        info_only = {"sameBytesTwice": same_bytes}
+        good = all(gate.values())
         ok = ok and good
         receipts.append({"case": name, "version": facts["version"], "argv": facts["argv"], "pages": facts["outInfo"]["pages"], "sha256": facts["sha256"],
-                         "sameBytesTwice": facts["sha256"] == facts2["sha256"], "samePagesTwice": facts["outPageHashes"] == facts2["outPageHashes"],
+                         "gate": gate, "infoOnly": info_only,
                          "mechanical": check["mechanical"], "flags": check["flags"], "pass": good})
-        print(name, "PASS" if good else "FAIL", facts["sha256"][:16], "pages", facts["outInfo"]["pages"], "same pages twice:", same)
+        print(name, "PASS" if good else "FAIL", facts["sha256"][:16], "pages", facts["outInfo"]["pages"], "gate:", gate, "info:", info_only)
+        if not good:
+            print("  failed gate checks:", [k for k, v in gate.items() if not v])
     refused = {
         "not a PDF is refused (415)": http_status(args.url, "PUT", "/v1/jobs/proofjob0001/inputs/in0.pdf", b"hello") == 415,
         "path-like input name is refused (400)": http_status(args.url, "PUT", "/v1/jobs/proofjob0001/inputs/..%2Fx.pdf", make_pdf(["x"])) == 400,

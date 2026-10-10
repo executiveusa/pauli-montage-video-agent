@@ -49,6 +49,19 @@ memory cap.
 - Verify the boundary the same way as the animator renderer:
   `docker compose exec craft-renderer sh /app/scripts/verify_renderer_isolation.sh`.
 
+## Determinism: page hashes, not bytes
+
+The proof gate is **page-hash identity plus the mechanical checks**: running the same spec twice must give the
+same per-page text hashes and pass every mechanical check. It is not byte identity. The PDF producer embeds a
+`ModDate`, so two runs of the same job can differ in the output file bytes (and sha256) while every page is
+identical; the only difference found in the decompressed object streams was `ModDate`
+(for example `D:20261010063442Z` against `D:20261010063443Z`). Earlier Stage B evidence that said the output was
+"byte-identical" was a same-second artifact and is corrected here: it is page-hash identical. The proof receipt
+records `sameBytesTwice` as information only, and lists every gate comparison explicitly under `gate`; a false
+value in `gate` fails the case and the script prints which one. The reviewed preview is still promoted to final
+byte for byte (its sha256 is checked), so the reviewed file is exactly what ships.
+Metadata is not normalized. If byte-reproducible output is ever wanted, that is an explicit change with tests.
+
 ## Pinned binary
 
 Release tag `v0.5.0`, `pdfcraft-cli-0.5.0-linux-x86_64.tar.gz`, sha256
