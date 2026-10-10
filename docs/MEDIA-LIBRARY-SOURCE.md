@@ -12,7 +12,7 @@ footage is never copied, moved, or deleted.
 | `YAPPY_MEDIA_LIBRARY_ENABLED` | `false` | Master switch for the source. |
 | `YAPPY_MEDIA_LIBRARY_INDEX` | `<project_root>/../media-index.snapshot.db` | SQLite snapshot path (must live inside an existing runtime volume). |
 | `YAPPY_MEDIA_LIBRARY_HOST_ROOT` | `/mnt/mb-gdrive-samsung` | Host library root used to derive clip host paths. |
-| `YAPPY_MEDIA_LIBRARY_ROOTS` | unset | JSON map of `remote:<name>`/`account:<name>` to an absolute host root. When set, unmapped clips fail closed. |
+| `YAPPY_MEDIA_LIBRARY_ROOTS` | unset | JSON map of `remote:<name>`/`account:<name>` to an absolute host root. When set, an unmapped clip fails closed: `library.media.get` errors, and list/search skip it and report it in `unmappedSkipped`. |
 | `YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE` | `false` | Set `1` only after the owner approves the read-only library bind mount; unblocks render URI resolution for library assets. |
 
 ## Snapshot sync (host side)

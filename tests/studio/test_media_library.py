@@ -154,6 +154,14 @@ class MediaLibraryMultiRootTests(unittest.TestCase):
         with self.assertRaises(MediaLibraryError):
             self.service.get_clip("stray-1")
 
+    def test_listings_skip_and_flag_unmapped_clips(self):
+        page = self.service.list_clips(limit=10)
+        self.assertEqual(sorted(i["id"] for i in page["items"]), sorted([SAMPLE_CLIP["id"], "exec-1"]))
+        self.assertEqual([x["id"] for x in page["unmappedSkipped"]], ["stray-1"])
+        found = self.service.search(query="timelapse")
+        self.assertEqual([i["id"] for i in found["items"]], ["exec-1"])
+        self.assertEqual([x["id"] for x in found["unmappedSkipped"]], ["stray-1"])
+
     def test_account_key_is_used_when_remote_is_not_mapped(self):
         service = MediaLibraryService(index_path=self.index, host_root="/mnt/x", enabled=True,
                                       host_roots={"account:other@example.test": "/mnt/mb-other"})

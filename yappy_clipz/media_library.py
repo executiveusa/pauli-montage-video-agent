@@ -41,6 +41,10 @@ class MediaLibraryNotConfigured(MediaLibraryError):
     """Raised when the snapshot is not configured or not synced yet."""
 
 
+class MediaLibraryUnmapped(MediaLibraryError):
+    """Raised when a clip's remote/account has no configured host root."""
+
+
 class ClipNotFound(MediaLibraryError):
     """Raised when one clip id is absent from the index snapshot."""
 
@@ -99,7 +103,7 @@ class MediaLibraryService:
             value = record.get(kind)
             if value and f"{kind}:{value}" in self.host_roots:
                 return self.host_roots[f"{kind}:{value}"]
-        raise MediaLibraryError(
+        raise MediaLibraryUnmapped(
             "no library root is mapped for remote=%r account=%r" % (record.get("remote"), record.get("account"))
         )
 
@@ -157,6 +161,17 @@ class MediaLibraryService:
         }
         clip["hostPath"] = self._host_path({"path": clip["path"], "name": clip["name"], "remote": clip["remote"], "account": clip["account"]})
         return clip
+
+    def _normalize_rows(self, rows: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Normalize listing rows; clips with no mapped library root are skipped and flagged."""
+        items: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                items.append(self._normalize(row))
+            except MediaLibraryUnmapped:
+                skipped.append({"id": str(row["id"]), "remote": row["remote"], "account": row["account"]})
+        return items, skipped
 
     # -- reads ----------------------------------------------------------------
     def status(self) -> dict[str, Any]:
@@ -219,8 +234,8 @@ class MediaLibraryService:
                 f"SELECT rowid, * FROM clips{where} ORDER BY capture_date DESC, rowid DESC LIMIT ? OFFSET ?",
                 (*params, limit, offset),
             ).fetchall()
-        items = [self._normalize(row) for row in rows]
-        return {"items": items, "total": total, "limit": limit, "offset": offset, "remoteWriteEnabled": False}
+        items, skipped = self._normalize_rows(rows)
+        return {"items": items, "total": total, "limit": limit, "offset": offset, "unmappedSkipped": skipped, "remoteWriteEnabled": False}
 
     def search(self, *, query: str, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         text = (query or "").strip()
@@ -253,8 +268,8 @@ class MediaLibraryService:
                     "ORDER BY rowid DESC LIMIT ? OFFSET ?",
                     (like, like, like, limit, offset),
                 ).fetchall()
-        items = [self._normalize(row) for row in rows]
-        return {"items": items, "query": text, "mode": mode, "limit": limit, "offset": offset, "remoteWriteEnabled": False}
+        items, skipped = self._normalize_rows(rows)
+        return {"items": items, "query": text, "mode": mode, "limit": limit, "offset": offset, "unmappedSkipped": skipped, "remoteWriteEnabled": False}
 
     def search_vision(self, *, query: str, limit: int = 50) -> dict[str, Any]:
         """Search Takeout/vision metadata: vtags caption arrays and photo descriptions.
@@ -271,6 +286,7 @@ class MediaLibraryService:
         with self._connection() as connection:
             tables = _tables(connection)
             present = {name: name in tables for name in ("photos", "frames", "vtags")}
+            unmapped: list[dict[str, Any]] = []
             clips: list[dict[str, Any]] = []
             photos: list[dict[str, Any]] = []
             if present["vtags"]:
@@ -281,7 +297,11 @@ class MediaLibraryService:
                     (*patterns, limit),
                 ).fetchall()
                 for row in rows:
-                    clip = self._normalize(row)
+                    try:
+                        clip = self._normalize(row)
+                    except MediaLibraryUnmapped:
+                        unmapped.append({"id": str(row["id"]), "remote": row["remote"], "account": row["account"]})
+                        continue
                     clip["matchedTags"] = _matched_tags(row["vtags_tags"], text)
                     if present["frames"]:
                         clip["frameTimes"] = [
@@ -308,7 +328,7 @@ class MediaLibraryService:
                         "byteAccess": "takeout-archive-not-mounted",
                     })
         return {"query": text, "clips": clips, "photos": photos, "visionTablesPresent": present,
-                "limit": limit, "remoteWriteEnabled": False}
+                "unmappedSkipped": unmapped, "limit": limit, "remoteWriteEnabled": False}
 
     def get_clip(self, clip_id: str) -> dict[str, Any]:
         ident = str(clip_id or "").strip()
