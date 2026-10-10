@@ -14,8 +14,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 128
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 1g   # image engines: measured peak ~313 MB (LightCraft render), ~230 MB (PhotoCraft blur) on 6 MP; 24 MP cap
+    memswap_limit: 1g
     cpus: 1.0
     tmpfs:
       - /work:size=256m,mode=1777,uid=10001,gid=10001
@@ -31,11 +31,13 @@ services:
       YAPPY_CRAFT_RENDERER_URL: http://craft-renderer:8790
       YAPPY_CRAFT_REQUIRE_REMOTE: "1"
       YAPPY_PDFCRAFT_ROOT: /data/pdfcraft
+      YAPPY_IMAGECRAFT_ROOT: /data/imagecraft
       # Keep internal renderer traffic off the outbound proxy (the client also bypasses proxies in code).
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},craft-renderer
       no_proxy: ${no_proxy:-localhost,127.0.0.1},craft-renderer
     volumes:
       - pdfcraft_jobs:/data/pdfcraft
+      - imagecraft_jobs:/data/imagecraft
     networks: [default, craft_internal]
     depends_on:
       craft-renderer:
@@ -45,3 +47,4 @@ networks:
     internal: true
 volumes:
   pdfcraft_jobs:
+  imagecraft_jobs:

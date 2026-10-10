@@ -64,10 +64,21 @@ jobs:
           echo "${SHA}  /tmp/pdfcraft.tgz" | sha256sum -c -
           mkdir -p /tmp/pdfcraft && tar -xzf /tmp/pdfcraft.tgz -C /tmp/pdfcraft --strip-components=1
           echo "YAPPY_PDFCRAFT_BIN=/tmp/pdfcraft/pdfcraft-cli" >> "$GITHUB_ENV"
+      - name: Fetch the pinned PhotoCraft and LightCraft CLIs (same tags and sha256 as the craft renderer image)
+        run: |
+          for E in PHOTOCRAFT LIGHTCRAFT; do
+            e=$(echo "$E" | tr 'A-Z' 'a-z')
+            V=$(grep -oP "ARG ${E}_VERSION=\K.*" deploy/craft-renderer/Dockerfile)
+            SHA=$(grep -oP "ARG ${E}_SHA256=\K.*" deploy/craft-renderer/Dockerfile)
+            curl -fsSL -o /tmp/$e.tgz "https://github.com/storytold/$e/releases/download/v${V}/$e-${V}-linux-x86_64.tar.gz"
+            echo "${SHA}  /tmp/$e.tgz" | sha256sum -c -
+            mkdir -p /tmp/$e && tar -xzf /tmp/$e.tgz -C /tmp/$e --strip-components=1
+            echo "YAPPY_${E}_BIN=/tmp/$e/bin/$e-cli" >> "$GITHUB_ENV"
+          done
       - name: Animator and engine API tests
         env:
           YAPPY_ANIMATOR_CHROMIUM: /usr/bin/google-chrome
-        run: python -m pytest -q -p no:cacheprovider tests/studio/test_code_animator_core.py tests/studio/test_code_animator_wiring.py tests/studio/test_code_animator_pipeline.py tests/studio/test_media_library.py tests/studio/test_engine_registry.py tests/studio/test_pdfcraft_core.py tests/studio/test_pdfcraft_pipeline.py
+        run: python -m pytest -q -p no:cacheprovider tests/studio/test_code_animator_core.py tests/studio/test_code_animator_wiring.py tests/studio/test_code_animator_pipeline.py tests/studio/test_media_library.py tests/studio/test_engine_registry.py tests/studio/test_pdfcraft_core.py tests/studio/test_pdfcraft_pipeline.py tests/studio/test_imagecraft_core.py tests/studio/test_imagecraft_pipeline.py tests/studio/test_engine_dispatch_isolation.py
   build:
     needs: [renderer-tests, craft-renderer-tests, api-animator-tests]
     runs-on: ubuntu-latest
