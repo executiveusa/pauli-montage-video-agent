@@ -56,8 +56,11 @@ def build_index(path: Path, rows: list[dict]) -> None:
             "link TEXT, kind TEXT, canonical_id TEXT, vision TEXT, tier TEXT)"
         )
         connection.execute(
-            "CREATE VIRTUAL TABLE clips_fts USING fts5(name, path, vision, content='clips', content_rowid='rowid')"
+            "CREATE VIRTUAL TABLE clips_fts USING fts5(id UNINDEXED, name, path, capture_date, text, tokenize='unicode61')"
         )
+        # Real index shape: standalone FTS with its own rowids. A leading row for an
+        # unrelated id misaligns every later rowid against clips.rowid.
+        connection.execute("INSERT INTO clips_fts (id, name, path, capture_date, text) VALUES ('orphan','','','','')")
         connection.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
         connection.execute("INSERT INTO meta VALUES ('schema', 'media-brain-1')")
         for row in rows:
@@ -66,9 +69,14 @@ def build_index(path: Path, rows: list[dict]) -> None:
                 f"INSERT INTO clips ({','.join(_COLUMNS)}) VALUES ({','.join('?' for _ in _COLUMNS)})", values
             )
             connection.execute(
-                "INSERT INTO clips_fts (rowid, name, path, vision) VALUES (?, ?, ?, ?)",
-                (cursor.lastrowid, row.get("name"), row.get("path"), row.get("vision")),
+                "INSERT INTO clips_fts (id, name, path, capture_date, text) VALUES (?, ?, ?, ?, '')",
+                (row["id"], row.get("name"), row.get("path"), row.get("capture_date")),
             )
+            if row.get("vision") and row.get("vision") != "todo":
+                connection.execute(
+                    "INSERT INTO clips_fts (id, name, path, capture_date, text) VALUES (?, '', '', '', ?)",
+                    (row["id"], "VISION " + row["vision"]),
+                )
         connection.commit()
     finally:
         connection.close()
@@ -174,6 +182,22 @@ class MediaLibraryMultiRootTests(unittest.TestCase):
 
     def test_status_lists_roots(self):
         self.assertEqual(self.service.status()["hostRoots"], self.roots)
+
+
+class MediaLibraryFtsJoinTests(unittest.TestCase):
+    def test_fts_matches_join_on_id_not_rowid_and_dedupe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            index = Path(temp) / "media-index.snapshot.db"
+            build_index(index, [SAMPLE_CLIP, second_clip(), second_clip(id="clip-3", name="trees at dusk.mov", vision="trees dusk")])
+            service = MediaLibraryService(index_path=index, host_root="/mnt/mb-gdrive-samsung", enabled=True)
+            hit = service.search(query="timelapse")
+            self.assertEqual(hit["mode"], "fts")
+            self.assertEqual([i["id"] for i in hit["items"]], ["clip-2"])
+            # clip-2 has a name row and a VISION row that both match "trees": one result.
+            ids = [i["id"] for i in service.search(query="trees")["items"]]
+            self.assertEqual(sorted(ids), ["clip-2", "clip-3"])
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertEqual([i["id"] for i in service.search(query="dusk")["items"]], ["clip-3"])
 
 
 class MediaLibraryServiceTests(unittest.TestCase):

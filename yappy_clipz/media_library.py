@@ -253,8 +253,12 @@ class MediaLibraryService:
                 match = " ".join(f'"{token}"' for token in text.split() if token)
                 try:
                     rows = connection.execute(
-                        "SELECT c.rowid, c.* FROM clips_fts f JOIN clips c ON c.rowid = f.rowid "
-                        "WHERE clips_fts MATCH ? ORDER BY rank LIMIT ? OFFSET ?",
+                        # clips_fts is a standalone FTS5 table (id UNINDEXED, name, path,
+                        # capture_date, text) with its own rowids and extra "VISION" rows
+                        # per clip: join on the id column, never on rowid, and collapse
+                        # the several rows one clip can have.
+                        "SELECT c.rowid AS rowid, c.* FROM clips_fts f JOIN clips c ON c.id = f.id "
+                        "WHERE clips_fts MATCH ? GROUP BY c.id ORDER BY min(f.rank) LIMIT ? OFFSET ?",
                         (match, limit, offset),
                     ).fetchall()
                     mode = "fts"
