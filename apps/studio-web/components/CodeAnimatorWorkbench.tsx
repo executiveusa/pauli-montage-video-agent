@@ -221,6 +221,7 @@ export function CodeAnimatorWorkbench({ projectId }: { projectId: string }) {
           <p>A draw(t) function is rendered frame by frame in a locked browser and stitched to MP4. Same code, same frames, every time. Nobody verifies their own work: a second reviewer signs off before the final.</p>
         </div>
         <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/edit`}>Timeline</Link>
+        <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/engines`}>Engines</Link>
       </header>
 
       {!available && <div className="animator-error" role="alert">The renderer is not available on this server (no browser found). Jobs can be prepared but not rendered.</div>}

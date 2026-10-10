@@ -43,3 +43,8 @@
 .animator-empty{color:var(--a-muted);padding:24px 0}.animator-working{color:var(--a-accent);font-size:.85rem}
 .animator-approval{flex-direction:row!important;align-items:center;gap:8px!important}
 .animator-receipts pre{max-height:260px;overflow:auto;font-size:.7rem;background:#0e1012;padding:10px;border-radius:8px}
+
+.engine-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.engine-card { border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px; padding: 12px; display: grid; gap: 8px; align-content: start; }
+.engine-card.engine-planned { opacity: 0.7; }
+.engine-card a.animator-primary { text-align: center; text-decoration: none; }
