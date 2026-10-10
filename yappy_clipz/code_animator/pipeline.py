@@ -52,7 +52,9 @@ def _safe(value: str, what: str) -> str:
 class AnimatorService:
     def __init__(self, *, root: Path | str, storage: Any = None, assets: Any = None, repository: Any = None,
                  runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-                 ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe", inline: bool = False) -> None:
+                 ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe", inline: bool = False,
+                 available: Callable[[], bool] | None = None) -> None:
+        self._available = available or renderer.renderer_available
         self.root = Path(root)
         self.storage, self.assets, self.repository = storage, assets, repository
         self.runner = runner or renderer.run_isolated
@@ -114,8 +116,7 @@ class AnimatorService:
         }.get(job["state"], [])
 
     # ---- engine registry seam ---------------------------------------------------
-    @staticmethod
-    def engine_descriptor() -> dict[str, Any]:
+    def engine_descriptor(self) -> dict[str, Any]:
         return {
             "id": ENGINE_ID, "label": "Code Animator", "kind": "video",
             "optionSchema": {
@@ -126,7 +127,7 @@ class AnimatorService:
                 "soundtrack": {"type": "object", "modes": ["none", "asset", "beats"]},
             },
             "stages": ["storyboard", "preview", "selfcheck", "review", "final"],
-            "available": renderer.renderer_available(),
+            "available": bool(self._available()),
         }
 
     def presets(self) -> dict[str, Any]:

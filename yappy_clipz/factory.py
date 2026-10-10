@@ -41,6 +41,21 @@ def create_repository(settings:Settings)->ProjectRepository:return PostgresProje
 def create_storage(settings:Settings)->ObjectStorage:return S3ObjectStorage(bucket=settings.storage_bucket or "",region=settings.storage_region,endpoint_url=settings.storage_endpoint_url) if settings.storage_backend=="s3" else LocalObjectStorage(settings.resolved_storage_root)
 def create_service(settings:Settings|None=None)->StudioService:
  resolved=settings or Settings.from_env();return StudioService(create_repository(resolved))
+def build_animator(resolved,storage,assets,repository)->AnimatorService:
+ """Render in the isolated render service when configured; in production the local path is refused."""
+ from .code_animator.remote import RemoteRunner
+ root=os.environ.get("YAPPY_ANIMATOR_ROOT") or str(resolved.project_root.parent/"animator")
+ url=os.environ.get("YAPPY_ANIMATOR_RENDERER_URL","").strip()
+ common=dict(root=root,storage=storage,assets=assets,repository=repository,ffmpeg=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"))
+ if url:
+  runner=RemoteRunner(url);return AnimatorService(runner=runner,available=runner.healthy,**common)
+ if os.environ.get("YAPPY_ANIMATOR_REQUIRE_REMOTE","").lower() in {"1","true","yes"}:
+  def refuse(job):
+   from .code_animator.renderer import AnimatorRenderError
+   raise AnimatorRenderError("the isolated render service is not configured (YAPPY_ANIMATOR_RENDERER_URL)")
+  return AnimatorService(runner=refuse,available=lambda:False,**common)
+ return AnimatorService(**common)
+
 def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None,http_client:Any|None=None,render_runner:Any|None=None)->ApplicationRuntime:
  resolved=settings or Settings.from_env();active_service=service or create_service(resolved);capabilities=AnimatorCapabilityRegistry(MediaLibraryCapabilityRegistry(OneDriveCapabilityRegistry(RenderCapabilityRegistry(GenerationCapabilityRegistry(OperationsCapabilityRegistry(HostedCapabilityRegistry(default_registry())))))));prompt_locker=PromptLocker(resolved.resolved_prompt_root);provider_catalog=ProviderCatalog(resolved.resolved_provider_root);icm=IcmRuntime(resolved.resolved_icm_runtime_root)
  revocations=PostgresRevocationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else MemoryRevocationStore();auth=AuthService(mode=resolved.auth_mode,signing_secret_env=resolved.auth_signing_secret_env,owner_username=resolved.auth_owner_username,owner_password_env=resolved.auth_owner_password_env,owner_tenant_id=resolved.auth_owner_tenant_id,session_ttl_seconds=resolved.auth_session_ttl_seconds,service_ttl_seconds=resolved.auth_service_ttl_seconds,revocations=revocations)
@@ -61,6 +76,6 @@ def create_runtime(settings:Settings|None=None,*,service:StudioService|None=None
  media_library=MediaLibraryService(index_path=resolved.resolved_media_library_index_path,host_root=resolved.media_library_host_root,enabled=resolved.media_library_enabled,host_roots=resolved.media_library_host_roots)
  operation_store=PostgresOperationStore(resolved.database_url) if resolved.repository_backend=="postgres" and resolved.database_url else JsonOperationStore(resolved.project_root.parent/"operations.json");operations=BudgetedOperationsService(operation_store);router=OmniRouter(provider_catalog);generation=GenerationService(repository=active_service.repository,catalog=provider_catalog,router=router,operations=operations,prompts=prompt_locker,fal=fal)
  rendering=RenderService(repository=active_service.repository,storage=storage,assets=assets,operations=operations,runner=render_runner,ffmpeg_binary=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe_binary=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"),workspace_root=resolved.project_root.parent/"renders",media_library_mount_visible=resolved.media_library_mount_visible)
- animator=AnimatorService(root=resolved.project_root.parent/"animator",storage=storage,assets=assets,repository=active_service.repository,ffmpeg=os.environ.get("YAPPY_FFMPEG_BINARY","ffmpeg"),ffprobe=os.environ.get("YAPPY_FFPROBE_BINARY","ffprobe"))
+ animator=build_animator(resolved,storage,assets,active_service.repository)
  dispatcher=AnimatorActionDispatcher(animator=animator,service=active_service,registry=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,assets=assets,operations=operations,router=router,generation=generation,rendering=rendering,media_library=media_library)
  return ApplicationRuntime(settings=resolved,service=active_service,capabilities=capabilities,prompt_locker=prompt_locker,provider_catalog=provider_catalog,fal=fal,icm=icm,auth=auth,accounts=accounts,storage=storage,assets=assets,sources=sources,operations=operations,router=router,generation=generation,rendering=rendering,media_library=media_library,animator=animator,dispatcher=dispatcher)

@@ -1,0 +1,45 @@
+# Compose override: adds the isolated renderer and points the api at it.
+#   docker compose -f docker-compose.yml -f deploy/renderer/docker-compose.renderer.yml up -d
+# The renderer is on an internal-only network (no egress, no published port), has no env_file, no
+# project/object/render volumes, a read-only root, a small tmpfs work dir, and CPU/memory caps.
+# chromium runs with --no-sandbox inside this container, which is the isolation boundary.
+services:
+  animator-renderer:
+    build:
+      context: .
+      dockerfile: deploy/renderer/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.5
+    shm_size: 256m
+    tmpfs:
+      - /work:size=512m,mode=1777,uid=10001,gid=10001
+      - /tmp:size=64m,mode=1777
+    networks: [animator_internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8780/healthz',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  api:
+    environment:
+      YAPPY_ANIMATOR_RENDERER_URL: http://animator-renderer:8780
+      YAPPY_ANIMATOR_REQUIRE_REMOTE: "1"
+      YAPPY_ANIMATOR_ROOT: /data/animator
+    volumes:
+      - animator_jobs:/data/animator
+    networks: [default, animator_internal]
+    depends_on:
+      animator-renderer:
+        condition: service_healthy
+networks:
+  animator_internal:
+    internal: true
+volumes:
+  animator_jobs:

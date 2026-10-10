@@ -11,7 +11,9 @@ import json
 import os
 import shutil
 import signal
+import site
 import subprocess
+import tempfile
 import sys
 import threading
 from pathlib import Path
@@ -181,6 +183,9 @@ def render_video(spec: AnimationSpec, code: str, out: Path, *, max_frames: int |
 
 def _child_main() -> None:
     job = json.loads(sys.stdin.read())
+    if job.get("op") == "env":  # introspection for the isolation tests; carries no secrets itself
+        sys.stdout.write("\n@@RESULT@@" + json.dumps({"env": sorted(os.environ), "cwd": os.getcwd(), "home": os.environ.get("HOME")}) + "\n")
+        return
     spec = parse_spec(job["spec"])
     code = job["code"]
     lint = lint_code(code)
@@ -198,30 +203,44 @@ def _child_main() -> None:
 # Repo root = the directory holding the yappy_clipz package, wherever the server was started from.
 _APP_ROOT = str(Path(__file__).resolve().parents[2])
 
+# The render child gets an allowlist, never the parent's environment: the API process holds
+# database, signing and storage secrets that untrusted draw code must never be near.
+_ENV_ALLOW = ("PATH", "LANG", "LC_ALL", "YAPPY_ANIMATOR_CHROMIUM", "YAPPY_FFMPEG_BINARY", "YAPPY_FFPROBE_BINARY")
 
-def _child_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = _APP_ROOT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+
+def _child_env(workdir: str) -> dict[str, str]:
+    env = {k: os.environ[k] for k in _ENV_ALLOW if k in os.environ}
+    env.update({"PYTHONPATH": _APP_ROOT, "HOME": workdir, "TMPDIR": workdir, "XDG_CONFIG_HOME": workdir,
+                "XDG_CACHE_HOME": workdir, "PYTHONDONTWRITEBYTECODE": "1"})
+    # HOME is replaced, so keep pointing at the parent's user site-packages (a path, not a secret).
+    env["PYTHONUSERBASE"] = os.environ.get("PYTHONUSERBASE") or site.getuserbase()
     return env
 
 
 def run_isolated(job: dict[str, Any], *, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
-    """Run one render in a child process group; kill it all on timeout."""
+    """Run one render in a child process group with a scrubbed env and a private scratch dir."""
     with _RENDER_LOCK:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "yappy_clipz.code_animator.renderer"],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            start_new_session=True, cwd=_APP_ROOT, env=_child_env(),
-        )
+        scratch_root = os.environ.get("YAPPY_ANIMATOR_SCRATCH") or None
+        if scratch_root:
+            os.makedirs(scratch_root, exist_ok=True)
+        scratch = tempfile.mkdtemp(prefix="animator-child-", dir=scratch_root)
         try:
-            stdout, stderr = proc.communicate(json.dumps(job).encode(), timeout=timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate()
-            raise AnimatorRenderError(f"render exceeded {timeout}s and was killed") from None
-        finally:
-            if proc.poll() is None:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "yappy_clipz.code_animator.renderer"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True, cwd=scratch, env=_child_env(scratch),
+            )
+            try:
+                stdout, stderr = proc.communicate(json.dumps(job).encode(), timeout=timeout)
+            except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+                raise AnimatorRenderError(f"render exceeded {timeout}s and was killed") from None
+            finally:
+                if proc.poll() is None:
+                    os.killpg(proc.pid, signal.SIGKILL)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
     text = stdout.decode("utf-8", "replace")
     if proc.returncode != 0 or "@@RESULT@@" not in text:
         tail = (stderr.decode("utf-8", "replace").strip().splitlines() or ["render failed"])[-1]
