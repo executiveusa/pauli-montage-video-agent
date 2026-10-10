@@ -21,9 +21,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import pdfcraft
+from . import imagecraft, pdfcraft
 
 ENGINES = {"pdfcraft": pdfcraft}
+IMAGE_ENGINES = tuple(imagecraft.ENGINES)
 MAX_BODY_BYTES = 64 * 1024
 JOB_TTL_SECONDS = 3600
 _JOB_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -70,6 +71,17 @@ def _sweep(root: Path) -> None:
 
 
 def store_input(root: Path, job_id: str, name: str, data: bytes) -> dict[str, Any]:
+    if imagecraft._INPUT_NAME.match(name):
+        if not data or len(data) > imagecraft.MAX_INPUT_BYTES:
+            raise ServiceError(413, "input size is out of bounds")
+        try:
+            ext, _w, _h = imagecraft.sniff(data)
+        except imagecraft.ImageSpecError as exc:
+            raise ServiceError(415, str(exc)) from exc
+        if name != f"in0.{ext}":
+            raise ServiceError(415, "input name does not match its content")
+        (_job_dir(root, job_id, create=True) / name).write_bytes(data)
+        return {"stored": name, "bytes": len(data)}
     if not pdfcraft._INPUT_NAME.match(name):
         raise ServiceError(400, "input name must be in0.pdf .. in7.pdf")
     if not data or len(data) > pdfcraft.MAX_INPUT_BYTES:
@@ -84,6 +96,8 @@ def store_input(root: Path, job_id: str, name: str, data: bytes) -> dict[str, An
 def run(root: Path, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ServiceError(400, "payload must be an object")
+    if payload.get("engine") in IMAGE_ENGINES:
+        return _run_image(root, payload)
     engine = ENGINES.get(payload.get("engine"))
     if engine is None:
         raise ServiceError(400, "unknown engine")
@@ -108,6 +122,25 @@ def run(root: Path, payload: dict[str, Any]) -> dict[str, Any]:
         raise ServiceError(422, str(exc)) from exc
     except engine.PdfSpecError as exc:
         raise ServiceError(400, str(exc)) from exc
+
+
+def _run_image(root: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    name = payload["engine"]
+    stage, names = payload.get("stage"), payload.get("inputs")
+    if stage not in {"info", "build"}:
+        raise ServiceError(400, "stage must be info or build")
+    if not isinstance(names, list) or len(names) != 1 or not isinstance(names[0], str) or not imagecraft._INPUT_NAME.match(names[0]):
+        raise ServiceError(400, "inputs must be one uploaded image name")
+    job_dir = _job_dir(root, payload.get("jobId"))
+    try:
+        if stage == "info":
+            return imagecraft.run_info(name, job_dir, names)
+        spec = imagecraft.parse_spec(name, payload.get("spec"))
+        return imagecraft.run_build(name, job_dir, spec, names, timeout=int(os.environ.get("YAPPY_RENDER_TIMEOUT", "120")))
+    except imagecraft.ImageSpecError as exc:
+        raise ServiceError(400, str(exc)) from exc
+    except pdfcraft.CraftRunError as exc:
+        raise ServiceError(422, str(exc)) from exc
 
 
 def read_file(root: Path, job_id: str, rel: str) -> Path:
@@ -139,7 +172,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         try:
             if self.path == "/healthz":
-                return self._json(200, {"ok": True, "available": pdfcraft.binary_available(), "engines": {"pdfcraft": pdfcraft.PINNED_VERSION}})
+                return self._json(200, {"ok": True, "available": pdfcraft.binary_available(),
+                                          "engines": {"pdfcraft": pdfcraft.PINNED_VERSION, **{k: v["version"] for k, v in imagecraft.ENGINES.items()}},
+                                          "ready": {"pdfcraft": pdfcraft.binary_available(), **{k: imagecraft.binary_available(k) for k in imagecraft.ENGINES}}})
             m = re.match(r"^/v1/files/([^/]+)/(.+)$", self.path)
             if not m:
                 raise ServiceError(404, "not found")
@@ -153,7 +188,7 @@ class Handler(BaseHTTPRequestHandler):
             if not m:
                 raise ServiceError(404, "not found")
             length = int(self.headers.get("content-length") or 0)
-            if length <= 0 or length > pdfcraft.MAX_INPUT_BYTES:
+            if length <= 0 or length > max(pdfcraft.MAX_INPUT_BYTES, imagecraft.MAX_INPUT_BYTES):
                 raise ServiceError(413, "input size is out of bounds")
             _sweep(self.root)
             self._json(200, store_input(self.root, m.group(1), m.group(2), self.rfile.read(length)))

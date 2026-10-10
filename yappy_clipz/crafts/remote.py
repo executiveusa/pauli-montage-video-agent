@@ -9,10 +9,24 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import imagecraft
 from .pdfcraft import CraftRunError
 
 # Internal-only service: never send these requests through HTTP(S)_PROXY.
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def input_names(engine: str, inputs: list[bytes]) -> list[str]:
+    """Fixed server-side names: in0..inN.pdf for documents, in0.png / in0.jpg (by magic bytes) for images."""
+    if engine in imagecraft.ENGINES:
+        try:
+            ext = imagecraft.sniff(inputs[0])[0] if len(inputs) == 1 else None
+        except imagecraft.ImageSpecError as exc:
+            raise CraftRunError(str(exc)) from exc
+        if ext is None:
+            raise CraftRunError("image engines take exactly one input")
+        return [f"in0.{ext}"]
+    return [f"in{i}.pdf" for i in range(len(inputs))]
 
 
 class RemoteCraftRunner:
@@ -36,15 +50,16 @@ class RemoteCraftRunner:
             raise CraftRunError(f"craft service unreachable: {exc}") from None
         return payload if raw else json.loads(payload.decode())
 
-    def healthy(self) -> bool:
+    def healthy(self, engine: str = "pdfcraft") -> bool:
         try:
-            return bool(self._request("GET", "/healthz", timeout=3).get("available"))
+            doc = self._request("GET", "/healthz", timeout=3)
+            return bool((doc.get("ready") or {}).get(engine, doc.get("available") if engine == "pdfcraft" else False))
         except CraftRunError:
             return False
 
     def __call__(self, engine: str, stage: str, *, inputs: list[bytes], spec: dict[str, Any] | None = None, out_dir: Path | None = None) -> dict[str, Any]:
         job_id = "c" + uuid.uuid4().hex
-        names = [f"in{i}.pdf" for i in range(len(inputs))]
+        names = input_names(engine, inputs)
         try:
             for name, data in zip(names, inputs):
                 self._request("PUT", f"/v1/jobs/{job_id}/inputs/{name}", raw_body=data)
@@ -53,7 +68,7 @@ class RemoteCraftRunner:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 (out_dir / "previews").mkdir(exist_ok=True)
                 (out_dir / result["output"]).write_bytes(self._request("GET", f"/v1/files/{job_id}/{result['output']}", raw=True))
-                for p in result["previews"]:
+                for p in result.get("previews", []):
                     (out_dir / p["file"]).write_bytes(self._request("GET", f"/v1/files/{job_id}/{p['file']}", raw=True))
             return result
         finally:
@@ -69,9 +84,9 @@ class LocalCraftRunner:
     def __init__(self, scratch: Path) -> None:
         self.scratch = Path(scratch)
 
-    def healthy(self) -> bool:
+    def healthy(self, engine: str = "pdfcraft") -> bool:
         from . import pdfcraft
-        return pdfcraft.binary_available()
+        return imagecraft.binary_available(engine) if engine in imagecraft.ENGINES else pdfcraft.binary_available()
 
     def __call__(self, engine: str, stage: str, *, inputs: list[bytes], spec: dict[str, Any] | None = None, out_dir: Path | None = None) -> dict[str, Any]:
         import shutil
@@ -79,17 +94,23 @@ class LocalCraftRunner:
         job_dir = self.scratch / ("c" + uuid.uuid4().hex)
         job_dir.mkdir(parents=True)
         try:
-            names = [f"in{i}.pdf" for i in range(len(inputs))]
+            names = input_names(engine, inputs)
             for name, data in zip(names, inputs):
                 (job_dir / name).write_bytes(data)
-            if stage == "info":
+            if engine in imagecraft.ENGINES:
+                if stage == "info":
+                    return imagecraft.run_info(engine, job_dir, names)
+                result = imagecraft.run_build(engine, job_dir, spec or {}, names)
+            elif stage == "info":
                 return pdfcraft.run_info(job_dir, names)
-            result = pdfcraft.run_build(job_dir, spec or {}, names)
+            else:
+                result = pdfcraft.run_build(job_dir, spec or {}, names)
             if out_dir is not None:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 (out_dir / "previews").mkdir(exist_ok=True)
                 shutil.copyfile(job_dir / result["output"], out_dir / result["output"])
-                for p in result["previews"]:
+                for p in result.get("previews", []):
+                    (out_dir / p["file"]).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(job_dir / p["file"], out_dir / p["file"])
             return result
         finally:
