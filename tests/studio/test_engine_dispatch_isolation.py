@@ -20,7 +20,7 @@ ANIM = {"title": "Proof", "style": "kinetic-type", "aspect": "9:16", "durationSe
 
 def _chain(cls):
     """Engine dispatcher classes only (the engine action modules); other families are audited separately."""
-    mods = {"yappy_clipz.animator_actions", "yappy_clipz.engine_actions", "yappy_clipz.pdfcraft_actions", "yappy_clipz.imagecraft_actions"}
+    mods = {"yappy_clipz.animator_actions", "yappy_clipz.engine_actions", "yappy_clipz.pdfcraft_actions", "yappy_clipz.imagecraft_actions", "yappy_clipz.vectorcraft_actions"}
     return [c for c in cls.__mro__ if c.__module__ in mods and c.__name__.endswith("ActionDispatcher")]
 
 
@@ -83,9 +83,15 @@ class DispatcherIsolationTests(unittest.TestCase):
             with self.assertRaises(ActionProblem, msg=eng):  # an engine rejects another engine's spec
                 self.run_a(f"{eng}.job.create", {"projectId": self.pid, "spec": spec})
 
+    def test_vector_job_is_in_its_own_store(self):
+        job = self.run_a("vectorcraft.job.create", {"projectId": self.pid, "spec": {"title": "V", "input": "ast_x", "steps": [{"op": "rotate"}]}})
+        self.assertTrue(job["id"].startswith("vct_"))
+        for name in ("animator", "pdfcraft", "photocraft", "lightcraft"):
+            with self.assertRaises(Exception): getattr(self.rt, name).get("t1", job["id"])
+
     def test_handler_table_is_complete_and_unshadowed(self):
         d = self.rt.dispatcher
         for aid in self.rt.capabilities.action_ids():
-            if aid.split(".")[0] in {"animator", "pdfcraft", "photocraft", "lightcraft"}:
+            if aid.split(".")[0] in {"animator", "pdfcraft", "photocraft", "lightcraft", "vectorcraft"}:
                 self.assertIn(aid, d._handlers, aid)
         self.assertIsNot(d._handlers["animator.job.create"].__func__, d._handlers["pdfcraft.job.create"].__func__)

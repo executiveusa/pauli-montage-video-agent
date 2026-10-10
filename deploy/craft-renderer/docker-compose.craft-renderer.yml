@@ -32,12 +32,14 @@ services:
       YAPPY_CRAFT_REQUIRE_REMOTE: "1"
       YAPPY_PDFCRAFT_ROOT: /data/pdfcraft
       YAPPY_IMAGECRAFT_ROOT: /data/imagecraft
+      YAPPY_VECTORCRAFT_ROOT: /data/vectorcraft
       # Keep internal renderer traffic off the outbound proxy (the client also bypasses proxies in code).
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},craft-renderer
       no_proxy: ${no_proxy:-localhost,127.0.0.1},craft-renderer
     volumes:
       - pdfcraft_jobs:/data/pdfcraft
       - imagecraft_jobs:/data/imagecraft
+      - vectorcraft_jobs:/data/vectorcraft
     networks: [default, craft_internal]
     depends_on:
       craft-renderer:
@@ -48,3 +50,4 @@ networks:
 volumes:
   pdfcraft_jobs:
   imagecraft_jobs:
+  vectorcraft_jobs:

@@ -61,8 +61,10 @@ class RegistryActions(unittest.TestCase):
         for row, eid in zip(rows[2:4], ("photocraft", "lightcraft")):
             self.assertEqual((row["id"], row["kind"], row["actionPrefix"]), (eid, "image", eid + "."))
             self.assertIn(row["status"], {"ready", "unavailable"})
-        planned = rows[4:]
-        self.assertEqual({r["id"] for r in planned}, {"vectorcraft", "effectcraft", "filmcraft"})
+        self.assertEqual(rows[4]["id"], "vectorcraft")
+        self.assertIn(rows[4]["status"], {"ready", "unavailable"})
+        planned = rows[5:]
+        self.assertEqual({r["id"] for r in planned}, {"effectcraft", "filmcraft"})
         self.assertTrue(all(r["status"] == "planned" and not r["available"] and r["route"] is None for r in planned))
 
     def test_options_match_the_animator_descriptor_exactly(self):
@@ -82,7 +84,7 @@ class RegistryActions(unittest.TestCase):
 
     def test_planned_engine_has_no_actions(self):
         ids = self.rt.capabilities.action_ids()
-        self.assertFalse([i for i in ids if i.startswith(("vectorcraft.", "effectcraft.", "filmcraft."))])
+        self.assertFalse([i for i in ids if i.startswith(("effectcraft.", "filmcraft."))])
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import imagecraft, pdfcraft
+from . import imagecraft, pdfcraft, vectorcraft
 
 ENGINES = {"pdfcraft": pdfcraft}
 IMAGE_ENGINES = tuple(imagecraft.ENGINES)
@@ -71,6 +71,11 @@ def _sweep(root: Path) -> None:
 
 
 def store_input(root: Path, job_id: str, name: str, data: bytes) -> dict[str, Any]:
+    if name == "in0.svg":
+        try: vectorcraft.sniff(data)
+        except vectorcraft.VectorSpecError as exc: raise ServiceError(415, str(exc)) from exc
+        (_job_dir(root, job_id, create=True) / name).write_bytes(data)
+        return {"stored": name, "bytes": len(data)}
     if imagecraft._INPUT_NAME.match(name):
         if not data or len(data) > imagecraft.MAX_INPUT_BYTES:
             raise ServiceError(413, "input size is out of bounds")
@@ -96,6 +101,14 @@ def store_input(root: Path, job_id: str, name: str, data: bytes) -> dict[str, An
 def run(root: Path, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ServiceError(400, "payload must be an object")
+    if payload.get("engine") == "vectorcraft":
+        job_dir = _job_dir(root, payload.get("jobId"))
+        try:
+            if payload.get("stage") == "info": return vectorcraft.run_info(job_dir, payload.get("inputs"))
+            if payload.get("stage") != "build": raise ServiceError(400, "stage must be info or build")
+            return vectorcraft.run_build(job_dir, payload.get("spec"), payload.get("inputs"), timeout=int(os.environ.get("YAPPY_RENDER_TIMEOUT", "120")))
+        except vectorcraft.VectorSpecError as exc: raise ServiceError(400, str(exc)) from exc
+        except pdfcraft.CraftRunError as exc: raise ServiceError(422, str(exc)) from exc
     if payload.get("engine") in IMAGE_ENGINES:
         return _run_image(root, payload)
     engine = ENGINES.get(payload.get("engine"))
@@ -173,8 +186,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/healthz":
                 return self._json(200, {"ok": True, "available": pdfcraft.binary_available(),
-                                          "engines": {"pdfcraft": pdfcraft.PINNED_VERSION, **{k: v["version"] for k, v in imagecraft.ENGINES.items()}},
-                                          "ready": {"pdfcraft": pdfcraft.binary_available(), **{k: imagecraft.binary_available(k) for k in imagecraft.ENGINES}}})
+                                          "engines": {"pdfcraft": pdfcraft.PINNED_VERSION, "vectorcraft": vectorcraft.PINNED_VERSION, **{k: v["version"] for k, v in imagecraft.ENGINES.items()}},
+                                          "ready": {"pdfcraft": pdfcraft.binary_available(), "vectorcraft": vectorcraft.binary_available(), **{k: imagecraft.binary_available(k) for k in imagecraft.ENGINES}}})
             m = re.match(r"^/v1/files/([^/]+)/(.+)$", self.path)
             if not m:
                 raise ServiceError(404, "not found")

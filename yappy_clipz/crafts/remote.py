@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from . import imagecraft
+from . import imagecraft, vectorcraft
 from .pdfcraft import CraftRunError
 
 # Internal-only service: never send these requests through HTTP(S)_PROXY.
@@ -18,6 +18,11 @@ _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 def input_names(engine: str, inputs: list[bytes]) -> list[str]:
     """Fixed server-side names: in0..inN.pdf for documents, in0.png / in0.jpg (by magic bytes) for images."""
+    if engine == "vectorcraft":
+        if len(inputs) != 1: raise CraftRunError("one SVG input is required")
+        try: vectorcraft.sniff(inputs[0])
+        except vectorcraft.VectorSpecError as exc: raise CraftRunError(str(exc)) from exc
+        return ["in0.svg"]
     if engine in imagecraft.ENGINES:
         try:
             ext = imagecraft.sniff(inputs[0])[0] if len(inputs) == 1 else None
@@ -86,7 +91,7 @@ class LocalCraftRunner:
 
     def healthy(self, engine: str = "pdfcraft") -> bool:
         from . import pdfcraft
-        return imagecraft.binary_available(engine) if engine in imagecraft.ENGINES else pdfcraft.binary_available()
+        return vectorcraft.binary_available() if engine == "vectorcraft" else imagecraft.binary_available(engine) if engine in imagecraft.ENGINES else pdfcraft.binary_available()
 
     def __call__(self, engine: str, stage: str, *, inputs: list[bytes], spec: dict[str, Any] | None = None, out_dir: Path | None = None) -> dict[str, Any]:
         import shutil
@@ -97,7 +102,10 @@ class LocalCraftRunner:
             names = input_names(engine, inputs)
             for name, data in zip(names, inputs):
                 (job_dir / name).write_bytes(data)
-            if engine in imagecraft.ENGINES:
+            if engine == "vectorcraft":
+                if stage == "info": return vectorcraft.run_info(job_dir, names)
+                result = vectorcraft.run_build(job_dir, spec or {}, names)
+            elif engine in imagecraft.ENGINES:
                 if stage == "info":
                     return imagecraft.run_info(engine, job_dir, names)
                 result = imagecraft.run_build(engine, job_dir, spec or {}, names)
