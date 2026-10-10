@@ -13,3 +13,5 @@ redis>=5,<7
 cryptography>=43,<47
 # v1 is the current stable MCP Python SDK line; prevent silent v2 breaking upgrade.
 mcp>=1.27,<2
+# Code Animator drives the image's system chromium; no browser download (see docs/CODE-ANIMATOR.md).
+playwright>=1.45,<2
