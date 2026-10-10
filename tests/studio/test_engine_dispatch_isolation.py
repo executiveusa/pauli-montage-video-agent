@@ -19,8 +19,8 @@ ANIM = {"title": "Proof", "style": "kinetic-type", "aspect": "9:16", "durationSe
 
 
 def _chain(cls):
-    """Engine dispatcher classes only (the engine action modules); other families are audited separately."""
-    mods = {"yappy_clipz.animator_actions", "yappy_clipz.engine_actions", "yappy_clipz.pdfcraft_actions", "yappy_clipz.imagecraft_actions", "yappy_clipz.vectorcraft_actions"}
+    """Every inherited action dispatcher family, including Render/Generation and future engine additions."""
+    mods = {c.__module__ for c in cls.__mro__ if c.__module__.startswith("yappy_clipz.") and c.__name__.endswith("ActionDispatcher")}
     return [c for c in cls.__mro__ if c.__module__ in mods and c.__name__.endswith("ActionDispatcher")]
 
 
@@ -82,6 +82,39 @@ class DispatcherIsolationTests(unittest.TestCase):
         for eng, spec in foreign.items():
             with self.assertRaises(ActionProblem, msg=eng):  # an engine rejects another engine's spec
                 self.run_a(f"{eng}.job.create", {"projectId": self.pid, "spec": spec})
+
+    def test_generation_and_render_plan_handlers_keep_their_owner(self):
+        from unittest.mock import patch
+        from yappy_clipz.generation_actions import GenerationActionDispatcher
+        from yappy_clipz.render_actions import RenderActionDispatcher
+        d = self.rt.dispatcher
+        self.assertIs(d._handlers["generation.plan"].__func__, GenerationActionDispatcher._generation_plan)
+        self.assertIs(d._handlers["render.plan"].__func__, RenderActionDispatcher._render_plan)
+        ctx = ActionContext(tenant_id="t1", actor_id="agent:author", scopes=("project:read", "provider:read", "render:read"))
+        payload = {"projectId": self.pid, "capability": "image.generate", "providerInput": {"prompt": "proof"}, "maxCost": 0.25}
+        with patch.object(self.rt.generation, "prepare", return_value={"owner": "generation"}) as generation, patch.object(self.rt.rendering, "plan", return_value={"owner": "render"}) as rendering:
+            self.assertEqual(d.dispatch("generation.plan", payload, context=ctx)["result"], {"owner": "generation"})
+            generation.assert_called_once()
+            rendering.assert_not_called()
+            self.assertEqual(generation.call_args.kwargs["provider_input"], {"prompt": "proof"})
+            self.assertEqual(generation.call_args.kwargs["max_cost"], 0.25)
+            self.assertEqual(d.dispatch("render.plan", {"projectId": self.pid, "presetId": "preview"}, context=ctx)["result"], {"owner": "render"})
+            rendering.assert_called_once_with(tenant_id="t1", project_id=self.pid, preset_id="preview", mode="preview")
+            self.assertEqual(generation.call_count, 1)
+        # Generation cannot silently become a render plan when required provider fields are missing.
+        with self.assertRaises(ActionProblem):
+            d.dispatch("generation.plan", {"projectId": self.pid}, context=ctx)
+
+    def test_real_generation_plan_is_not_a_render_manifest(self):
+        ctx = ActionContext(tenant_id="t1", actor_id="agent:author", scopes=("project:read", "provider:read"))
+        result = self.rt.dispatcher.dispatch("generation.plan", {
+            "projectId": self.pid, "capability": "image.generate", "providerInput": {"prompt": "documentary portrait", "num_images": 1},
+            "modelId": "fal-ai/flux-pro/kontext/text-to-image", "maxCost": .05,
+        }, context=ctx)["result"]
+        self.assertEqual(result["capability"], "image.generate")
+        self.assertEqual(result["estimatedCost"]["amount"], .04)
+        self.assertTrue(result["approvalRequired"])
+        self.assertNotIn("renderManifest", result)
 
     def test_vector_job_is_in_its_own_store(self):
         job = self.run_a("vectorcraft.job.create", {"projectId": self.pid, "spec": {"title": "V", "input": "ast_x", "steps": [{"op": "rotate"}]}})

@@ -35,7 +35,7 @@ class RenderActionDispatcher(GenerationActionDispatcher):
         self.rendering = rendering
         super().__init__(**kwargs)
         self._handlers.update({
-            "render.plan": self._plan, "render.preview": self._preview, "render.final": self._final,
+            "render.plan": self._render_plan, "render.preview": self._preview, "render.final": self._final,
             "render.execute": self._execute, "render.get": self._get, "render.verify": self._verify,
             "export.create": self._export, "export.list": self._list, "export.package": self._package,
             "render.remotion.plan": self._remotion,
@@ -48,7 +48,7 @@ class RenderActionDispatcher(GenerationActionDispatcher):
         except RenderExecutionUnavailable as exc: raise ActionProblem("service_not_configured", str(exc), 503) from exc
         except RenderError as exc: raise ActionProblem("invalid_request", str(exc), 400) from exc
 
-    def _plan(self, p, c): return self.rendering.plan(tenant_id=self.tenant(c), project_id=self.req(p, "projectId"), preset_id=p.get("presetId", "preview"), mode=p.get("mode", "preview"))
+    def _render_plan(self, p, c): return self.rendering.plan(tenant_id=self.tenant(c), project_id=self.req(p, "projectId"), preset_id=p.get("presetId", "preview"), mode=p.get("mode", "preview"))
     def _preview(self, p, c): return self.rendering.submit(tenant_id=self.tenant(c), project_id=self.req(p, "projectId"), preset_id=p.get("presetId", "preview"), mode="preview", idempotency_key=c.idempotency_key or self.req(p, "idempotencyKey"), approved=True)
     def _final(self, p, c): return self.rendering.submit(tenant_id=self.tenant(c), project_id=self.req(p, "projectId"), preset_id=p.get("presetId", "youtube_1080p"), mode="final", idempotency_key=c.idempotency_key or self.req(p, "idempotencyKey"), approved=c.approved)
     def _execute(self, p, c): return self.rendering.execute(tenant_id=self.tenant(c), job_id=self.req(p, "jobId"), worker_id=self.req(p, "workerId"))
