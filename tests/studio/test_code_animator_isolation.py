@@ -125,4 +125,6 @@ def test_remote_runner_ignores_proxy_environment(service, monkeypatch):
         monkeypatch.setenv(k, "http://127.0.0.1:9")  # dead port: any proxied request would fail
     monkeypatch.delenv("NO_PROXY", raising=False)
     monkeypatch.delenv("no_proxy", raising=False)
-    assert remote.RemoteRunner(url).healthy() is True
+    runner = remote.RemoteRunner(url)
+    reply = runner._request("GET", "/healthz", timeout=5)  # transport only: no browser needed
+    assert reply["ok"] is True

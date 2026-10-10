@@ -29,8 +29,22 @@ jobs:
           cache-to: type=gha,mode=max,scope=montage-renderer
       - name: Run renderer tests in the image
         run: docker run --rm --shm-size=256m montage-renderer-test:ci
+  api-animator-tests:
+    # API-side pipeline, wiring and gate tests with the full studio requirements and a real browser.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg chromium-browser || sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r requirements-studio.txt pytest
+      - name: Animator API tests
+        env:
+          YAPPY_ANIMATOR_CHROMIUM: /usr/bin/google-chrome
+        run: python -m pytest -q -p no:cacheprovider tests/studio/test_code_animator_core.py tests/studio/test_code_animator_wiring.py tests/studio/test_code_animator_pipeline.py tests/studio/test_media_library.py
   build:
-    needs: renderer-tests
+    needs: [renderer-tests, api-animator-tests]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
