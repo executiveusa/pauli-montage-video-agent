@@ -40,6 +40,7 @@ export function EnginePicker({ projectId }: { projectId: string }) {
   }, []);
 
   return (
+    <div className="animator-shell">
     <section className="animator-panel" aria-label="Creative engines">
       <div className="animator-title">Creative engines</div>
       {error && <div className="animator-empty" role="alert">{error}</div>}
@@ -64,5 +65,6 @@ export function EnginePicker({ projectId }: { projectId: string }) {
         </ul>
       )}
     </section>
+    </div>
   );
 }

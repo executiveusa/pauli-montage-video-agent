@@ -47,4 +47,4 @@
 .engine-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .engine-card { border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px; padding: 12px; display: grid; gap: 8px; align-content: start; }
 .engine-card.engine-planned { opacity: 0.7; }
-.engine-card a.animator-primary { text-align: center; text-decoration: none; }
+.engine-card a.animator-primary { display: inline-block; text-align: center; text-decoration: none; }
