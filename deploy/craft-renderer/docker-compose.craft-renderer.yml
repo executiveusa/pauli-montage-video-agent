@@ -1,0 +1,47 @@
+# Compose override: adds the isolated craft renderer (document/image family) and points the api at it.
+#   docker compose -f docker-compose.yml -f deploy/craft-renderer/docker-compose.craft-renderer.yml up -d
+# Same boundary as the animator renderer, on its own internal-only network: no egress, no published
+# port, no env_file, no project/object/render volumes, read-only root, small tmpfs work dir, CPU and
+# memory caps, no capabilities. It has no browser, so no --no-sandbox exception is needed.
+services:
+  craft-renderer:
+    # Immutable CI-built image (montage-images workflow). Pin MONTAGE_CRAFT_RENDERER_IMAGE to the sha- tag;
+    # nothing builds on the box.
+    image: ${MONTAGE_CRAFT_RENDERER_IMAGE:-ghcr.io/executiveusa/montage-craft-renderer:prod-city-1}
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /work:size=256m,mode=1777,uid=10001,gid=10001
+      - /tmp:size=32m,mode=1777
+    networks: [craft_internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8790/healthz',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  api:
+    environment:
+      YAPPY_CRAFT_RENDERER_URL: http://craft-renderer:8790
+      YAPPY_CRAFT_REQUIRE_REMOTE: "1"
+      YAPPY_PDFCRAFT_ROOT: /data/pdfcraft
+      # Keep internal renderer traffic off the outbound proxy (the client also bypasses proxies in code).
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},craft-renderer
+      no_proxy: ${no_proxy:-localhost,127.0.0.1},craft-renderer
+    volumes:
+      - pdfcraft_jobs:/data/pdfcraft
+    networks: [default, craft_internal]
+    depends_on:
+      craft-renderer:
+        condition: service_healthy
+networks:
+  craft_internal:
+    internal: true
+volumes:
+  pdfcraft_jobs:

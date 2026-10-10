@@ -29,6 +29,23 @@ jobs:
           cache-to: type=gha,mode=max,scope=montage-renderer
       - name: Run renderer tests in the image
         run: docker run --rm --shm-size=256m montage-renderer-test:ci
+  craft-renderer-tests:
+    # Real pinned-binary tests run inside the image that gets shipped; images are pushed only if they pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/craft-renderer/Dockerfile
+          target: test
+          load: true
+          tags: montage-craft-renderer-test:ci
+          cache-from: type=gha,scope=montage-craft-renderer
+          cache-to: type=gha,mode=max,scope=montage-craft-renderer
+      - name: Run craft tests in the image
+        run: docker run --rm montage-craft-renderer-test:ci
   api-animator-tests:
     # API-side pipeline, wiring and gate tests with the full studio requirements and a real browser.
     runs-on: ubuntu-latest
@@ -39,12 +56,20 @@ jobs:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg chromium-browser || sudo apt-get install -y --no-install-recommends ffmpeg
       - run: pip install -r requirements-studio.txt pytest
-      - name: Animator API tests
+      - name: Fetch the pinned PdfCraft CLI (same tag and sha256 as the craft renderer image)
+        run: |
+          V=$(grep -oP 'ARG PDFCRAFT_VERSION=\K.*' deploy/craft-renderer/Dockerfile)
+          SHA=$(grep -oP 'ARG PDFCRAFT_SHA256=\K.*' deploy/craft-renderer/Dockerfile)
+          curl -fsSL -o /tmp/pdfcraft.tgz "https://github.com/storytold/pdfcraft/releases/download/v${V}/pdfcraft-cli-${V}-linux-x86_64.tar.gz"
+          echo "${SHA}  /tmp/pdfcraft.tgz" | sha256sum -c -
+          mkdir -p /tmp/pdfcraft && tar -xzf /tmp/pdfcraft.tgz -C /tmp/pdfcraft --strip-components=1
+          echo "YAPPY_PDFCRAFT_BIN=/tmp/pdfcraft/pdfcraft-cli" >> "$GITHUB_ENV"
+      - name: Animator and engine API tests
         env:
           YAPPY_ANIMATOR_CHROMIUM: /usr/bin/google-chrome
-        run: python -m pytest -q -p no:cacheprovider tests/studio/test_code_animator_core.py tests/studio/test_code_animator_wiring.py tests/studio/test_code_animator_pipeline.py tests/studio/test_media_library.py
+        run: python -m pytest -q -p no:cacheprovider tests/studio/test_code_animator_core.py tests/studio/test_code_animator_wiring.py tests/studio/test_code_animator_pipeline.py tests/studio/test_media_library.py tests/studio/test_engine_registry.py tests/studio/test_pdfcraft_core.py tests/studio/test_pdfcraft_pipeline.py
   build:
-    needs: [renderer-tests, api-animator-tests]
+    needs: [renderer-tests, craft-renderer-tests, api-animator-tests]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -56,6 +81,9 @@ jobs:
             dockerfile: apps/studio-web/Dockerfile
           - name: montage-renderer
             dockerfile: deploy/renderer/Dockerfile
+            target: runtime
+          - name: montage-craft-renderer
+            dockerfile: deploy/craft-renderer/Dockerfile
             target: runtime
     steps:
       - uses: actions/checkout@v4
