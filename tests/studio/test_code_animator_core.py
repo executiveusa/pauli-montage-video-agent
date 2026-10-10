@@ -33,3 +33,12 @@ def test_timeout_kills_runaway(tmp_path):
     with pytest.raises(renderer.AnimatorRenderError):
         renderer.run_isolated({"op": "stills", "spec": SPEC, "code": "function draw(){while(true){}}",
                                "times": [0.5], "outDir": str(tmp_path)}, timeout=6)
+
+
+@needs_browser
+def test_render_works_from_any_working_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    res = renderer.run_isolated({"op": "stills", "spec": SPEC, "code": presets.preset("clean-title")["starter"],
+                                 "times": [0.5], "outDir": str(tmp_path / "s")})
+    assert len(res["stills"]) == 1

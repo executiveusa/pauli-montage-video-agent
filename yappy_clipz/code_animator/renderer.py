@@ -195,13 +195,23 @@ def _child_main() -> None:
     sys.stdout.write("\n@@RESULT@@" + json.dumps(result) + "\n")
 
 
+# Repo root = the directory holding the yappy_clipz package, wherever the server was started from.
+_APP_ROOT = str(Path(__file__).resolve().parents[2])
+
+
+def _child_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env["PYTHONPATH"] = _APP_ROOT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    return env
+
+
 def run_isolated(job: dict[str, Any], *, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
     """Run one render in a child process group; kill it all on timeout."""
     with _RENDER_LOCK:
         proc = subprocess.Popen(
             [sys.executable, "-m", "yappy_clipz.code_animator.renderer"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            start_new_session=True, cwd=os.environ.get("YAPPY_APP_ROOT") or None,
+            start_new_session=True, cwd=_APP_ROOT, env=_child_env(),
         )
         try:
             stdout, stderr = proc.communicate(json.dumps(job).encode(), timeout=timeout)

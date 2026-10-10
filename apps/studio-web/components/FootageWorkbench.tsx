@@ -436,6 +436,7 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
         </div>
         <div className="form-actions">
           <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/edit`}>Timeline</Link>
+          <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/animator`}>Animator</Link>
           <Link className="button secondary" href="/studio">Projects</Link>
         </div>
       </header>

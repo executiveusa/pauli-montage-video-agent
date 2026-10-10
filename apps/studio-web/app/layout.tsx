@@ -6,6 +6,7 @@ import "./beta-launch.css";
 import "./timeline.css";
 import "./generation.css";
 import "./footage.css";
+import "./animator.css";
 import "./hosted-assets.css";
 import "./design-system.css";
 
