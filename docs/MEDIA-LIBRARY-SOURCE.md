@@ -12,6 +12,7 @@ footage is never copied, moved, or deleted.
 | `YAPPY_MEDIA_LIBRARY_ENABLED` | `false` | Master switch for the source. |
 | `YAPPY_MEDIA_LIBRARY_INDEX` | `<project_root>/../media-index.snapshot.db` | SQLite snapshot path (must live inside an existing runtime volume). |
 | `YAPPY_MEDIA_LIBRARY_HOST_ROOT` | `/mnt/mb-gdrive-samsung` | Host library root used to derive clip host paths. |
+| `YAPPY_MEDIA_LIBRARY_ROOTS` | unset | JSON map of `remote:<name>`/`account:<name>` to an absolute host root. When set, unmapped clips fail closed. |
 | `YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE` | `false` | Set `1` only after the owner approves the read-only library bind mount; unblocks render URI resolution for library assets. |
 
 ## Snapshot sync (host side)
@@ -35,6 +36,7 @@ are served fresh. `library.media.status` reports the snapshot age.
 - `library.media.status` (scope `asset:read`) - snapshot freshness, clip counts by kind/tier/vision, FTS availability.
 - `library.media.list` (scope `asset:read`) - paged clip listing with kind/tier/account filters.
 - `library.media.search` (scope `asset:read`) - FTS5 search with keyword fallback.
+- `library.media.searchVision` (scope `asset:read`) - every-word search over `vtags.tags` caption arrays (returns matched tags and frame times) and Takeout `photos` name/album/description. Absent tables are skipped and reported in `visionTablesPresent`. Embedding similarity (`frames.emb`) is not used.
 - `library.media.get` (scope `asset:read`) - one clip with its derived host path.
 - `library.media.register` (scopes `asset:write`, `project:read`) - register-footage: adds clips to a project as reference assets. Idempotent per project (re-registering returns the existing asset). All clip ids are validated before any write.
 

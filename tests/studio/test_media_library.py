@@ -82,6 +82,57 @@ def second_clip(**overrides) -> dict:
     return clip
 
 
+class MediaLibraryVisionSearchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.index = Path(self.temp.name) / "media-index.snapshot.db"
+        build_index(self.index, [SAMPLE_CLIP, second_clip()])
+        self.service = MediaLibraryService(index_path=self.index, host_root="/mnt/mb-gdrive-samsung", enabled=True)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def add_vision_tables(self) -> None:
+        connection = sqlite3.connect(self.index)
+        connection.execute("CREATE TABLE vtags (clip_id TEXT PRIMARY KEY, duration REAL, tags TEXT, secs REAL)")
+        connection.execute("CREATE TABLE frames (clip_id TEXT, t REAL, emb BLOB, PRIMARY KEY (clip_id, t))")
+        connection.execute(
+            "CREATE TABLE photos (id TEXT PRIMARY KEY, zip TEXT, member TEXT, album TEXT, name TEXT, kind TEXT, "
+            "bytes INTEGER, taken TEXT, year TEXT, lat REAL, lon REAL, description TEXT, vision TEXT)"
+        )
+        connection.execute("INSERT INTO vtags VALUES (?,?,?,?)", (SAMPLE_CLIP["id"], 30.0, '["a boxer hits a heavy bag","a gym with red mats"]', 5.0))
+        connection.execute("INSERT INTO vtags VALUES (?,?,?,?)", ("clip-2", 20.0, '["workers pour concrete"]', 5.0))
+        for t in (0.0, 5.0):
+            connection.execute("INSERT INTO frames VALUES (?,?,?)", (SAMPLE_CLIP["id"], t, b"\x00" * 1024))
+        connection.execute("INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           ("takeout:z1:IMG_1.jpg", "z1", "IMG_1.jpg", "Trips", "IMG_1.jpg", "photo", 1000, "2021-05-01", "2021", None, None, "a boxer at a gym", "done"))
+        connection.commit()
+        connection.close()
+
+    def test_missing_tables_are_reported_not_errors(self):
+        result = self.service.search_vision(query="boxer")
+        self.assertEqual(result["visionTablesPresent"], {"photos": False, "frames": False, "vtags": False})
+        self.assertEqual((result["clips"], result["photos"]), ([], []))
+        self.assertEqual(self.service.status()["visionTablesPresent"]["vtags"], False)
+
+    def test_vtags_and_photos_match_with_all_words(self):
+        self.add_vision_tables()
+        result = self.service.search_vision(query="boxer gym")
+        self.assertEqual([c["id"] for c in result["clips"]], [SAMPLE_CLIP["id"]])
+        self.assertIn("a boxer hits a heavy bag", result["clips"][0]["matchedTags"])
+        self.assertEqual(result["clips"][0]["frameTimes"], [0.0, 5.0])
+        self.assertEqual([p["id"] for p in result["photos"]], ["takeout:z1:IMG_1.jpg"])
+        self.assertEqual(result["photos"][0]["visionStatus"], "done")
+        self.assertEqual(self.service.search_vision(query="boxer concrete")["clips"], [])
+
+    def test_wildcards_in_query_are_literal(self):
+        self.add_vision_tables()
+        self.assertEqual(self.service.search_vision(query="%")["clips"], [])
+        self.assertEqual(self.service.search_vision(query="b_xer")["photos"], [])
+        with self.assertRaises(MediaLibraryError):
+            self.service.search_vision(query="  ")
+
+
 class MediaLibraryMultiRootTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
