@@ -68,6 +68,7 @@ class Settings:
     media_library_index: str | None = None
     media_library_host_root: str = "/mnt/mb-gdrive-samsung"
     media_library_mount_visible: bool = False
+    media_library_host_roots: dict | None = None
 
     @property
     def resolved_prompt_root(self) -> Path:
@@ -142,4 +143,5 @@ class Settings:
             media_library_index=os.environ.get("YAPPY_MEDIA_LIBRARY_INDEX"),
             media_library_host_root=os.environ.get("YAPPY_MEDIA_LIBRARY_HOST_ROOT", "/mnt/mb-gdrive-samsung"),
             media_library_mount_visible=_env_bool("YAPPY_MEDIA_LIBRARY_MOUNT_VISIBLE", False),
+            media_library_host_roots=(__import__("json").loads(os.environ["YAPPY_MEDIA_LIBRARY_ROOTS"]) if os.environ.get("YAPPY_MEDIA_LIBRARY_ROOTS") else None),
         )

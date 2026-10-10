@@ -82,6 +82,41 @@ def second_clip(**overrides) -> dict:
     return clip
 
 
+class MediaLibraryMultiRootTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.index = Path(self.temp.name) / "media-index.snapshot.db"
+        other = second_clip(id="exec-1", remote="gdrive-exec", account="exec@example.test", path="Footage/2024")
+        stray = second_clip(id="stray-1", remote="gdrive-other", account="other@example.test")
+        build_index(self.index, [SAMPLE_CLIP, other, stray])
+        self.roots = {"remote:gdrive-samsung": "/mnt/mb-gdrive-samsung", "remote:gdrive-exec": "/mnt/mb-gdrive-exec"}
+        self.service = MediaLibraryService(index_path=self.index, host_root="/mnt/mb-gdrive-samsung", enabled=True, host_roots=self.roots)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_each_remote_maps_to_its_own_root(self):
+        self.assertTrue(self.service.get_clip(SAMPLE_CLIP["id"])["hostPath"].startswith("/mnt/mb-gdrive-samsung/"))
+        self.assertEqual(self.service.get_clip("exec-1")["hostPath"], "/mnt/mb-gdrive-exec/Footage/2024/timelapse build site.mov")
+
+    def test_unmapped_remote_fails_closed(self):
+        with self.assertRaises(MediaLibraryError):
+            self.service.get_clip("stray-1")
+
+    def test_account_key_is_used_when_remote_is_not_mapped(self):
+        service = MediaLibraryService(index_path=self.index, host_root="/mnt/x", enabled=True,
+                                      host_roots={"account:other@example.test": "/mnt/mb-other"})
+        self.assertTrue(service.get_clip("stray-1")["hostPath"].startswith("/mnt/mb-other/"))
+
+    def test_invalid_mapping_is_rejected(self):
+        for bad in ({"drive:x": "/mnt/a"}, {"remote:x": "relative/path"}, {"remote:": "/mnt/a"}):
+            with self.assertRaises(MediaLibraryError):
+                MediaLibraryService(index_path=self.index, host_root="/mnt/x", host_roots=bad)
+
+    def test_status_lists_roots(self):
+        self.assertEqual(self.service.status()["hostRoots"], self.roots)
+
+
 class MediaLibraryServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()

@@ -54,10 +54,31 @@ def _connect(index_path: Path) -> sqlite3.Connection:
 class MediaLibraryService:
     """Framework-independent read-only adapter over the MediaBrain index snapshot."""
 
-    def __init__(self, *, index_path: Path | str | None, host_root: str, enabled: bool = True) -> None:
+    def __init__(self, *, index_path: Path | str | None, host_root: str, enabled: bool = True,
+                 host_roots: dict[str, str] | None = None) -> None:
         self.index_path = Path(index_path).expanduser() if index_path else None
         self.host_root = PurePosixPath(host_root or "/mnt/mb-gdrive-samsung")
         self.enabled = enabled
+        # Optional multi-root map: keys are "remote:<name>" or "account:<name>".
+        # When set, every clip must match a key (remote first, then account);
+        # unmatched clips fail closed instead of falling back to host_root.
+        self.host_roots: dict[str, PurePosixPath] = {}
+        for key, root in (host_roots or {}).items():
+            kind, _, value = str(key).partition(":")
+            if kind not in {"remote", "account"} or not value or not str(root).startswith("/"):
+                raise MediaLibraryError("invalid media library root mapping: " + str(key))
+            self.host_roots[f"{kind}:{value}"] = PurePosixPath(str(root))
+
+    def _root_for(self, record: dict[str, Any]) -> PurePosixPath:
+        if not self.host_roots:
+            return self.host_root
+        for kind in ("remote", "account"):
+            value = record.get(kind)
+            if value and f"{kind}:{value}" in self.host_roots:
+                return self.host_roots[f"{kind}:{value}"]
+        raise MediaLibraryError(
+            "no library root is mapped for remote=%r account=%r" % (record.get("remote"), record.get("account"))
+        )
 
     # -- connection ---------------------------------------------------------
     def _connection(self) -> sqlite3.Connection:
@@ -83,8 +104,9 @@ class MediaLibraryService:
         parts = [part for part in rel.split("/") if part] if rel else []
         if any(part in {".", ".."} for part in parts):
             raise MediaLibraryError("clip record path escapes the library root")
-        candidate = PurePosixPath(self.host_root, *parts, name)
-        root_text = str(self.host_root).rstrip("/")
+        root = self._root_for(record)
+        candidate = PurePosixPath(root, *parts, name)
+        root_text = str(root).rstrip("/")
         if not str(candidate).startswith(root_text + "/"):
             raise MediaLibraryError("clip record path escapes the library root")
         return str(candidate)
@@ -110,7 +132,7 @@ class MediaLibraryService:
             "tier": record.get("tier"),
             "provider": _PROVIDER,
         }
-        clip["hostPath"] = self._host_path({"path": clip["path"], "name": clip["name"]})
+        clip["hostPath"] = self._host_path({"path": clip["path"], "name": clip["name"], "remote": clip["remote"], "account": clip["account"]})
         return clip
 
     # -- reads ----------------------------------------------------------------
@@ -137,6 +159,7 @@ class MediaLibraryService:
             "snapshotPath": str(self.index_path) if self.index_path else None,
             "snapshotAgeSeconds": age_seconds,
             "hostRoot": str(self.host_root),
+            "hostRoots": {key: str(root) for key, root in self.host_roots.items()},
             "counts": {"clips": total, "byKind": by_kind, "byTier": by_tier, "byVision": by_vision},
             "ftsAvailable": fts_available,
             "meta": meta,
