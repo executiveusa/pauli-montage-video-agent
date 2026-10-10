@@ -53,8 +53,8 @@ class PdfCraftActionDispatcher(EngineActionDispatcher):
         jid = lambda p: str(self.req(p, "jobId"))  # noqa: E731
         self._handlers.update({
             "pdfcraft.options.get": lambda p, c: self.pdfcraft.options(),
-            "pdfcraft.job.create": self._create,
-            "pdfcraft.job.revise": lambda p, c: self.pdfcraft.revise(tenant=self.tenant(c), job_id=jid(p), actor=c.actor_id, spec=self._spec(p)),
+            "pdfcraft.job.create": self._pdf_create,
+            "pdfcraft.job.revise": lambda p, c: self.pdfcraft.revise(tenant=self.tenant(c), job_id=jid(p), actor=c.actor_id, spec=self._pdf_spec(p)),
             "pdfcraft.job.get": lambda p, c: self.pdfcraft.get(self.tenant(c), jid(p)),
             "pdfcraft.job.list": lambda p, c: self.pdfcraft.list(self.tenant(c), p.get("projectId")),
             "pdfcraft.plan.run": lambda p, c: self.pdfcraft.run_plan(tenant=self.tenant(c), job_id=jid(p), actor=c.actor_id),
@@ -66,14 +66,14 @@ class PdfCraftActionDispatcher(EngineActionDispatcher):
         })
 
     @staticmethod
-    def _spec(p: dict[str, Any]) -> dict[str, Any]:
+    def _pdf_spec(p: dict[str, Any]) -> dict[str, Any]:
         spec = p.get("spec")
         if not isinstance(spec, dict):
             raise ActionProblem("invalid_request", "spec must be an object", 400)
         return spec
 
-    def _create(self, p: dict[str, Any], c: ActionContext) -> dict[str, Any]:
-        return self.pdfcraft.create(tenant=self.tenant(c), project=str(self.req(p, "projectId")), actor=c.actor_id, spec=self._spec(p))
+    def _pdf_create(self, p: dict[str, Any], c: ActionContext) -> dict[str, Any]:
+        return self.pdfcraft.create(tenant=self.tenant(c), project=str(self.req(p, "projectId")), actor=c.actor_id, spec=self._pdf_spec(p))
 
     def dispatch(self, action_id: str, input_payload: dict[str, Any] | None = None, *, context: ActionContext | None = None) -> dict[str, Any]:
         try:
