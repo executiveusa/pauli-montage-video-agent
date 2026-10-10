@@ -12,7 +12,25 @@ concurrency:
   group: montage-images-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  renderer-tests:
+    # Isolation + real-browser tests run inside the image that gets shipped; images are pushed only if they pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/renderer/Dockerfile
+          target: test
+          load: true
+          tags: montage-renderer-test:ci
+          cache-from: type=gha,scope=montage-renderer
+          cache-to: type=gha,mode=max,scope=montage-renderer
+      - name: Run renderer tests in the image
+        run: docker run --rm --shm-size=256m montage-renderer-test:ci
   build:
+    needs: renderer-tests
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -22,6 +40,9 @@ jobs:
             dockerfile: Dockerfile
           - name: montage-web
             dockerfile: apps/studio-web/Dockerfile
+          - name: montage-renderer
+            dockerfile: deploy/renderer/Dockerfile
+            target: runtime
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -34,6 +55,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
           push: true
           platforms: linux/amd64
           tags: |

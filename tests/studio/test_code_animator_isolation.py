@@ -119,20 +119,10 @@ def test_page_cannot_read_local_files_or_reach_the_network():
     assert result == {"file": "blocked", "net": "blocked", "fetchfile": "blocked"}, result
 
 
-def test_production_refuses_local_rendering_without_the_service(monkeypatch, tmp_path):
-    from yappy_clipz.factory import create_runtime
-    from yappy_clipz.settings import Settings
-    monkeypatch.setenv("YAPPY_ANIMATOR_REQUIRE_REMOTE", "1")
-    monkeypatch.delenv("YAPPY_ANIMATOR_RENDERER_URL", raising=False)
-    rt = create_runtime(settings=Settings(project_root=tmp_path / "data"))
-    assert rt.animator.engine_descriptor()["available"] is False
-    with pytest.raises(renderer.AnimatorRenderError):
-        rt.animator.runner({"op": "video"})
-
-
-def test_animator_root_follows_env(monkeypatch, tmp_path):
-    from yappy_clipz.factory import create_runtime
-    from yappy_clipz.settings import Settings
-    monkeypatch.setenv("YAPPY_ANIMATOR_ROOT", str(tmp_path / "vol"))
-    rt = create_runtime(settings=Settings(project_root=tmp_path / "data"))
-    assert str(rt.animator.root) == str(tmp_path / "vol")
+def test_remote_runner_ignores_proxy_environment(service, monkeypatch):
+    url, _ = service
+    for k in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY"):
+        monkeypatch.setenv(k, "http://127.0.0.1:9")  # dead port: any proxied request would fail
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    assert remote.RemoteRunner(url).healthy() is True

@@ -5,9 +5,9 @@
 # chromium runs with --no-sandbox inside this container, which is the isolation boundary.
 services:
   animator-renderer:
-    build:
-      context: .
-      dockerfile: deploy/renderer/Dockerfile
+    # Immutable CI-built image (montage-images workflow). Pin MONTAGE_RENDERER_IMAGE to the sha- tag;
+    # nothing builds on the box.
+    image: ${MONTAGE_RENDERER_IMAGE:-ghcr.io/executiveusa/montage-renderer:prod-city-1}
     restart: unless-stopped
     read_only: true
     user: "10001:10001"
@@ -32,6 +32,9 @@ services:
       YAPPY_ANIMATOR_RENDERER_URL: http://animator-renderer:8780
       YAPPY_ANIMATOR_REQUIRE_REMOTE: "1"
       YAPPY_ANIMATOR_ROOT: /data/animator
+      # Keep internal renderer traffic off the outbound proxy (the client also bypasses proxies in code).
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},animator-renderer
+      no_proxy: ${no_proxy:-localhost,127.0.0.1},animator-renderer
     volumes:
       - animator_jobs:/data/animator
     networks: [default, animator_internal]

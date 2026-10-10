@@ -12,6 +12,10 @@ from typing import Any
 from .renderer import AnimatorRenderError
 
 
+# The render service is internal-only: never send these requests through HTTP(S)_PROXY.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 class RemoteRunner:
     def __init__(self, base_url: str, *, timeout: int = 700) -> None:
         self.base = base_url.rstrip("/")
@@ -21,7 +25,7 @@ class RemoteRunner:
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method, headers={"content-type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+            with _OPENER.open(req, timeout=timeout or self.timeout) as resp:
                 payload = resp.read()
         except urllib.error.HTTPError as exc:
             try:
