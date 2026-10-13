@@ -1,0 +1,141 @@
+import { LOCAL_CJK_FONTS, normalizeFontKey } from './localFonts';
+import { getAllDiscoveredFonts, isInstalledFont } from './systemFonts';
+
+export type FontSource = 'google' | 'bundled' | 'system' | 'custom';
+
+export interface FontCatalogEntry {
+  family: string;
+  aliases: string[];
+  loadable: boolean;
+  source: FontSource;
+}
+
+export interface GoogleFontCatalogEntry extends FontCatalogEntry {
+  source: 'google';
+}
+
+export const GOOGLE_FONT_CATALOG: readonly GoogleFontCatalogEntry[] = [
+  { family: 'Anton', aliases: [], loadable: true, source: 'google' },
+  { family: 'Archivo Black', aliases: [], loadable: true, source: 'google' },
+  { family: 'Bangers', aliases: [], loadable: true, source: 'google' },
+  { family: 'Barlow Condensed', aliases: [], loadable: true, source: 'google' },
+  { family: 'Bowlby One', aliases: [], loadable: true, source: 'google' },
+  { family: 'Caveat', aliases: [], loadable: true, source: 'google' },
+  { family: 'Cormorant Garamond', aliases: [], loadable: true, source: 'google' },
+  { family: 'DM Sans', aliases: [], loadable: true, source: 'google' },
+  { family: 'Dancing Script', aliases: [], loadable: true, source: 'google' },
+  { family: 'Fraunces', aliases: [], loadable: true, source: 'google' },
+  { family: 'Fredoka', aliases: [], loadable: true, source: 'google' },
+  { family: 'Inter', aliases: [], loadable: true, source: 'google' },
+  { family: 'Inter Tight', aliases: [], loadable: true, source: 'google' },
+  { family: 'LXGW WenKai TC', aliases: ['LXGW WenKai', '霞鹜文楷'], loadable: true, source: 'google' },
+  { family: 'Libre Baskerville', aliases: [], loadable: true, source: 'google' },
+  { family: 'Montserrat', aliases: [], loadable: true, source: 'google' },
+  { family: 'Mulish', aliases: [], loadable: true, source: 'google' },
+  { family: 'Newsreader', aliases: [], loadable: true, source: 'google' },
+  { family: 'Noto Serif SC', aliases: [], loadable: true, source: 'google' },
+  { family: 'Noto Serif TC', aliases: [], loadable: true, source: 'google' },
+  { family: 'Nunito', aliases: [], loadable: true, source: 'google' },
+  { family: 'Oswald', aliases: [], loadable: true, source: 'google' },
+  { family: 'Pinyon Script', aliases: [], loadable: true, source: 'google' },
+  { family: 'Playfair Display', aliases: [], loadable: true, source: 'google' },
+  { family: 'Roboto', aliases: [], loadable: true, source: 'google' },
+  { family: 'Sora', aliases: [], loadable: true, source: 'google' },
+  { family: 'Space Mono', aliases: [], loadable: true, source: 'google' },
+  { family: 'Special Elite', aliases: [], loadable: true, source: 'google' },
+  { family: 'Unbounded', aliases: [], loadable: true, source: 'google' },
+  { family: 'VT323', aliases: [], loadable: true, source: 'google' },
+  { family: 'ZCOOL QingKe HuangYou', aliases: ['站酷庆科黄油体'], loadable: true, source: 'google' },
+];
+
+export const FONT_CATALOG: readonly FontCatalogEntry[] = [
+  ...GOOGLE_FONT_CATALOG,
+  ...LOCAL_CJK_FONTS.map((font) => ({
+    family: font.family,
+    aliases: [...font.aliasZh, font.importName],
+    loadable: true as const,
+    source: 'bundled' as const,
+  })),
+];
+
+const GENERIC_FAMILIES: Record<string, true> = {
+  serif: true, sansserif: true, monospace: true, cursive: true, fantasy: true,
+  systemui: true, uisansserif: true, uiserif: true, uimonospace: true,
+  uirounded: true, applesystem: true, blinkmacsystemfont: true, segoeui: true,
+  helveticaneue: true, helvetica: true, arial: true, timesnewroman: true,
+  couriernew: true, georgia: true,
+};
+
+
+export function isGenericFontFamily(family: string): boolean {
+  const key = normalizeFontKey(family.split(',')[0]?.trim().replace(/^["']|["']$/g, '') ?? '');
+  return !key || key in GENERIC_FAMILIES;
+}
+
+/** Quote individual native families, preserving explicit CSS stacks. */
+export function fontFamilyCss(family: string, fallback: string): string {
+  const raw = family.trim();
+  if (!raw) return fallback;
+  if (raw.includes(',')) return raw;
+  const clean = raw.replace(/^["']|["']$/g, '');
+  return `${isGenericFontFamily(clean) ? clean : JSON.stringify(clean)}, ${fallback}`;
+}
+
+export function resolveCanonicalFamily(name: string): string | null {
+  const key = normalizeFontKey(name.split(',')[0]?.trim().replace(/^["']|["']$/g, '') ?? '');
+  if (!key) return null;
+  for (const entry of FONT_CATALOG) {
+    if (normalizeFontKey(entry.family) === key) return entry.family;
+    if (entry.aliases.some((alias) => normalizeFontKey(alias) === key)) return entry.family;
+  }
+  for (const sysFont of getAllDiscoveredFonts()) {
+    if (normalizeFontKey(sysFont) === key) return sysFont;
+  }
+  return null;
+}
+
+export function isLoadableFontFamily(family: string): boolean {
+  if (isGenericFontFamily(family)) return true;
+  const canonical = resolveCanonicalFamily(family);
+  return FONT_CATALOG.some((entry) => entry.family === canonical) || isInstalledFont(canonical ?? family);
+}
+
+export interface FontSearchHit {
+  family: string;
+  aliases: string[];
+  loadable: boolean;
+  source: FontSource;
+}
+
+export function searchFontCatalog(query: string, limit = 25): FontSearchHit[] {
+  const normalized = normalizeFontKey(query);
+  if (!normalized) return [];
+  const hits: FontSearchHit[] = [];
+  const seen = new Set<string>();
+  for (const entry of FONT_CATALOG) {
+    const haystack = [entry.family, ...entry.aliases].map(normalizeFontKey).join(' ');
+    if (haystack.includes(normalized) || normalizeFontKey(entry.family).includes(normalized)) {
+      hits.push({ ...entry });
+      seen.add(normalizeFontKey(entry.family));
+      if (hits.length >= limit) break;
+    }
+  }
+  if (hits.length < limit) {
+    for (const sysFont of getAllDiscoveredFonts()) {
+      const norm = normalizeFontKey(sysFont);
+      if (seen.has(norm)) continue;
+      if (norm.includes(normalized)) {
+        hits.push({
+          family: sysFont,
+          aliases: [],
+          loadable: isInstalledFont(sysFont),
+          source: isInstalledFont(sysFont) ? 'system' : 'custom',
+        });
+        seen.add(norm);
+        if (hits.length >= limit) break;
+      }
+    }
+  }
+  hits.sort((a, b) => Number(b.loadable) - Number(a.loadable));
+  return hits;
+}

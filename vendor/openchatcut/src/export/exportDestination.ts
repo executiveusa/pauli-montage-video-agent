@@ -1,0 +1,368 @@
+import { downloadBlob } from './exportFiles';
+import {
+  createExportFailure,
+  exportFailureFrom,
+  ExportFailureError,
+  isExportFailure,
+} from './exportFailure';
+
+import {
+  checkedDestination, checkedFilename, desktopDestination, DIRECTORY_PERMISSION,
+  exportDestinationFilename, exportDestinationTargetPath, ExportDestinationError,
+  DEFAULT_EXPORT_DESTINATION, isBrowserDirectoryHandle, isBrowserFileHandle, safeDirectoryLabel,
+  type BrowserExportDirectoryHandle, type BrowserExportFileHandle, type BrowserExportWritable, type ExportDestination,
+} from './exportDestinationModel';
+import { restoredBrowserDestination, saveBrowserDirectory } from './exportDestinationStorage';
+export {
+  DEFAULT_EXPORT_DESTINATION, ExportDestinationError, exportHistoryDestinationId,
+  exportDestinationFilename, exportDestinationErrorMessage, exportDestinationTargetPath,
+  type BrowserExportDirectoryHandle, type BrowserExportFileHandle, type ExportDestination,
+} from './exportDestinationModel';
+
+const UNSUPPORTED_BROWSER_PICKER = '当前浏览器不支持选择导出目录，请使用 Chrome、Edge 或桌面版';
+
+async function ensureBrowserWritePermission(
+  handle: BrowserExportDirectoryHandle | BrowserExportFileHandle,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const current = await handle.queryPermission(DIRECTORY_PERMISSION);
+  signal?.throwIfAborted();
+  if (current === 'granted') return;
+  if (current === 'prompt') {
+    const requested = await handle.requestPermission(DIRECTORY_PERMISSION);
+    signal?.throwIfAborted();
+    if (requested === 'granted') return;
+  }
+  throw new ExportDestinationError('没有所选导出目录的写入权限，请重新选择目录');
+}
+
+export async function ensureExportDestinationWritable(destination: ExportDestination): Promise<void> {
+  const target = checkedDestination(destination);
+  if (target.type === 'browser-directory' || target.type === 'browser-file') {
+    await ensureBrowserWritePermission(target.handle);
+  }
+}
+
+function savePickerFunction(): ((
+  options: { suggestedName: string },
+) => Promise<BrowserExportFileHandle>) | null {
+  const picker = (window as Window & {
+    showSaveFilePicker?: (
+      options: { suggestedName: string },
+    ) => Promise<BrowserExportFileHandle>;
+  }).showSaveFilePicker;
+  return picker ? picker.bind(window) : null;
+}
+
+function pickerFunction(): ((options: { mode: 'readwrite' }) => Promise<BrowserExportDirectoryHandle>) | null {
+  const picker = (window as Window & {
+    showDirectoryPicker?: (options: { mode: 'readwrite' }) => Promise<BrowserExportDirectoryHandle>;
+  }).showDirectoryPicker;
+  return picker ? picker.bind(window) : null;
+}
+
+export async function restoreExportDestination(): Promise<ExportDestination> {
+  const desktop = window.openChatCutDesktop;
+  if (desktop) {
+    const restored = desktopDestination(await desktop.restoreExportDirectory());
+    return restored ?? DEFAULT_EXPORT_DESTINATION;
+  }
+  return await restoredBrowserDestination() ?? DEFAULT_EXPORT_DESTINATION;
+}
+
+export async function chooseExportDestination(
+  suggestedFilename?: string,
+): Promise<ExportDestination | null> {
+  const desktop = window.openChatCutDesktop;
+  if (desktop) {
+    const selected = suggestedFilename
+      ? await desktop.selectExportFile(checkedFilename(suggestedFilename))
+      : await desktop.selectExportDirectory();
+    return desktopDestination(selected);
+  }
+  try {
+    if (suggestedFilename) {
+      const savePicker = savePickerFunction();
+      if (!savePicker) throw new ExportDestinationError(UNSUPPORTED_BROWSER_PICKER);
+      const handle = await savePicker({ suggestedName: checkedFilename(suggestedFilename) });
+      if (!isBrowserFileHandle(handle)) throw new ExportDestinationError('浏览器返回了无效的导出目录');
+      return Object.freeze({ type: 'browser-file', label: safeDirectoryLabel(handle.name), handle });
+    }
+    const directoryPicker = pickerFunction();
+    if (!directoryPicker) throw new ExportDestinationError(UNSUPPORTED_BROWSER_PICKER);
+    const handle = await directoryPicker({ mode: 'readwrite' });
+    if (!isBrowserDirectoryHandle(handle)) throw new ExportDestinationError('浏览器返回了无效的导出目录');
+    await saveBrowserDirectory(handle);
+    return Object.freeze({ type: 'browser-directory', label: safeDirectoryLabel(handle.name), handle });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return null;
+    throw error;
+  }
+}
+
+function safeSourceUrl(sourceUrl: unknown): string {
+  if (typeof sourceUrl !== 'string' || !sourceUrl.trim()) throw new ExportDestinationError('导出来源地址无效');
+  const parsed = new URL(sourceUrl, window.location.href);
+  if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+    throw new ExportDestinationError('导出来源地址不受支持');
+  }
+  return parsed.href;
+}
+
+async function browserWritable(
+  handle: BrowserExportDirectoryHandle | BrowserExportFileHandle,
+  filename: string,
+  signal?: AbortSignal,
+): Promise<BrowserExportWritable> {
+  signal?.throwIfAborted();
+  await ensureBrowserWritePermission(handle, signal);
+  signal?.throwIfAborted();
+  if (handle.kind === 'file') {
+    const writable = await handle.createWritable();
+    try {
+      signal?.throwIfAborted();
+      return writable;
+    } catch (error) {
+      await writable.abort?.(error).catch(() => undefined);
+      throw error;
+    }
+  }
+  const file = await handle.getFileHandle(filename, { create: true });
+  signal?.throwIfAborted();
+  const writable = await file.createWritable();
+  try {
+    signal?.throwIfAborted();
+    return writable;
+  } catch (error) {
+    await writable.abort?.(error).catch(() => undefined);
+    throw error;
+  }
+}
+
+function desktopWriteError(status: number): ExportDestinationError {
+  if (status === 404 || status === 410) {
+    return new ExportDestinationError('所选导出目录不可用，请重新选择目录');
+  }
+  if (status === 400 || status === 401 || status === 403) {
+    return new ExportDestinationError('导出目录授权无效');
+  }
+  if (status === 413) return new ExportDestinationError('导出文件过大，无法写入所选目录');
+  return new ExportDestinationError('写入导出目录失败（HTTP {status}）', { status });
+}
+
+async function putDesktopBody(
+  destination: Extract<ExportDestination, { type: 'desktop-directory' | 'desktop-file' }>,
+  filename: string,
+  body: Blob | ReadableStream<Uint8Array> | undefined,
+  signal?: AbortSignal,
+  sourcePath?: string,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const init: RequestInit & { duplex?: 'half' } = {
+    method: 'PUT', body, signal,
+    ...(sourcePath ? { headers: { 'X-OpenChatCut-Export-Source': sourcePath } } : {}),
+  };
+  if (body instanceof ReadableStream) init.duplex = 'half';
+  const endpoint = `/api/export-destinations/${encodeURIComponent(destination.grantId)}/${encodeURIComponent(filename)}`;
+  const response = await fetch(endpoint, init);
+  if (response.ok) return;
+  signal?.throwIfAborted();
+  const payload: unknown = await response.json().catch(() => null);
+  signal?.throwIfAborted();
+  if (payload && typeof payload === 'object' && 'failure' in payload && isExportFailure(payload.failure)) {
+    throw new ExportFailureError(payload.failure);
+  }
+  await response.body?.cancel().catch(() => undefined);
+  signal?.throwIfAborted();
+  throw desktopWriteError(response.status);
+}
+
+async function writeBrowserBlob(
+  handle: BrowserExportDirectoryHandle | BrowserExportFileHandle,
+  filename: string,
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const writable = await browserWritable(handle, filename, signal);
+  let abortPromise: Promise<void> | null = null;
+  const abortWrite = (reason: unknown): Promise<void> => {
+    abortPromise ??= writable.abort?.(reason).catch(() => undefined) ?? Promise.resolve();
+    return abortPromise;
+  };
+  const onAbort = () => { void abortWrite(signal?.reason); };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    await writable.write(blob);
+    signal?.throwIfAborted();
+    await writable.close();
+  } catch (error) {
+    await abortWrite(error);
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+async function writeBrowserResponse(
+  handle: BrowserExportDirectoryHandle | BrowserExportFileHandle,
+  filename: string,
+  response: Response,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const writable = await browserWritable(handle, filename, signal);
+  const reader = response.body?.getReader();
+  let bytesWritten = 0;
+  let abortPromise: Promise<void> | null = null;
+  const abortWrite = (reason: unknown): Promise<void> => {
+    abortPromise ??= Promise.all([
+      reader?.cancel(reason).catch(() => undefined),
+      writable.abort?.(reason).catch(() => undefined),
+    ]).then(() => undefined);
+    return abortPromise;
+  };
+  const onAbort = () => { void abortWrite(signal?.reason); };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    if (reader) {
+      while (true) {
+        signal?.throwIfAborted();
+        const chunk = await reader.read();
+        signal?.throwIfAborted();
+        if (chunk.done) break;
+        bytesWritten += chunk.value.byteLength;
+        await writable.write(chunk.value);
+        signal?.throwIfAborted();
+      }
+    }
+    signal?.throwIfAborted();
+    if (bytesWritten === 0) throw new ExportDestinationError('导出文件为空');
+    await writable.close();
+  } catch (error) {
+    await abortWrite(error);
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+    reader?.releaseLock();
+  }
+}
+
+function destinationWriteFailure(error: unknown, targetPath: string): ExportFailureError {
+  const existing = exportFailureFrom(error);
+  if (existing) return new ExportFailureError(existing);
+  const empty = error instanceof ExportDestinationError && error.key === '导出文件为空';
+  return new ExportFailureError(createExportFailure({
+    stage: 'destination',
+    code: empty ? 'export_output_empty' : 'export_destination_write_failed',
+    retryable: true,
+    targetPath,
+    message: error instanceof Error ? error.message : String(error),
+  }));
+}
+
+export async function writeBlobToDestination(
+  destination: ExportDestination,
+  filename: string,
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const target = checkedDestination(destination);
+  const safeName = checkedFilename(filename);
+  const outputFilename = exportDestinationFilename(target, safeName);
+  const targetPath = exportDestinationTargetPath(target, outputFilename);
+  try {
+    signal?.throwIfAborted();
+    if (!(blob instanceof Blob)) throw new ExportDestinationError('导出文件内容无效');
+    if (blob.size === 0) throw new ExportDestinationError('导出文件为空');
+    if (target.type === 'downloads') {
+      signal?.throwIfAborted();
+      downloadBlob(blob, outputFilename);
+      return;
+    }
+    if (target.type === 'browser-directory' || target.type === 'browser-file') {
+      await writeBrowserBlob(target.handle, outputFilename, blob, signal);
+      return;
+    }
+    await putDesktopBody(target, outputFilename, blob, signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw destinationWriteFailure(error, targetPath);
+  }
+}
+
+export async function writeUrlToDestination(
+  destination: ExportDestination,
+  filename: string,
+  sourceUrl: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const target = checkedDestination(destination);
+  const safeName = checkedFilename(filename);
+  const outputFilename = exportDestinationFilename(target, safeName);
+  const targetPath = exportDestinationTargetPath(target, outputFilename);
+  let safeSource: string;
+  try {
+    safeSource = safeSourceUrl(sourceUrl);
+  } catch (error) {
+    throw destinationWriteFailure(error, targetPath);
+  }
+  const localSource = new URL(safeSource);
+  if ((target.type === 'desktop-directory' || target.type === 'desktop-file')
+    && localSource.origin === new URL(window.location.href).origin
+    && localSource.pathname.startsWith('/media/uploads/')) {
+    try {
+      await putDesktopBody(target, outputFilename, undefined, signal, localSource.pathname);
+      return;
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw destinationWriteFailure(error, targetPath);
+    }
+  }
+  let response: Response;
+  try {
+    signal?.throwIfAborted();
+    response = await fetch(safeSource, signal ? { signal } : undefined);
+    signal?.throwIfAborted();
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw destinationWriteFailure(error, targetPath);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    signal?.throwIfAborted();
+    throw new ExportFailureError(createExportFailure({
+      stage: 'destination',
+      code: 'export_source_read_failed',
+      retryable: response.status >= 500,
+      targetPath,
+      message: `读取导出文件失败（HTTP ${response.status}）`,
+    }));
+  }
+  try {
+    signal?.throwIfAborted();
+    if (target.type === 'browser-directory' || target.type === 'browser-file') {
+      await writeBrowserResponse(target.handle, outputFilename, response, signal);
+      return;
+    }
+    if (target.type === 'desktop-directory' || target.type === 'desktop-file') {
+      await putDesktopBody(target, outputFilename, response.body ?? new Blob(), signal);
+      return;
+    }
+    const blob = await response.blob();
+    signal?.throwIfAborted();
+    if (blob.size === 0) throw new ExportDestinationError('导出文件为空');
+    downloadBlob(blob, outputFilename);
+  } catch (error) {
+    await response.body?.cancel().catch(() => undefined);
+    signal?.throwIfAborted();
+    throw destinationWriteFailure(error, targetPath);
+  }
+}
