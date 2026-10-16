@@ -1,0 +1,492 @@
+import type { ModelMessage } from 'ai';
+import type { ProviderOptions } from '@ai-sdk/provider-utils';
+import { redactTextForAgentRuntime } from './runtime-artifact';
+import { contentTokens, estimateContextTokens, estimateTextTokens, safeJson, serializeMessagesForSummary, type ContentPart } from './context-messages';
+export { countContextMedia, estimateContextTokens, estimateTextTokens, MODEL_MEDIA_TOKEN_ESTIMATE, serializeMessagesForPrompt, serializeMessagesForSummary } from './context-messages';
+import {
+  formatContextCheckpointMessage,
+  type ContextCheckpointLinkage,
+} from './context-checkpoint';
+export {
+  ContextIntegrityError,
+  parseContextCheckpointMarker,
+  verifyCanonicalContextCheckpoint,
+  verifyContextCheckpointMarker,
+} from './context-checkpoint';
+export type {
+  ContextCheckpointLinkage,
+  ContextCheckpointMarker,
+  ContextCheckpointSourceArtifact,
+  PersistedContextCheckpoint,
+} from './context-checkpoint';
+
+const COMPACTION_RESERVE_TOKENS = 16_384;
+const RECENT_CONTEXT_TARGET_TOKENS = 20_000;
+const DEFAULT_COMPACTION_TRIGGER_FRACTION = 0.7;
+const CACHE_FRIENDLY_TRIGGER_FRACTION = 0.8;
+const CACHE_MISS_TRIGGER_FRACTION = 0.65;
+const CONTEXT_FRACTION = 0.2;
+const MAX_OUTPUT_CONTEXT_FRACTION = 0.5;
+/** Stale tool results older than this many messages are replaced with a one-line stub (zero LLM cost). */
+const STALE_TOOL_RESULT_AGE = 6;
+/** Tool-result parts under this size are never stubbed; the swap cannot save enough. */
+const STALE_TOOL_RESULT_MIN_CHARS = 2_000;
+/** Single-message rescue: parts above this size are elided even inside the recent tail. */
+const RESCUE_PART_MIN_CHARS = 8_000;
+
+
+export interface AgentContextUsage {
+  readonly inputTokens: number;
+  readonly contextWindowTokens: number;
+  readonly contextWindowEstimated: boolean;
+  readonly isEstimated: boolean;
+  readonly modelId: string;
+  readonly compacted: boolean;
+  readonly messageCount: number;
+  readonly systemTokens?: number;
+  readonly toolSchemaTokens?: number;
+  readonly historyTokens?: number;
+  readonly toolCount?: number;
+  readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly noCacheInputTokens?: number;
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
+  readonly cacheTtlMs?: number;
+  readonly requestIndex?: number;
+  readonly attemptIndex?: number;
+  readonly retryCount?: number;
+  readonly retryReasons?: readonly string[];
+  readonly mediaInputCount?: number;
+  readonly mediaTokenEstimate?: number;
+}
+
+/** Ephemeral preparation-only record; sourceText must never enter saved chat JSON. */
+export interface AgentContextCheckpoint extends ContextCheckpointLinkage {
+  readonly summary: string;
+  /**
+   * Sanitized source used to create sourceDigest. Runtime must archive it
+   * out-of-band, replace it with sourceArtifactId, then discard this field.
+   */
+  readonly sourceText: string;
+  readonly sourceMessageCount: number;
+  /** Creation-time provenance; replay validation requires the archived sourceText. */
+  readonly createdAt: number;
+  /** Model and window used when this checkpoint was produced. */
+  readonly modelId?: string;
+  readonly contextWindowTokens?: number;
+}
+
+
+export interface ContextPreparation {
+  readonly messages: ModelMessage[];
+  readonly usage: AgentContextUsage;
+  readonly checkpoint?: AgentContextCheckpoint;
+}
+
+export interface ContextPreparationOptions {
+  readonly messages: readonly ModelMessage[];
+  readonly system: string;
+  readonly modelId: string;
+  readonly contextWindowTokens: number;
+  readonly contextWindowEstimated: boolean;
+  readonly maxInputTokens: number;
+  readonly maxOutputTokens: number;
+  readonly requestOverheadTokens?: number;
+  readonly previousUsage?: AgentContextUsage;
+  /** Skip the pressure fast-path and compact even when estimates are under the trigger. */
+  readonly forceCompact?: boolean;
+  readonly checkpointProviderOptions?: (
+    messages: readonly ModelMessage[],
+  ) => ProviderOptions | undefined;
+  readonly summarize: (messages: readonly ModelMessage[]) => Promise<string>;
+}
+
+/**
+ * Mechanical history trim ("shake"): replace stale large tool results with a
+ * one-line stub. Zero LLM cost; the call record (name + id) is preserved so
+ * the model still knows the call happened. Recent results stay verbatim.
+ */
+export function shakeStaleToolResults(messages: readonly ModelMessage[]): ModelMessage[] {
+  return messages.map((message, index) => {
+    if (!Array.isArray(message.content)) return message;
+    if (index >= messages.length - STALE_TOOL_RESULT_AGE) return message;
+    let changed = false;
+    const content = message.content.map((part) => {
+      const candidate = part as ContentPart;
+      if (candidate.type !== 'tool-result') return part;
+      const text = safeJson(candidate.output);
+      if (text.length < STALE_TOOL_RESULT_MIN_CHARS) return part;
+      changed = true;
+      return { ...part, output: { type: 'text', value: `[stale tool result from ${String(candidate.toolName ?? 'unknown')} omitted to save context; ${text.length} chars, reread with a narrow filter or id if needed]` } };
+    });
+    return changed ? { ...message, content } as ModelMessage : message;
+  });
+}
+
+/**
+ * Dead-end rescue: when one recent message alone exceeds the budget (a huge
+ * tool result, pasted JSON, attached images), `recentMessageStart` cannot cut
+ * around it. Tier 1 elides oversized text/tool-result parts inside the tail;
+ * tier 2 drops image blocks. Returns the rescued messages, or null when
+ * nothing could be freed.
+ */
+export function rescueOversizedTail(messages: readonly ModelMessage[]): ModelMessage[] | null {
+  let elided = 0;
+  const tier1 = messages.map((message) => {
+    if (!Array.isArray(message.content)) return message;
+    let changed = false;
+    const content = message.content.map((part) => {
+      const candidate = part as ContentPart;
+      if (candidate.type === 'file' || candidate.type === 'image') return part;
+      const raw = typeof candidate.text === 'string'
+        ? candidate.text
+        : candidate.type === 'tool-result' || candidate.type === 'tool-call'
+          ? safeJson(candidate.type === 'tool-result' ? candidate.output : candidate.input)
+          : null;
+      if (raw === null || raw.length < RESCUE_PART_MIN_CHARS) return part;
+      changed = true;
+      elided += 1;
+      if (typeof candidate.text === 'string') {
+        return { ...part, text: `${raw.slice(0, 1_000)}\n…[${raw.length - 1_000} chars elided by context rescue]` };
+      }
+      if (candidate.type === 'tool-result') {
+        return {
+          ...part,
+          output: { type: 'text', value: `[rescued ${String(candidate.toolName ?? 'part')} output; ${raw.length} chars elided, reread with a narrow filter or id if needed]` },
+        };
+      }
+      // Tool calls keep their identity but lose the oversized input: adding an
+      // `output` field to a tool-call part would corrupt its shape AND leave the
+      // input untouched, so prepareContext's retry loop could never make progress.
+      return {
+        ...part,
+        input: { rescuedToolCall: true, note: `[rescued tool call input; ${raw.length} chars elided, re-read with a narrow filter or id if needed]` },
+      };
+    });
+    return changed ? { ...message, content } as ModelMessage : message;
+  });
+  if (elided > 0) return tier1;
+  let droppedImages = 0;
+  const tier2 = messages.map((message) => {
+    if (!Array.isArray(message.content)) return message;
+    if (!message.content.some((part) => (part as ContentPart).type === 'file' || (part as ContentPart).type === 'image')) {
+      return message;
+    }
+    droppedImages += 1;
+    return {
+      ...message,
+      content: message.content.filter((part) => (part as ContentPart).type !== 'file' && (part as ContentPart).type !== 'image'),
+    } as ModelMessage;
+  });
+  return droppedImages > 0 ? tier2 : null;
+}
+
+
+export interface ActiveModelRoundBudgetInput {
+  readonly messages: readonly ModelMessage[];
+  readonly system: string;
+  readonly toolSchemas: readonly unknown[];
+  readonly contextWindowTokens: number;
+  readonly maxInputTokens: number;
+  readonly maxOutputTokens: number;
+}
+
+/** Input room left for the next tool result in this exact provider request shape. */
+export function remainingInputBudgetTokens(input: ActiveModelRoundBudgetInput): number {
+  const outputReservedCeiling = Math.max(0, input.contextWindowTokens - input.maxOutputTokens);
+  const inputCeiling = Math.min(input.maxInputTokens, outputReservedCeiling);
+  const schemaTokens = estimateTextTokens(JSON.stringify(input.toolSchemas));
+  const occupied = estimateContextTokens(input.messages, input.system, schemaTokens);
+  return Math.max(0, inputCeiling - occupied);
+}
+/**
+ * Output token budget for the currently selected provider/model. No fixed
+ * ceiling here: the budget follows the model's own maxOutputTokens
+ * (capabilityLimit) and is only bounded by reserving half the context window
+ * for the reply (so the model never tries to stream more than half its input
+ * window). Removing the previous hard 64k cap lets e.g. a 128k/256k-output
+ * model actually emit that much instead of being truncated.
+ *
+ * When estimatedInputTokens is provided (current request size estimate), the
+ * reservation shrinks for short requests so models with a huge maxOutput
+ * (e.g. 500k) don't starve the input budget on the first message. Omitting
+ * it preserves the exact legacy behavior.
+ */
+const MIN_OUTPUT_TOKEN_FLOOR = 8_192;
+export function effectiveOutputTokenBudget(
+  capabilityLimit: number,
+  contextWindowTokens: number,
+  estimatedInputTokens?: number,
+): number {
+  const contextLimit = Math.max(1, Math.floor(contextWindowTokens * MAX_OUTPUT_CONTEXT_FRACTION));
+  const legacy = Math.max(1, Math.min(capabilityLimit, contextLimit));
+  if (estimatedInputTokens === undefined) return legacy;
+  const reserve = Math.min(COMPACTION_RESERVE_TOKENS, Math.floor(contextWindowTokens * CONTEXT_FRACTION));
+  const inputAware = Math.max(MIN_OUTPUT_TOKEN_FLOOR, contextWindowTokens - estimatedInputTokens - reserve);
+  return Math.min(legacy, inputAware);
+}
+
+
+const IDENTIFIER_PATTERN = /\b(?:operationId|assetId|itemId|clipId|trackId|jobId|proposalId|editSessionId|toolCallId)\b["']?\s*[:=]\s*["']?([A-Za-z0-9._:/-]{3,160})/gi;
+const MEDIA_PATH_PATTERN = /\/media\/uploads\/[A-Za-z0-9._%/-]+/g;
+
+function deterministicCheckpointEvidence(
+  summary: string,
+  messages: readonly ModelMessage[],
+  sourceText: string,
+): string {
+  const evidence = new Set<string>();
+  for (const match of sourceText.matchAll(IDENTIFIER_PATTERN)) {
+    const value = match[0].trim().slice(0, 200);
+    if (!summary.includes(value)) evidence.add(value);
+    if (evidence.size >= 64) break;
+  }
+  for (const match of sourceText.matchAll(MEDIA_PATH_PATTERN)) {
+    if (!summary.includes(match[0])) evidence.add(match[0]);
+    if (evidence.size >= 64) break;
+  }
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content as readonly ContentPart[]) {
+      if (part.type !== 'tool-call' && part.type !== 'tool-result') continue;
+      const callId = typeof part.toolCallId === 'string' ? part.toolCallId : '';
+      if (!callId || summary.includes(callId)) continue;
+      evidence.add(`${String(part.toolName ?? 'unknown')} toolCallId=${callId}`.slice(0, 200));
+      if (evidence.size >= 64) break;
+    }
+    if (evidence.size >= 64) break;
+  }
+  return evidence.size
+    ? `${summary}\n\n### Deterministically retained identifiers\n${[...evidence].map((value) => `- ${value}`).join('\n')}`
+    : summary;
+}
+async function sha256Text(text: string): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('The current environment cannot create a secure context checkpoint digest.');
+  }
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(text),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+/** SHA-256 of the exact sanitized summary transcript used for compaction provenance. */
+export async function sourceMessagesDigest(
+  messages: readonly ModelMessage[],
+): Promise<string> {
+  return sha256Text(redactTextForAgentRuntime(serializeMessagesForSummary(messages)));
+}
+async function createCheckpoint(
+  summary: string,
+  sourceText: string,
+  sourceMessageCount: number,
+): Promise<AgentContextCheckpoint> {
+  const sanitizedSummary = redactTextForAgentRuntime(summary);
+  const sanitizedSourceText = redactTextForAgentRuntime(sourceText);
+  const [sourceDigest, summaryDigest] = await Promise.all([
+    sha256Text(sanitizedSourceText),
+    sha256Text(sanitizedSummary),
+  ]);
+  if (!globalThis.crypto?.randomUUID) {
+    throw new Error('The current environment cannot create a unique context checkpoint id.');
+  }
+  return {
+    summary: sanitizedSummary,
+    checkpointId: globalThis.crypto.randomUUID(),
+    sourceText: sanitizedSourceText,
+    sourceMessageCount,
+    sourceDigest,
+    summaryDigest,
+    createdAt: Date.now(),
+  };
+}
+
+
+
+
+function recentMessageStart(
+  messages: readonly ModelMessage[],
+  targetTokens: number,
+  maximumTokens: number,
+): number {
+  let tokens = 0;
+  let candidate = 0;
+  let newestTurn = 0;
+  let foundTurn = false;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    tokens += contentTokens(messages[index]!.content) + 4;
+    if (messages[index]!.role !== 'user') continue;
+    if (!foundTurn) {
+      newestTurn = index;
+      foundTurn = true;
+    }
+    if (tokens > maximumTokens) return candidate;
+    candidate = index;
+    if (tokens >= targetTokens) return index;
+  }
+  return candidate > 0 ? candidate : newestTurn;
+}
+
+function previousInputFloor(options: ContextPreparationOptions): number {
+  const previous = options.previousUsage;
+  if (!previous
+    || previous.isEstimated
+    || previous.modelId !== options.modelId
+    || previous.messageCount > options.messages.length
+    || previous.systemTokens === undefined
+    || previous.toolSchemaTokens === undefined
+    || previous.historyTokens === undefined) return 0;
+  const providerHistoryTokens = previous.inputTokens
+    - previous.systemTokens
+    - previous.toolSchemaTokens;
+  if (providerHistoryTokens < 0) return 0;
+  const currentOverhead = estimateTextTokens(options.system)
+    + (options.requestOverheadTokens ?? 0);
+  const addedMessages = options.messages.slice(previous.messageCount);
+  return providerHistoryTokens + currentOverhead + estimateContextTokens(addedMessages);
+}
+
+function usage(
+  inputTokens: number,
+  options: ContextPreparationOptions,
+  compacted: boolean,
+): AgentContextUsage {
+  return {
+    inputTokens,
+    contextWindowTokens: options.contextWindowTokens,
+    contextWindowEstimated: options.contextWindowEstimated,
+    isEstimated: true,
+    modelId: options.modelId,
+    compacted,
+    messageCount: compacted ? 0 : options.messages.length,
+  };
+}
+function compactionTriggerFraction(previous?: AgentContextUsage): number {
+  if (!previous?.inputTokens) return DEFAULT_COMPACTION_TRIGGER_FRACTION;
+  const cacheReadRatio = (previous.cacheReadTokens ?? 0) / previous.inputTokens;
+  if (cacheReadRatio >= 0.8) return CACHE_FRIENDLY_TRIGGER_FRACTION;
+  const noCacheRatio = (previous.noCacheInputTokens ?? 0) / previous.inputTokens;
+  return noCacheRatio >= 0.7
+    ? CACHE_MISS_TRIGGER_FRACTION
+    : DEFAULT_COMPACTION_TRIGGER_FRACTION;
+}
+
+
+function checkpointMessage(
+  checkpoint: AgentContextCheckpoint,
+  providerOptions?: ProviderOptions,
+): ModelMessage {
+  const text = formatContextCheckpointMessage(checkpoint.summary, checkpoint);
+  return providerOptions
+    ? { role: 'assistant', content: [{ type: 'text', text, providerOptions }] }
+    : { role: 'assistant', content: text };
+}
+function compactionBudget(options: ContextPreparationOptions): {
+  readonly currentTokens: number;
+  readonly triggerTokens: number;
+  readonly availableMessageTokens: number;
+  readonly recentTarget: number;
+} {
+  const localTokens = estimateContextTokens(
+    options.messages,
+    options.system,
+    options.requestOverheadTokens,
+  );
+  const currentTokens = Math.max(localTokens, previousInputFloor(options));
+  const policyReserve = Math.min(
+    COMPACTION_RESERVE_TOKENS,
+    Math.floor(options.contextWindowTokens * CONTEXT_FRACTION),
+  );
+  const reserve = Math.min(
+    options.contextWindowTokens - 1,
+    Math.max(policyReserve, options.maxOutputTokens),
+  );
+  const triggerTokens = Math.min(
+    options.maxInputTokens,
+    options.contextWindowTokens - reserve,
+    Math.floor(options.contextWindowTokens * compactionTriggerFraction(options.previousUsage)),
+  );
+  return {
+    currentTokens,
+    triggerTokens,
+    availableMessageTokens: Math.max(
+      1,
+      triggerTokens - estimateTextTokens(options.system) - (options.requestOverheadTokens ?? 0),
+    ),
+    recentTarget: Math.min(
+      RECENT_CONTEXT_TARGET_TOKENS,
+      Math.floor(options.contextWindowTokens * CONTEXT_FRACTION),
+    ),
+  };
+}
+
+
+export async function prepareContext(
+  options: ContextPreparationOptions,
+): Promise<ContextPreparation> {
+  const first = compactionBudget(options);
+  if (first.currentTokens <= first.triggerTokens && !options.forceCompact) {
+    // No pressure: return the history untouched. Shaking is a compaction
+    // strategy and must not rewrite what the model sees on the happy path.
+    return { messages: [...options.messages], usage: usage(first.currentTokens, options, false) };
+  }
+  const shaken = shakeStaleToolResults(options.messages);
+  const {
+    currentTokens,
+    triggerTokens,
+    availableMessageTokens,
+    recentTarget,
+  } = compactionBudget({ ...options, messages: shaken });
+  if (currentTokens <= triggerTokens && !options.forceCompact) {
+    // The mechanical trim alone recovered the budget: no LLM summarization.
+    return { messages: shaken, usage: usage(currentTokens, { ...options, messages: shaken }, false) };
+  }
+  const start = recentMessageStart(shaken, recentTarget, availableMessageTokens);
+  if (start <= 0) {
+    const rescued = rescueOversizedTail(shaken);
+    if (!rescued) {
+      throw new Error('The current request is too large for this model context window. Remove large attachments or choose a model with a larger context window.');
+    }
+    return prepareContext({ ...options, messages: rescued });
+  }
+
+  const summarizedMessages = shaken.slice(0, start);
+  const sourceText = serializeMessagesForSummary(summarizedMessages);
+  const generatedSummary = (await options.summarize(summarizedMessages)).trim();
+  if (!generatedSummary) throw new Error('The model returned an empty context summary.');
+  const summary = deterministicCheckpointEvidence(
+    generatedSummary,
+    summarizedMessages,
+    sourceText,
+  );
+  const checkpoint = {
+    ...(await createCheckpoint(summary, sourceText, summarizedMessages.length)),
+    modelId: options.modelId,
+    contextWindowTokens: options.contextWindowTokens,
+  };
+  const messages = [
+    checkpointMessage(checkpoint, options.checkpointProviderOptions?.(summarizedMessages)),
+    ...shaken.slice(start),
+  ];
+  const compactedTokens = estimateContextTokens(
+    messages,
+    options.system,
+    options.requestOverheadTokens,
+  );
+  if (compactedTokens > triggerTokens) {
+    throw new Error('The recent conversation is still too large after context compaction. Remove large attachments or start a new chat.');
+  }
+  return {
+    messages,
+    usage: {
+      ...usage(compactedTokens, options, true),
+      messageCount: messages.length,
+    },
+    checkpoint,
+  };
+}
