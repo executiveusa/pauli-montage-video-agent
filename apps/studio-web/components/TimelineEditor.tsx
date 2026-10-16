@@ -17,6 +17,7 @@ import type {
   TimelineReplaceResult,
   TimelineTrack,
 } from "@/lib/timeline";
+import { applyHumanTimelineCommand, HumanTimelineEditError } from "@/lib/human-timeline-bridge";
 import styles from "./TimelineEditor.module.css";
 
 type EditorState = "loading" | "ready" | "dirty" | "saving" | "saved" | "conflict" | "error";
@@ -229,6 +230,22 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       },
       detail,
     );
+  }
+
+  function frameEdit(kind: "move" | "trim", deltaFrames: number) {
+    if (!timeline || !selected || editingLocked) return;
+    try {
+      const fps = timeline.canvas.fps;
+      const startFrame = Math.round(selected.item.startSeconds * fps);
+      const durationFrames = Math.round(selected.item.durationSeconds * fps);
+      const command = kind === "move"
+        ? { type: "move" as const, trackId: selected.track.id, itemId: selected.item.id, startFrame: startFrame + deltaFrames }
+        : { type: "trim" as const, trackId: selected.track.id, itemId: selected.item.id, startFrame, durationFrames: durationFrames + deltaFrames, sourceInFrame: selected.item.sourceStartSeconds == null ? undefined : Math.round(selected.item.sourceStartSeconds * fps) };
+      const next = applyHumanTimelineCommand(timeline, command);
+      mark(next, kind === "move" ? "Clip nudged by frame" : "Clip duration adjusted by frame");
+    } catch (error) {
+      setMessage(error instanceof HumanTimelineEditError ? error.message : "Frame edit failed.");
+    }
   }
 
   function addTextTrack(name = "Titles") {
@@ -696,6 +713,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                 </>
               ) : null}
               <div className={styles.actions}>
+                <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("move", -1)} type="button" title="Move selected clip one frame earlier">← 1 frame</button>
+                <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("move", 1)} type="button" title="Move selected clip one frame later">1 frame →</button>
+                <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("trim", -1)} type="button" title="Shorten selected clip by one frame">Trim −1 frame</button>
+                <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("trim", 1)} type="button" title="Lengthen selected clip by one frame if source permits">Trim +1 frame</button>
                 <button className={styles.button} disabled={selected.item.durationSeconds < .1} onClick={splitSelected} type="button">Split at playhead</button>
                 <button className={styles.button} onClick={() => moveSelected(-1)} type="button">Move earlier</button>
                 <button className={styles.button} onClick={() => moveSelected(1)} type="button">Move later</button>
