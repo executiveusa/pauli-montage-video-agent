@@ -11,7 +11,7 @@ Audit date: 2026-10-16. Status: **triage only; implementation and production ver
 ## Observed, not assumed
 - 59 named branches, 2 open PRs at audit time.
 - PR #63: owner-only read-only wiring status. Draft; reports unverified production Postgres, Redis dependency/probes and worker heartbeat. Incorporate only after fixing its explicit review gates.
-- PR #62: 91 MB inert vendored OpenChatCut + es-MX, AGPL-3.0-or-later. Exclude from this recovery: separate editor, no active runtime integration, unnecessary license and review burden.
+- PR #62: 91 MB currently inert vendored OpenChatCut + es-MX, AGPL-3.0-or-later. **Required product capability**: its human-directed, frame-accurate timeline editing behavior. The earlier exclusion is superseded: evaluate inclusion of the vendored source while keeping it isolated until an interoperable, tested editor route exists. Do not mistake vendor presence for working integration.
 - `feat/one-shot-autonomous-edit-loop`: 51 commits ahead and 444 behind main; 21 changed paths in branch-vs-main comparison, including FootageWorkbench, TimelineEditor, local-studio-store, LocalReviewRenderPanel, local-review-render, caption sync, pipeline, and local footage tests. Do not merge this stale branch directly.
 - `feat/a3os-6-6-apple-studio-editor`: 5 ahead/446 behind; candidate UI reference only, not automatically adopted.
 - `feat/product-unification-ui-v1`: 5 ahead/508 behind; candidate UI reference only.
@@ -25,7 +25,7 @@ Audit date: 2026-10-16. Status: **triage only; implementation and production ver
 2. Recover the smallest valuable one-shot flow: source asset -> proposed reversible timeline/caption edits -> human review -> verified local render. Preserve active timeline save/conflict behavior.
 3. Introduce only compatible new modules; port changes manually against current main, not an entire stale branch; add deterministic tests for asset preservation, repeat/idempotency, undo, captions and export.
 4. Consider #63 admin status separately within the same recovery PR only if its Postgres, Redis, security and visual review gates pass and it remains current.
-5. Explicitly exclude #62 vendored editor and old alternative redesigns from this PR.
+5. Integrate OpenChatCut human timeline logic deliberately: map its frame-based `TimelineState.items` / `trackOrder` / `tracks` / transitions and `ProjectDoc.assets` onto MONTAGE's second-based `Timeline.tracks[].items` without silently dropping unsupported state. Start with round-trip contracts for fps conversion, trims, track ids, source-master links, non-destructive edit history and persistence; preserve existing Twick/export behavior until proven. Evaluate whether PR #62's licensed, heavy vendor source is necessary in this PR or can remain in its own PR with a verified integration commit. Never wholesale replace the current editor merely to get human editing. Exclude unrelated old redesigns.
 6. Verify exact-head typecheck, Next build, Python contract tests, local edit/render smoke, owner permissions, migration safety, and reproducible rollback. Independent reviewer must approve. Obtain production deployment commit and smoke evidence before claiming release.
 
 ## Release proof required
@@ -36,3 +36,10 @@ Audit date: 2026-10-16. Status: **triage only; implementation and production ver
 
 ## Explicit non-goals
 No automatic merge, no main mutation, no production deployment, no migration, no paid model calls, no secret changes, and no claim that all 59 branches should be included.
+
+## Additional audit 2026-10-16: OpenChatCut and build blocker
+- OpenChatCut `src/Editor.tsx` delegates to `useEditorController` and `EditorWorkspaceView`. Source at PR #62 includes an actual `src/editor/storeCommands.ts` command model (`moveItem`, `setItemTiming`, `slipItem`, `addMediaItem`, `setItemSpeed`) and `timelineTypes.ts` frame-oriented state, track aliases, transitions and multi-selection. This is substantive human editing logic, not simply an es-MX translation.
+- MONTAGE's `apps/studio-web/lib/timeline.ts` uses seconds; OpenChatCut `TimelineState` uses frame positions and flattened items. Introduce explicit validated conversion with round-trip tests; reject unsupported kinds rather than silently erase work.
+- OpenChatCut currently declares Node >=24 <25 and AGPL-3.0-or-later. Check runtime compatibility and source-disclosure duties before enabling network service. No licensing conclusions without counsel.
+- PR #64 current commit `fd452b1...` shows Vercel status FAILURE: deployment build rate limited; CodeRabbit status says review skipped for draft. These are external/review blockers, NOT evidence of a merge conflict or code failure. Obtain offline/local CI and a separate preview only if available, without purchasing or changing production.
+
