@@ -7,6 +7,7 @@
     "apps/*"
   ],
   "scripts": {
+    "test:timeline": "node scripts/test_timeline_bridge.cjs",
     "dev:studio": "npm run dev --workspace=@yappyverse/studio-web",
     "build:studio": "npm run build --workspace=@yappyverse/studio-web",
     "typecheck:studio": "npm run typecheck --workspace=@yappyverse/studio-web"

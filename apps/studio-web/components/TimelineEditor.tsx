@@ -197,7 +197,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     const previous = history[history.length - 1];
     setFuture((current) => [structuredClone(timeline), ...current].slice(0, 30));
     setHistory((current) => current.slice(0, -1));
-    setTimeline(previous);
+    setTimeline({ ...previous, version: timeline.version });
     setState("dirty");
     setMessage("Undo applied to the same StudioProject timeline. Save to persist it.");
   }
@@ -207,7 +207,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     const next = future[0];
     setHistory((current) => [...current.slice(-29), structuredClone(timeline)]);
     setFuture((current) => current.slice(1));
-    setTimeline(next);
+    setTimeline({ ...next, version: timeline.version });
     setState("dirty");
     setMessage("Redo restored the previously undone StudioProject change.");
   }
@@ -219,6 +219,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
   function updateItem(trackId: string, itemId: string, patch: Partial<TimelineItem>, detail = "Clip updated") {
     if (!timeline || editingLocked) return;
+    if (timeline.tracks.find((track) => track.id === trackId)?.locked) {
+      setMessage("Target track is locked.");
+      return;
+    }
     mark(
       {
         ...timeline,
@@ -232,7 +236,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     );
   }
 
-  function frameEdit(kind: "move" | "trim", deltaFrames: number) {
+  function frameEdit(kind: "move" | "trim" | "slip", deltaFrames: number) {
     if (!timeline || !selected || editingLocked) return;
     try {
       const fps = timeline.canvas.fps;
@@ -240,9 +244,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       const durationFrames = Math.round(selected.item.durationSeconds * fps);
       const command = kind === "move"
         ? { type: "move" as const, trackId: selected.track.id, itemId: selected.item.id, startFrame: startFrame + deltaFrames }
-        : { type: "trim" as const, trackId: selected.track.id, itemId: selected.item.id, startFrame, durationFrames: durationFrames + deltaFrames, sourceInFrame: selected.item.sourceStartSeconds == null ? undefined : Math.round(selected.item.sourceStartSeconds * fps) };
-      const next = applyHumanTimelineCommand(timeline, command);
-      mark(next, kind === "move" ? "Clip nudged by frame" : "Clip duration adjusted by frame");
+        : kind === "trim"
+          ? { type: "trim" as const, trackId: selected.track.id, itemId: selected.item.id, startFrame, durationFrames: durationFrames + deltaFrames, sourceInFrame: selected.item.sourceStartSeconds == null ? undefined : Math.round(selected.item.sourceStartSeconds * fps) }
+          : { type: "slip" as const, trackId: selected.track.id, itemId: selected.item.id, deltaFrames };
+      const asset = localMode && selected.item.assetId ? getLocalAsset(projectId, selected.item.assetId) : null;
+      const source = asset?.durationSeconds != null ? { durationSeconds: asset.durationSeconds } : undefined;
+      const next = applyHumanTimelineCommand(timeline, command, source);
+      mark(next, kind === "move" ? "Clip nudged by frame" : kind === "trim" ? "Clip duration adjusted by frame" : "Source slipped by frame");
     } catch (error) {
       setMessage(error instanceof HumanTimelineEditError ? error.message : "Frame edit failed.");
     }
@@ -265,6 +273,10 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
 
   function addTextItem(trackId: string, text = "New title") {
     if (!timeline || editingLocked) return;
+    if (timeline.tracks.find((track) => track.id === trackId)?.locked) {
+      setMessage("Target track is locked.");
+      return;
+    }
     const item: TimelineItem = {
       id: nextId("text"),
       kind: "text",
@@ -286,13 +298,13 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function removeTrack(trackId: string) {
-    if (!timeline || editingLocked) return;
+    if (!timeline || editingLocked || timeline.tracks.find((track) => track.id === trackId)?.locked) return;
     mark({ ...timeline, tracks: normalizeTrackOrder(timeline.tracks.filter((track) => track.id !== trackId)) }, "Track removed");
     if (selection?.trackId === trackId) setSelection(null);
   }
 
   function moveTrack(trackId: string, delta: number) {
-    if (!timeline || editingLocked) return;
+    if (!timeline || editingLocked || timeline.tracks.find((track) => track.id === trackId)?.locked) return;
     const tracks = [...timeline.tracks];
     const index = tracks.findIndex((track) => track.id === trackId);
     const nextIndex = index + delta;
@@ -303,7 +315,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function moveSelected(delta: number) {
-    if (!timeline || !selected || editingLocked) return;
+    if (!timeline || !selected || editingLocked || selected.track.locked) return;
     const track = selected.track;
     const index = track.items.findIndex((item) => item.id === selected.item.id);
     const nextIndex = index + delta;
@@ -320,14 +332,14 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function splitSelected() {
-    if (!timeline || !selected || editingLocked || selected.item.durationSeconds < 0.1) return;
+    if (!timeline || !selected || editingLocked || selected.track.locked || selected.item.durationSeconds < 0.1) return;
     const { track, item } = selected;
     const itemEnd = item.startSeconds + item.durationSeconds;
-    if (playhead <= item.startSeconds + 0.05 || playhead >= itemEnd - 0.05) {
+    const splitAt = Math.round(playhead * timeline.canvas.fps) / timeline.canvas.fps;
+    if (splitAt <= item.startSeconds + 1e-9 || splitAt >= itemEnd - 1e-9) {
       setMessage("Move the playhead inside the selected clip before splitting.");
       return;
     }
-    const splitAt = clamp(playhead, item.startSeconds + 0.05, itemEnd - 0.05);
     const leftDuration = splitAt - item.startSeconds;
     const rightDuration = itemEnd - splitAt;
     const hasSourceRange = item.sourceStartSeconds != null && item.sourceEndSeconds != null;
@@ -360,7 +372,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }
 
   function removeSelected() {
-    if (!timeline || !selected || editingLocked) return;
+    if (!timeline || !selected || editingLocked || selected.track.locked) return;
     const { track, item } = selected;
     mark(
       {
@@ -419,17 +431,17 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       return;
     }
     if ((normalized.includes("move left") || normalized.includes("earlier")) && selected) {
-      updateItem(selected.track.id, selected.item.id, { startSeconds: Math.max(0, selected.item.startSeconds - 0.5) }, "Director moved selected clip left 0.5s");
+      frameEdit("move", -Math.round(timeline.canvas.fps / 2));
       setDirectorCommand("");
       return;
     }
     if ((normalized.includes("move right") || normalized.includes("later")) && selected) {
-      updateItem(selected.track.id, selected.item.id, { startSeconds: selected.item.startSeconds + 0.5 }, "Director moved selected clip right 0.5s");
+      frameEdit("move", Math.round(timeline.canvas.fps / 2));
       setDirectorCommand("");
       return;
     }
     if ((normalized.includes("trim") || normalized.includes("tighten") || normalized.includes("shorter")) && selected) {
-      updateItem(selected.track.id, selected.item.id, { durationSeconds: Math.max(0.25, selected.item.durationSeconds - 0.5) }, "Director tightened selected clip by 0.5s");
+      frameEdit("trim", -Math.min(Math.round(timeline.canvas.fps / 2), Math.round(selected.item.durationSeconds * timeline.canvas.fps) - 1));
       setDirectorCommand("");
       return;
     }
@@ -512,8 +524,6 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       if (localMode) {
         const payload = replaceLocalTimeline(projectId, expectedVersion, snapshot);
         setTimeline(payload.timeline);
-        setHistory([]);
-        setFuture([]);
         setState("saved");
         setMessage(`Saved locally as timeline v${payload.timeline.version}. Reopen this project to verify persistence.`);
         return;
@@ -532,8 +542,6 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       }
       if (!response.ok) throw new Error(messageFrom(payload, "Timeline could not be saved."));
       setTimeline(payload.timeline);
-      setHistory([]);
-      setFuture([]);
       setState("saved");
       setMessage(`Saved as timeline v${payload.timeline.version}. Reopen will use hosted StudioProject state.`);
     } catch (error) {
@@ -717,6 +725,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
                 <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("move", 1)} type="button" title="Move selected clip one frame later">1 frame →</button>
                 <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("trim", -1)} type="button" title="Shorten selected clip by one frame">Trim −1 frame</button>
                 <button className={styles.button} disabled={editingLocked || !!selected.track.locked} onClick={() => frameEdit("trim", 1)} type="button" title="Lengthen selected clip by one frame if source permits">Trim +1 frame</button>
+                <button className={styles.button} disabled={editingLocked || !!selected.track.locked || !playable(selected.item)} onClick={() => frameEdit("slip", -1)} type="button" title="Use source footage one frame earlier without moving the clip">Slip −1 frame</button>
+                <button className={styles.button} disabled={editingLocked || !!selected.track.locked || !playable(selected.item)} onClick={() => frameEdit("slip", 1)} type="button" title="Use source footage one frame later if source permits">Slip +1 frame</button>
                 <button className={styles.button} disabled={selected.item.durationSeconds < .1} onClick={splitSelected} type="button">Split at playhead</button>
                 <button className={styles.button} onClick={() => moveSelected(-1)} type="button">Move earlier</button>
                 <button className={styles.button} onClick={() => moveSelected(1)} type="button">Move later</button>

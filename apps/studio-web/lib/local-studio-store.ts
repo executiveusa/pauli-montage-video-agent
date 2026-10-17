@@ -1,5 +1,6 @@
 import type { CreateProjectInput, ProjectSummary } from "@/lib/studio-api";
 import type { ProjectEnvelope, Timeline, TimelineItem, TimelineReplaceResult, TimelineTrack } from "@/lib/timeline";
+import { sourceClipDuration } from "./human-timeline-bridge";
 
 const STORAGE_KEY = "montage.studio.local-projects.v1";
 const SCHEMA_VERSION = "studio-project-v1-local";
@@ -166,6 +167,7 @@ function sourceExtensions(asset: LocalStudioAsset): Record<string, unknown> {
     previewUrl: stablePreviewUrl(asset.previewUrl),
     workerAssetId: asset.workerAssetId || null,
     workerStorageFilename: asset.workerStorageFilename || null,
+    sourceDurationSeconds: asset.durationSeconds ?? null,
   };
 }
 
@@ -177,7 +179,7 @@ function timelineItemEnd(timeline: Timeline): number {
 }
 
 function timelineWithSource(timeline: Timeline, asset: LocalStudioAsset): Timeline {
-  const duration = Math.max(0.1, Number(asset.durationSeconds) || 30);
+  const duration = sourceClipDuration(Number(asset.durationSeconds) || 30, timeline.canvas.fps);
   const previousSourceAssetId = typeof timeline.extensions?.canonicalSourceAssetId === "string"
     ? timeline.extensions.canonicalSourceAssetId
     : null;
@@ -216,7 +218,7 @@ function timelineWithSource(timeline: Timeline, asset: LocalStudioAsset): Timeli
       startSeconds: 0,
       durationSeconds: duration,
       sourceStartSeconds: 0,
-      sourceEndSeconds: asset.durationSeconds || duration,
+      sourceEndSeconds: duration,
       effects: [],
       extensions: sourceExtensions(asset),
     };
@@ -260,11 +262,15 @@ function timelineWithSourceMetadata(timeline: Timeline, asset: LocalStudioAsset)
   const matching = timeline.tracks.flatMap((track) => track.items).filter((item) => item.assetId === asset.id);
   if (!matching.length) return timelineWithSource(timeline, asset);
 
+  const priorDuration = matching[0].extensions?.sourceDurationSeconds;
+  const expectedDuration = sourceClipDuration(typeof priorDuration === "number" && priorDuration > 0 ? priorDuration : 30, timeline.canvas.fps);
   const pristine = matching.length === 1 &&
     matching[0].startSeconds === 0 &&
     Number(matching[0].sourceStartSeconds ?? 0) === 0 &&
+    Math.abs(matching[0].durationSeconds - expectedDuration) < 1e-9 &&
+    Math.abs((matching[0].sourceEndSeconds ?? 0) - expectedDuration) < 1e-9 &&
     matching[0].extensions?.role === "source-master";
-  const duration = Math.max(0.1, Number(asset.durationSeconds) || matching[0].durationSeconds || 30);
+  const duration = sourceClipDuration(Number(asset.durationSeconds) || matching[0].durationSeconds || 30, timeline.canvas.fps);
 
   const tracks = timeline.tracks.map((track) => ({
     ...track,
@@ -281,7 +287,7 @@ function timelineWithSourceMetadata(timeline: Timeline, asset: LocalStudioAsset)
       if (pristine) {
         next.durationSeconds = duration;
         next.sourceStartSeconds = 0;
-        next.sourceEndSeconds = asset.durationSeconds || duration;
+        next.sourceEndSeconds = duration;
       }
       return next;
     }),

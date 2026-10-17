@@ -11,6 +11,8 @@ export type HumanTimelineCommand =
   | { type: "trim"; trackId: string; itemId: string; startFrame: number; durationFrames: number; sourceInFrame?: number }
   | { type: "slip"; trackId: string; itemId: string; deltaFrames: number };
 
+export type HumanTimelineSource = { durationSeconds: number };
+
 export class HumanTimelineEditError extends Error {
   constructor(message: string) {
     super(message);
@@ -41,7 +43,17 @@ function toFrame(seconds: number, fps: number, name: string): number {
   return rounded;
 }
 
-export function applyHumanTimelineCommand(timeline: Timeline, command: HumanTimelineCommand): Timeline {
+/** Select complete timeline frames; retain the original duration on the asset. */
+export function sourceClipDuration(seconds: number, fps: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isSafeInteger(fps) || fps < 1 || fps > 240) {
+    throw new HumanTimelineEditError("Source duration and timeline fps must be valid.");
+  }
+  const frames = Math.floor(seconds * fps + 1e-9);
+  if (!Number.isSafeInteger(frames) || frames < 1) throw new HumanTimelineEditError("Source contains no complete timeline frame.");
+  return frames / fps;
+}
+
+export function applyHumanTimelineCommand(timeline: Timeline, command: HumanTimelineCommand, source?: HumanTimelineSource): Timeline {
   const fps = fpsOf(timeline);
   const track = timeline.tracks.find((candidate) => candidate.id === command.trackId);
   if (!track) throw new HumanTimelineEditError("Target track does not exist.");
@@ -52,6 +64,26 @@ export function applyHumanTimelineCommand(timeline: Timeline, command: HumanTime
   const start = toFrame(item.startSeconds, fps, "Clip start");
   const duration = toFrame(item.durationSeconds, fps, "Clip duration");
   const sourceIn = item.sourceStartSeconds == null ? 0 : toFrame(item.sourceStartSeconds, fps, "Source in");
+  const sourceBacked = item.kind === "asset" || item.kind === "composition";
+  let sourceLimit = item.sourceEndSeconds ?? undefined;
+  if (source) {
+    if (!Number.isFinite(source.durationSeconds) || source.durationSeconds <= 0) {
+      throw new HumanTimelineEditError("Source duration must be positive and finite.");
+    }
+    sourceLimit = source.durationSeconds;
+  }
+  if (sourceBacked && command.type !== "move") {
+    if (item.sourceStartSeconds == null || item.sourceEndSeconds == null) {
+      throw new HumanTimelineEditError("Source timing edits require a known source in/out range.");
+    }
+    const sourceOut = toFrame(item.sourceEndSeconds, fps, "Source out");
+    if (sourceOut - sourceIn !== duration) {
+      throw new HumanTimelineEditError("Frame edits of retimed clips are not supported.");
+    }
+    if (sourceLimit !== undefined && item.sourceEndSeconds > sourceLimit + 1e-9) {
+      throw new HumanTimelineEditError("Clip exceeds the known source duration.");
+    }
+  }
   let patch: Partial<TimelineItem>;
 
   if (command.type === "move") {
@@ -63,26 +95,28 @@ export function applyHumanTimelineCommand(timeline: Timeline, command: HumanTime
       ? sourceIn + (nextStart - start)
       : integer(command.sourceInFrame, "sourceInFrame");
     if (newSourceIn < 0) throw new HumanTimelineEditError("Trim would go before the start of the source.");
-    if (item.sourceEndSeconds != null && (newSourceIn + nextDuration) / fps > item.sourceEndSeconds + 1e-9) {
+    if (sourceBacked && sourceLimit !== undefined && (newSourceIn + nextDuration) / fps > sourceLimit + 1e-9) {
       throw new HumanTimelineEditError("Trim would extend beyond the known source end.");
     }
     patch = {
       startSeconds: nextStart / fps,
       durationSeconds: nextDuration / fps,
-      sourceStartSeconds: item.sourceStartSeconds == null && command.sourceInFrame === undefined ? item.sourceStartSeconds : newSourceIn / fps,
-      sourceEndSeconds: item.sourceEndSeconds == null ? item.sourceEndSeconds : (newSourceIn + nextDuration) / fps,
+      ...(sourceBacked ? { sourceStartSeconds: newSourceIn / fps, sourceEndSeconds: (newSourceIn + nextDuration) / fps } : {}),
     };
-  } else {
+  } else if (command.type === "slip") {
+    if (!sourceBacked) throw new HumanTimelineEditError("Slip requires a source-backed clip.");
     const delta = integer(Math.abs(command.deltaFrames), "deltaFrames") * Math.sign(command.deltaFrames);
     const nextSourceIn = sourceIn + delta;
     if (nextSourceIn < 0) throw new HumanTimelineEditError("Slip would go before the source start.");
     if (item.sourceEndSeconds == null || item.sourceStartSeconds == null) {
       throw new HumanTimelineEditError("Slip requires a known source in/out range.");
     }
-    // The saved sourceEnd is the active edit window, not confirmed media duration.
-    // Without external source-duration evidence, fail closed when sliding beyond it.
-    if (delta > 0) throw new HumanTimelineEditError("Positive slip requires source-duration evidence not stored in this timeline.");
+    if (sourceLimit === undefined || (nextSourceIn + duration) / fps > sourceLimit + 1e-9) {
+      throw new HumanTimelineEditError("Slip would extend beyond the known source end.");
+    }
     patch = { sourceStartSeconds: nextSourceIn / fps, sourceEndSeconds: (nextSourceIn + duration) / fps };
+  } else {
+    throw new HumanTimelineEditError("Unsupported timeline command.");
   }
 
   return {
