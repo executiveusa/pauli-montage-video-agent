@@ -105,3 +105,29 @@ not completion of ChatGPT remote-app or Claude live-client acceptance.
 - Production requires owner approval after review and release gates pass.
 
 Rollback: revert the recovery commit; no data migration or production change.
+
+## Hosted verification refresh — 2026-10-17
+- Exact application commit: `9e781910f5e847c89fc73745cf6bc1080d669e55`.
+- Vercel connector access now works. Deployment
+  `dpl_GDHcyWmfS5W8NhCnbbJCG6Dw3fj7` is READY, is a preview (target null),
+  and its Git metadata matches the exact application commit.
+- Preview: https://pauli-montage-video-agent-6z76lmgoc-the-pauli-effect.vercel.app/
+- All 11 returned GitHub pull-request workflows completed successfully; Vercel
+  and CodeRabbit status contexts report success. Review submissions remain empty:
+  a successful CodeRabbit context is not evidence of an independent approval.
+- An owner-authorized temporary preview link opened the exact deployment in the
+  visible side browser. The landing page rendered. No protection settings changed.
+- Opening `/studio` redirected to `/sign-in?error=configuration`. Expanding Owner
+  sign-in displayed the credential-configuration error. Authenticated editing was
+  not reached, and no browser sign-in credentials were entered.
+- Vercel project environment metadata returned `envs: []` and
+  `hiddenProductionEnvCount: 0`; no decrypted values were requested.
+- Source inspection confirms two existing paths: configure `YAPPY_STUDIO_API_URL`
+  for the owner-controlled identity/backend service, or configure the legacy owner
+  email, password hash and session secret. Legacy owner mode alone does not prove
+  hosted storage, workers or remote MCP connectivity.
+- Next gate: establish the intended owner-controlled backend endpoint and secure
+  authentication configuration for Preview, redeploy Preview, then exercise the
+  authenticated source-to-export flow. Do not invent a backend URL, configure a
+  localhost URL on Vercel, disable auth, or claim production verification.
+- PR #64 remains draft, open, mergeable and unmerged. No production changes.
