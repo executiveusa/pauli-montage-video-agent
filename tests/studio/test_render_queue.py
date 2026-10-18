@@ -34,6 +34,21 @@ class FailingPublisher:
         raise ConnectionError("redis down")
 
 
+class RecordingFailingPublisher(FailingPublisher):
+    def __init__(self):
+        self.seen = []
+    def publish_render_job(self, *, tenant_id, job_id):
+        self.seen.append(job_id)
+        super().publish_render_job(tenant_id=tenant_id, job_id=job_id)
+
+
+class ExplodingRunner:
+    def run(self, argv, *, output_path):
+        raise RuntimeError("ffmpeg exploded")
+    def probe(self, argv):
+        raise RuntimeError("probe unavailable")
+
+
 class RenderQueueTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); root = Path(self.temp.name)
@@ -85,6 +100,28 @@ class RenderQueueTests(unittest.TestCase):
         queue, payload = publisher._client.pushed[0]
         self.assertEqual(queue, worker.QUEUE)
         self.assertEqual(json.loads(payload), {"type": "render.execute", "job_id": "job_1", "tenant_id": "t"})
+
+
+    def test_publish_failure_marks_job_failed(self):
+        publisher = RecordingFailingPublisher()
+        render = RenderService(repository=self.repo, storage=self.storage, assets=self.assets, operations=self.ops, runner=FakeRunner(), workspace_root=Path(self.temp.name) / "r3", publisher=publisher)
+        with self.assertRaises(RenderExecutionUnavailable):
+            render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q4", approved=True)
+        job = self.ops.get_job("t", publisher.seen[0])
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("redis down", job["error"])
+
+    def test_worker_failure_marks_job_failed_with_error(self):
+        render = RenderService(repository=self.repo, storage=self.storage, assets=self.assets, operations=self.ops, runner=ExplodingRunner(), workspace_root=Path(self.temp.name) / "r4", publisher=self.publisher)
+        class Runtime: rendering = render
+        register_render_worker(Runtime(), worker_id="test-worker-fail")
+        submitted = render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q5", approved=True)
+        import json
+        with self.assertRaises(RuntimeError):
+            worker.process_payload(json.dumps({"type": "render.execute", "job_id": submitted["job"]["id"], "tenant_id": "t"}).encode())
+        job = self.ops.get_job("t", submitted["job"]["id"])
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("ffmpeg exploded", job["error"])
 
 
 if __name__ == "__main__":

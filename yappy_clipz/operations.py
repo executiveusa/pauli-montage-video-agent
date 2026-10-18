@@ -170,7 +170,7 @@ class OperationsService:
         if job:self.event(tenant_id,job["projectId"],"job.claimed",job["id"],{"workerId":worker_id,"leaseSeconds":lease_seconds})
         return job
     def transition(self,tenant_id,job_id,state,*,progress=None,output_refs=None,error=None,actual_cost=None):
-        job=self.store.get_job(tenant_id,job_id);allowed={"queued":{"cancelled","claimed"},"claimed":{"running","queued","cancelled"},"running":{"succeeded","failed","cancelled","awaiting_approval"},"awaiting_approval":{"queued","cancelled"},"failed":{"queued"},"succeeded":set(),"cancelled":set()}
+        job=self.store.get_job(tenant_id,job_id);allowed={"queued":{"cancelled","claimed","failed"},"claimed":{"running","queued","cancelled","failed"},"running":{"succeeded","failed","cancelled","awaiting_approval"},"awaiting_approval":{"queued","cancelled"},"failed":{"queued"},"succeeded":set(),"cancelled":set()}
         if state not in allowed.get(job["state"],set()):raise InvalidTransition(f"cannot transition {job['state']} to {state}")
         job["state"]=state;job["updatedAt"]=now_iso()
         if state=="running" and not job.get("startedAt"):job["startedAt"]=now_iso();job["attempt"]+=1

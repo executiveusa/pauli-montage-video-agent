@@ -255,10 +255,28 @@ class RenderService:
             try:
                 self.publisher.publish_render_job(tenant_id=tenant_id, job_id=job["id"])
             except Exception as exc:
+                self._mark_failed(tenant_id, job["id"], f"render job could not be queued: {exc}")
                 raise RenderExecutionUnavailable(f"render job {job['id']} persisted but could not be queued: {exc}") from exc
         return {"job": job, "manifest": manifest}
 
+    def _mark_failed(self, tenant_id: str, job_id: str, error: str) -> dict[str, Any] | None:
+        """Best-effort transition of a non-terminal job to failed with an error message."""
+        try:
+            current = self.operations.store.get_job(tenant_id, job_id)
+            if current["state"] in {"queued", "claimed", "running"}:
+                return self.operations.transition(tenant_id, job_id, "failed", error=error[:2000])
+        except Exception:
+            return None
+        return None
+
     def execute(self, *, tenant_id: str, job_id: str, worker_id: str) -> dict[str, Any]:
+        try:
+            return self._execute(tenant_id=tenant_id, job_id=job_id, worker_id=worker_id)
+        except Exception as exc:
+            self._mark_failed(tenant_id, job_id, str(exc) or exc.__class__.__name__)
+            raise
+
+    def _execute(self, *, tenant_id: str, job_id: str, worker_id: str) -> dict[str, Any]:
         job = self.operations.get_job(tenant_id, job_id)
         manifest = (job.get("extensions") or {}).get("renderManifest")
         if not manifest:
