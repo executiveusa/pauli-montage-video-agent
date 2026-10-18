@@ -6,6 +6,8 @@ uvicorn>=0.30,<1
 # Honor HTTP(S)/SOCKS proxy environments without import-time failure.
 httpx[socks]>=0.27,<1
 psycopg[binary]>=3.2,<4
+# Required by the asynchronous worker shipped in the Studio runtime image.
+redis>=5,<7
 boto3>=1.35,<2
 # Encrypt delegated cloud-source credentials at rest.
 cryptography>=43,<47
