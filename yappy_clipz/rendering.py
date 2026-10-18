@@ -122,6 +122,7 @@ class RenderService:
         ffprobe_binary: str = "ffprobe",
         workspace_root: Path | str = ".yappy-clipz/renders",
         media_library_mount_visible: bool = False,
+        publisher: Any | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -132,6 +133,7 @@ class RenderService:
         self.ffprobe_binary = ffprobe_binary
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.media_library_mount_visible = media_library_mount_visible
+        self.publisher = publisher
 
     def plan(self, *, tenant_id: str, project_id: str, preset_id: str, mode: str) -> dict[str, Any]:
         project = self.repository.get(tenant_id, project_id)
@@ -249,6 +251,11 @@ class RenderService:
         )
         job.setdefault("extensions", {})["renderManifest"] = manifest
         self.operations.store.put_job(job)
+        if self.publisher is not None:
+            try:
+                self.publisher.publish_render_job(tenant_id=tenant_id, job_id=job["id"])
+            except Exception as exc:
+                raise RenderExecutionUnavailable(f"render job {job['id']} persisted but could not be queued: {exc}") from exc
         return {"job": job, "manifest": manifest}
 
     def execute(self, *, tenant_id: str, job_id: str, worker_id: str) -> dict[str, Any]:

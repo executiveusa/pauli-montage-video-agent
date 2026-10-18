@@ -4,6 +4,7 @@ import { useState } from "react";
 import { localEngineHealth, localFileUrl } from "@/lib/local-engine";
 import { getFootageState, registerExport } from "@/lib/local-footage-state";
 import { renderLocalTimelineReview } from "@/lib/local-review-render";
+import { renderHostedTimelineReview } from "@/lib/hosted-review-render";
 import {
   getLocalSourceAsset,
   getLocalTimeline,
@@ -75,8 +76,19 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
 
   async function renderReview() {
     if (!localMode) {
-      setState("error");
-      setMessage("Hosted render is not connected yet. This zero-credit review path is for browser-local projects.");
+      setState("rendering");
+      setArtifact(null);
+      setVerification(null);
+      try {
+        const result = await renderHostedTimelineReview(projectId, (status) => setMessage(status));
+        setArtifact(result.downloadPath);
+        setVerification(result.verification);
+        setState("verified");
+        setMessage(`Hosted render ${result.jobId} verified by ffprobe. The MP4 downloads over an authenticated signed transfer.`);
+      } catch (reason) {
+        setState("error");
+        setMessage(reason instanceof Error ? reason.message : "Hosted review render failed.");
+      }
       return;
     }
     const timeline = getLocalTimeline(projectId);
@@ -138,7 +150,7 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
         <button className="button accent" disabled={state === "rendering" || !localMode} onClick={() => void renderReview()} type="button">
           {state === "rendering" ? "Rendering…" : "Render + verify 9:16 review"}
         </button>
-        {artifact ? <a className="button secondary" href={localFileUrl(projectId, "outputs", artifact)} rel="noreferrer" target="_blank">Open verified MP4</a> : null}
+        {artifact ? <a className="button secondary" href={localMode ? localFileUrl(projectId, "outputs", artifact) : artifact} rel="noreferrer" target="_blank">Open verified MP4</a> : null}
       </div>
       {verification ? (
         <div className="engine-facts">
