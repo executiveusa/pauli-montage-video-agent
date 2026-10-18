@@ -4,12 +4,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -107,6 +108,10 @@ def _asset_uri(asset: dict[str, Any], *, mount_visible: bool = False) -> str:
 
 def _safe_segment(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class RenderService:
@@ -261,14 +266,14 @@ class RenderService:
                 self.operations.store.put_job(job)
                 published = False
             if not published:
+                job["extensions"]["renderQueuePublished"] = True
+                self.operations.store.put_job(job)
                 try:
                     self.publisher.publish_render_job(tenant_id=tenant_id, job_id=job["id"])
                 except Exception as exc:
                     job_id = job["id"]
                     self._mark_failed(tenant_id, job_id, f"render job could not be queued: {exc}")
                     raise RenderExecutionUnavailable(f"render job {job_id} persisted but could not be queued: {exc}") from exc
-                job = self.operations.store.get_job(tenant_id, job["id"])
-                job["extensions"]["renderQueuePublished"] = True
                 self.operations.store.put_job(job)
         return {"job": job, "manifest": manifest}
 
@@ -295,11 +300,13 @@ class RenderService:
         lease = lease_seconds if lease_seconds is not None else int(os.environ.get("YAPPY_RENDER_LEASE_SECONDS", "900"))
         cutoff = time.time() - lease
         recovered: list[str] = []
-        for job in self.operations.store.list_active_jobs(("claimed", "running")):
+        for job in self.operations.store.list_active_jobs(("queued", "claimed", "running")):
             try:
                 updated = datetime.fromisoformat(str(job.get("updatedAt", "")).replace("Z", "+00:00")).timestamp()
             except ValueError:
                 updated = 0.0
+            if job["state"] == "queued" and not (job.get("extensions") or {}).get("renderQueuePublished"):
+                continue
             if updated >= cutoff:
                 continue
             try:
@@ -317,8 +324,24 @@ class RenderService:
         if job["state"] == "queued":
             job["state"] = "claimed"
             job["claimedBy"] = worker_id
+            job["updatedAt"] = _now_iso()
             self.operations.store.put_job(job)
         job = self.operations.transition(tenant_id, job_id, "running")
+        stop_beat = threading.Event()
+
+        def _heartbeat() -> None:
+            while not stop_beat.wait(10):
+                try:
+                    current = self.operations.store.get_job(tenant_id, job_id)
+                    if current.get("state") != "running":
+                        return
+                    current["updatedAt"] = _now_iso()
+                    self.operations.store.put_job(current)
+                except Exception:
+                    return
+
+        beat = threading.Thread(target=_heartbeat, daemon=True, name=f"render-heartbeat-{job_id}")
+        beat.start()
         workspace = self.workspace_root / _safe_segment(tenant_id) / job_id
         workspace.mkdir(parents=True, exist_ok=True)
         output = workspace / ("preview.mp4" if manifest["mode"] == "preview" else "master.mp4")
@@ -336,6 +359,7 @@ class RenderService:
             bytes_count=info.bytes, checksum_sha256=info.checksum_sha256,
             created_by=f"worker:{worker_id}",
         )
+        stop_beat.set()
         updated = self.operations.transition(tenant_id, job_id, "succeeded", progress=1, output_refs=[asset["id"]])
         return {"job": updated, "asset": asset, "evidence": evidence, "manifest": manifest}
 
