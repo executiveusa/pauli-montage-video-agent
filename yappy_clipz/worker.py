@@ -46,7 +46,7 @@ def process_payload(raw: bytes) -> tuple[str, dict[str, Any]]:
     return job_id, _HANDLERS[job_type](payload)
 
 
-def run() -> None:
+def run(on_idle=None) -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     client = Redis.from_url(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
     signal.signal(signal.SIGTERM, _request_stop)
@@ -54,6 +54,11 @@ def run() -> None:
     client.ping()
     LOG.info("worker ready")
     while not _STOP:
+        if on_idle is not None:
+            try:
+                on_idle()
+            except Exception:
+                LOG.exception("idle recovery sweep failed")
         item = client.blpop(QUEUE, timeout=5)
         if item is None:
             continue

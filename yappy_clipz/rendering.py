@@ -4,10 +4,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from datetime import datetime
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -252,19 +254,31 @@ class RenderService:
         job.setdefault("extensions", {})["renderManifest"] = manifest
         self.operations.store.put_job(job)
         if self.publisher is not None:
-            try:
-                self.publisher.publish_render_job(tenant_id=tenant_id, job_id=job["id"])
-            except Exception as exc:
-                self._mark_failed(tenant_id, job["id"], f"render job could not be queued: {exc}")
-                raise RenderExecutionUnavailable(f"render job {job['id']} persisted but could not be queued: {exc}") from exc
+            published = bool(job["extensions"].get("renderQueuePublished"))
+            if job["state"] == "failed":
+                job = self.operations.retry(tenant_id, job["id"])
+                job["extensions"]["renderManifest"] = manifest
+                self.operations.store.put_job(job)
+                published = False
+            if not published:
+                try:
+                    self.publisher.publish_render_job(tenant_id=tenant_id, job_id=job["id"])
+                except Exception as exc:
+                    job_id = job["id"]
+                    self._mark_failed(tenant_id, job_id, f"render job could not be queued: {exc}")
+                    raise RenderExecutionUnavailable(f"render job {job_id} persisted but could not be queued: {exc}") from exc
+                job = self.operations.store.get_job(tenant_id, job["id"])
+                job["extensions"]["renderQueuePublished"] = True
+                self.operations.store.put_job(job)
         return {"job": job, "manifest": manifest}
 
     def _mark_failed(self, tenant_id: str, job_id: str, error: str) -> dict[str, Any] | None:
         """Best-effort transition of a non-terminal job to failed with an error message."""
+        safe = " ".join(str(error).split())[:2000].replace(str(self.workspace_root), "<workspace>")
         try:
             current = self.operations.store.get_job(tenant_id, job_id)
             if current["state"] in {"queued", "claimed", "running"}:
-                return self.operations.transition(tenant_id, job_id, "failed", error=error[:2000])
+                return self.operations.transition(tenant_id, job_id, "failed", error=safe)
         except Exception:
             return None
         return None
@@ -275,6 +289,25 @@ class RenderService:
         except Exception as exc:
             self._mark_failed(tenant_id, job_id, str(exc) or exc.__class__.__name__)
             raise
+
+    def recover_stale(self, *, lease_seconds: int | None = None) -> list[str]:
+        """Fail claimed/running jobs whose lease expired before completion; failed jobs are safe to retry."""
+        lease = lease_seconds if lease_seconds is not None else int(os.environ.get("YAPPY_RENDER_LEASE_SECONDS", "900"))
+        cutoff = time.time() - lease
+        recovered: list[str] = []
+        for job in self.operations.store.list_active_jobs(("claimed", "running")):
+            try:
+                updated = datetime.fromisoformat(str(job.get("updatedAt", "")).replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                updated = 0.0
+            if updated >= cutoff:
+                continue
+            try:
+                self.operations.transition(job["tenantId"], job["id"], "failed", error="render worker lease expired before completion; safe to retry")
+                recovered.append(job["id"])
+            except Exception:
+                continue
+        return recovered
 
     def _execute(self, *, tenant_id: str, job_id: str, worker_id: str) -> dict[str, Any]:
         job = self.operations.get_job(tenant_id, job_id)

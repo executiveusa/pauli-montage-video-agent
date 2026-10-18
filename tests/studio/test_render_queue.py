@@ -124,5 +124,52 @@ class RenderQueueTests(unittest.TestCase):
         self.assertIn("ffmpeg exploded", job["error"])
 
 
+    def test_redis_outage_recovers_without_duplicate_job(self):
+        publisher = RecordingFailingPublisher()
+        render = RenderService(repository=self.repo, storage=self.storage, assets=self.assets, operations=self.ops, runner=FakeRunner(), workspace_root=Path(self.temp.name) / "r5", publisher=publisher)
+        with self.assertRaises(RenderExecutionUnavailable):
+            render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q6", approved=True)
+        job_id = publisher.seen[0]
+        self.assertEqual(self.ops.get_job("t", job_id)["state"], "failed")
+        render.publisher = StubPublisher()
+        recovered = render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q6", approved=True)
+        self.assertEqual(recovered["job"]["id"], job_id)
+        self.assertEqual(recovered["job"]["state"], "queued")
+        self.assertEqual(len([j for j in self.ops.list_jobs("t") if j["type"] == "render"]), 1)
+        class Runtime: rendering = render
+        register_render_worker(Runtime(), worker_id="w-rec")
+        import json
+        _, result = worker.process_payload(json.dumps({"type": "render.execute", "job_id": job_id, "tenant_id": "t"}).encode())
+        self.assertEqual(result["state"], "succeeded")
+
+    def test_stale_running_job_recovered_and_retried(self):
+        submitted = self.render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q7", approved=True)
+        job_id = submitted["job"]["id"]
+        job = self.ops.get_job("t", job_id)
+        job["state"] = "running"; job["updatedAt"] = "2000-01-01T00:00:00Z"
+        self.ops.store.put_job(job)
+        self.assertEqual(self.render.recover_stale(lease_seconds=60), [job_id])
+        self.assertEqual(self.ops.get_job("t", job_id)["state"], "failed")
+        self.assertIn("lease expired", self.ops.get_job("t", job_id)["error"])
+        retried = self.render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q7", approved=True)
+        self.assertEqual(retried["job"]["id"], job_id)
+        self.assertEqual(retried["job"]["state"], "queued")
+
+    def test_render_error_is_sanitized(self):
+        root = Path(self.temp.name) / "r6"
+        class PathRunner:
+            def run(self, argv, *, output_path):
+                raise RuntimeError(str(root) + "/preview.mp4 exploded")
+            def probe(self, argv):
+                raise RuntimeError("probe unavailable")
+        render = RenderService(repository=self.repo, storage=self.storage, assets=self.assets, operations=self.ops, runner=PathRunner(), workspace_root=root, publisher=self.publisher)
+        submitted = render.submit(tenant_id="t", project_id=self.pid, preset_id="preview", mode="preview", idempotency_key="q8", approved=True)
+        with self.assertRaises(RuntimeError):
+            render.execute(tenant_id="t", job_id=submitted["job"]["id"], worker_id="w-san")
+        error = self.ops.get_job("t", submitted["job"]["id"])["error"]
+        self.assertIn("<workspace>", error)
+        self.assertNotIn(str(root), error)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

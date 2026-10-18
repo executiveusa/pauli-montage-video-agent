@@ -9,7 +9,7 @@ from .worker import run
 def main() -> None:
     runtime = create_runtime()
     register_render_worker(runtime)
-    run()
+    run(on_idle=lambda: runtime.rendering.recover_stale())
 
 
 if __name__ == "__main__":

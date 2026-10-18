@@ -33,6 +33,7 @@ class OperationStore(Protocol):
     def put_job(self, job:dict[str,Any])->dict[str,Any]: ...
     def get_job(self, tenant_id:str, job_id:str)->dict[str,Any]: ...
     def list_jobs(self, tenant_id:str, project_id:str|None=None)->list[dict[str,Any]]: ...
+    def list_active_jobs(self, states:tuple[str,...])->list[dict[str,Any]]: ...
     def claim_next(self, tenant_id:str, worker_id:str, lease_seconds:int, project_id:str|None=None)->dict[str,Any]|None: ...
     def append_event(self, event:dict[str,Any])->dict[str,Any]: ...
     def list_events(self, tenant_id:str, project_id:str|None=None, after_sequence:int=0)->list[dict[str,Any]]: ...
@@ -69,6 +70,9 @@ class JsonOperationStore:
     def list_jobs(self,tenant_id,project_id=None):
         with self.lock:rows=list(self._read()["jobs"].values())
         return sorted([r for r in rows if r.get("tenantId")==tenant_id and (project_id is None or r.get("projectId")==project_id)],key=lambda r:r["createdAt"],reverse=True)
+    def list_active_jobs(self, states):
+        with self.lock:rows=list(self._read()["jobs"].values())
+        return [r for r in rows if r.get("state") in states]
     def claim_next(self,tenant_id,worker_id,lease_seconds,project_id=None):
         with self.lock:
             data=self._read();now=epoch();candidates=[r for r in data["jobs"].values() if r.get("tenantId")==tenant_id and (project_id is None or r.get("projectId")==project_id) and (r.get("state")=="queued" or (r.get("state")=="claimed" and int(r.get("extensions",{}).get("leaseExpires",0))<=now))]
@@ -116,6 +120,8 @@ class PostgresOperationStore:
         if project_id is not None:sql+=" AND project_id=%s";args.append(project_id)
         sql+=" ORDER BY updated_at DESC"
         with self._c() as c:return [r["document"] for r in c.execute(sql,args).fetchall()]
+    def list_active_jobs(self, states):
+        with self._c() as c:return [r["document"] for r in c.execute("SELECT document FROM yappy_jobs WHERE document->>%s = ANY(%s)",("state",list(states))).fetchall()]
     def claim_next(self,tenant_id,worker_id,lease_seconds,project_id=None):
         with self._c() as c:
             sql="SELECT job_id,document FROM yappy_jobs WHERE tenant_id=%s AND ((document->>'state')='queued' OR ((document->>'state')='claimed' AND COALESCE((document->'extensions'->>'leaseExpires')::bigint,0)<=extract(epoch from now())))";args=[tenant_id]
