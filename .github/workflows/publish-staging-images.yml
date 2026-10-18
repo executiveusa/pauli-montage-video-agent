@@ -7,7 +7,7 @@ permissions:
   contents: read
   packages: write
 env:
-  SOURCE_SHA: 546cf3fc2c1b890fa73b81592eb75e66a6db92a2
+  SOURCE_SHA: 546cf3fcef91bc5b386ca565765277582fed9dc0
 jobs:
   build:
     runs-on: ubuntu-latest
