@@ -26,3 +26,10 @@ jobs:
           file: apps/studio-web/Dockerfile
           push: true
           tags: ghcr.io/executiveusa/montage-web:sha-${{ env.SOURCE_SHA }}
+      - name: Build + push api/worker image (staging only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ghcr.io/executiveusa/montage-api:sha-${{ env.SOURCE_SHA }}
