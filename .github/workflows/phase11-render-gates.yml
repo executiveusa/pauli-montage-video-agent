@@ -24,3 +24,25 @@ jobs:
    - run: npm run build:studio
      env: {NEXT_TELEMETRY_DISABLED: '1'}
    - run: docker build -f apps/studio-web/Dockerfile -t montage-web:acceptance .
+   - name: Smoke-test the built web image
+     run: |
+      docker run --detach --name montage-web-acceptance -p 127.0.0.1:3300:3000 montage-web:acceptance
+      python - <<'PYCODE'
+      import time
+      from urllib.request import urlopen
+      for attempt in range(30):
+          try:
+              with urlopen('http://127.0.0.1:3300/sign-in', timeout=3) as response:
+                  assert response.status == 200
+                  assert response.headers.get('X-Frame-Options') == 'DENY'
+                  assert response.headers.get('X-Powered-By') is None
+                  assert b'Montage' in response.read()
+              break
+          except OSError:
+              if attempt == 29:
+                  raise
+              time.sleep(1)
+      PYCODE
+   - name: Stop the acceptance container
+     if: always()
+     run: docker rm -f montage-web-acceptance || true

@@ -14,6 +14,7 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/apps/studio-web/package.json ./apps/studio-web/package.json
+COPY --from=build --chown=node:node /app/apps/studio-web/next.config.ts ./apps/studio-web/next.config.ts
 COPY --from=build --chown=node:node /app/apps/studio-web/.next ./apps/studio-web/.next
 COPY --from=build --chown=node:node /app/apps/studio-web/public ./apps/studio-web/public
 USER node
