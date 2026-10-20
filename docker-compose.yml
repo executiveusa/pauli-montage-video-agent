@@ -6,10 +6,11 @@ services:
       YAPPY_PROJECT_ROOT: /data/projects
       REDIS_URL: redis://redis:6379/0
     volumes:
+      - runtime_data:/data
       - project_data:/data/projects
       - render_output:/app/output
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -23,16 +24,24 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    command: ["python", "-m", "yappy_clipz.worker"]
+    command: ["python", "-m", "yappy_clipz.worker_render"]
     environment:
       YAPPY_PROJECT_ROOT: /data/projects
       REDIS_URL: redis://redis:6379/0
     volumes:
+      - runtime_data:/data
       - project_data:/data/projects
       - render_output:/app/output
     depends_on:
       redis:
         condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import time; from yappy_clipz.worker import health_path; assert time.time()-health_path().stat().st_mtime < 60"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   redis:
     image: redis:7.4-alpine
@@ -47,6 +56,7 @@ services:
       retries: 5
 
 volumes:
+  runtime_data:
   project_data:
   render_output:
   redis_data:
