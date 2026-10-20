@@ -15,3 +15,10 @@ outputs
 .coverage
 .pytest_cache
 *.log
+
+# Developer code-map tools and source excerpts never enter runtime images
+graft/
+tooling/trail/
+scripts/trail*.cjs
+scripts/test_trail_context.cjs
+.mcp.json

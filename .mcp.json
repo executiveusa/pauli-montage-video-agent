@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "montage-code-map": {
+      "command": "node",
+      "args": ["scripts/trail.cjs", "mcp"],
+      "env": { "DO_NOT_TRACK": "1" }
+    }
+  }
+}
