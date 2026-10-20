@@ -114,3 +114,6 @@ venv/
 
 # Local Wan / diffusers GPU environment
 .venv-wan/
+
+# Trail-Code: source-derived local graph and isolated agent caches
+/graft/

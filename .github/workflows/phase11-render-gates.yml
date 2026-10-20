@@ -1,7 +1,7 @@
 name: Phase 11 render gates
 on:
  pull_request:
-  paths: ['yappy_clipz/**','tests/studio/**','openspec/changes/phase-11-deterministic-render-export/**','.github/workflows/phase11-render-gates.yml']
+  paths: ['yappy_clipz/**','tests/studio/**','apps/studio-web/**','scripts/test_timeline_bridge.cjs','Dockerfile','.dockerignore','openspec/changes/phase-11-deterministic-render-export/**','.github/workflows/phase11-render-gates.yml']
  push: {branches: ['phase/**']}
 permissions: {contents: read}
 jobs:
@@ -12,7 +12,37 @@ jobs:
      with: {persist-credentials: false}
    - uses: actions/setup-python@v5
      with: {python-version: '3.11'}
+   - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
    - run: python -m pip install --disable-pip-version-check -r requirements-studio.txt
    - run: python -m py_compile yappy_clipz/*.py
    - run: python -m unittest tests/studio/test_phase11_rendering.py -v
    - run: python -m unittest discover -s tests/studio -p 'test_*.py' -v
+   - uses: actions/setup-node@v4
+     with: {node-version: '22', cache: 'npm'}
+   - run: npm ci
+   - run: node scripts/test_timeline_bridge.cjs
+   - run: npm run build:studio
+     env: {NEXT_TELEMETRY_DISABLED: '1'}
+   - run: docker build -f apps/studio-web/Dockerfile -t montage-web:acceptance .
+   - name: Smoke-test the built web image
+     run: |
+      docker run --detach --name montage-web-acceptance -p 127.0.0.1:3300:3000 montage-web:acceptance
+      python - <<'PYCODE'
+      import time
+      from urllib.request import urlopen
+      for attempt in range(30):
+          try:
+              with urlopen('http://127.0.0.1:3300/sign-in', timeout=3) as response:
+                  assert response.status == 200
+                  assert response.headers.get('X-Frame-Options') == 'DENY'
+                  assert response.headers.get('X-Powered-By') is None
+                  assert b'Montage' in response.read()
+              break
+          except OSError:
+              if attempt == 29:
+                  raise
+              time.sleep(1)
+      PYCODE
+   - name: Stop the acceptance container
+     if: always()
+     run: docker rm -f montage-web-acceptance || true

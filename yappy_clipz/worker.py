@@ -6,6 +6,10 @@ import json
 import logging
 import os
 import signal
+import threading
+import time
+from pathlib import Path
+from redis.exceptions import RedisError
 from collections.abc import Callable
 from typing import Any
 
@@ -46,27 +50,64 @@ def process_payload(raw: bytes) -> tuple[str, dict[str, Any]]:
     return job_id, _HANDLERS[job_type](payload)
 
 
-def run() -> None:
+def health_path() -> Path:
+    return Path(os.getenv("YAPPY_WORKER_HEALTH_FILE", "/tmp/montage-worker-heartbeat"))
+
+
+def run(on_idle=None) -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-    client = Redis.from_url(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+    client = Redis.from_url(os.getenv("YAPPY_REDIS_URL") or os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
+                            socket_connect_timeout=3, socket_timeout=10)
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
-    client.ping()
+    stopped = threading.Event()
+    def maintenance():
+        # Sweeping must continue while the foreground worker renders a long clip.
+        while not stopped.is_set():
+            try:
+                client.ping()
+                if on_idle is not None:
+                    on_idle()
+                health_path().touch()
+            except Exception:
+                LOG.error("worker recovery or queue health check failed")
+            stopped.wait(5)
+    maintenance_thread = threading.Thread(target=maintenance, daemon=True, name="worker-recovery")
+    maintenance_thread.start()
     LOG.info("worker ready")
-    while not _STOP:
-        item = client.blpop(QUEUE, timeout=5)
-        if item is None:
-            continue
-        _, raw = item
-        job_id = "unknown"
-        try:
-            job_id, result = process_payload(raw)
-            envelope = {"status": "succeeded", "result": result}
-        except Exception as exc:
-            LOG.exception("job failed")
-            envelope = {"status": "failed", "error": str(exc)}
-        client.setex(f"{RESULT_PREFIX}{job_id}", 86_400, json.dumps(envelope))
-    LOG.info("worker stopped")
+    try:
+        while not _STOP:
+            try:
+                item = client.blpop(QUEUE, timeout=5)
+            except RedisError:
+                LOG.error("queue unavailable; retrying")
+                stopped.wait(2)
+                continue
+            if item is None:
+                continue
+            _, raw = item
+            job_id = "unknown"
+            try:
+                # Capture identity before execution so failures don't share an
+                # 'unknown' result key. This result is only a transport cache.
+                payload = json.loads(raw) if len(raw) <= MAX_PAYLOAD_BYTES else None
+                if isinstance(payload, dict) and isinstance(payload.get("job_id"), str):
+                    job_id = payload["job_id"]
+                job_id, result = process_payload(raw)
+                envelope = {"status": "succeeded", "result": result}
+            except Exception:
+                LOG.error("job failed; inspect its durable status")
+                envelope = {"status": "failed", "error": "Job failed. Inspect its durable status."}
+            try:
+                client.setex(f"{RESULT_PREFIX}{job_id}", 86_400, json.dumps(envelope))
+            except RedisError:
+                LOG.error("result cache unavailable; durable job state is preserved")
+    finally:
+        stopped.set()
+        maintenance_thread.join(timeout=5)
+        health_path().unlink(missing_ok=True)
+        client.close()
+        LOG.info("worker stopped")
 
 
 if __name__ == "__main__":

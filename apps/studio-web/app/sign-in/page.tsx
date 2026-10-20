@@ -21,11 +21,10 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
       </section>
       <section className={styles.formPanel}>
         <div className={styles.formWrap}>
-          <div className={styles.kicker}>Test Montage</div>
-          <h2 className={styles.title}>Start editing.</h2>
-          <p className={styles.copy}>Open the browser-local workspace without an email or password. Create a project, try the timeline, and review the local editing flow.</p>
-          <Link className={styles.button} href="/studio">Open local workspace →</Link>
-          <p className={styles.copy}>Local projects stay in this browser. Hosted projects, private cloud footage, and protected production actions still require owner access. This is not a shared production account.</p>
+          <div className={styles.kicker}>Montage Studio</div>
+          <h2 className={styles.title}>Open your Studio.</h2>
+          <p className={styles.copy}>Sign in to create a project, bring in your footage, and edit the timeline.</p>
+          <p className={styles.copy}>Browser-local projects stay on this device. Hosted projects and cloud footage use your authorized workspace.</p>
           <details>
             <summary>Owner sign-in</summary>
             {configurationError ? (

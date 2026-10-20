@@ -79,6 +79,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Typecheck Studio
         run: npm run typecheck:studio
+      - name: Verify frame editing and source boundaries
+        run: npm run test:timeline
       - name: Build Studio
         run: npm run build:studio
       - name: Install browser acceptance runtime

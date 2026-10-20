@@ -14,6 +14,11 @@ from .service import StudioService
 def build_mcp(service: StudioService | None = None, runtime: ApplicationRuntime | None = None) -> FastMCP:
     """Build an MCP server whose tools delegate to one shared runtime."""
     active_runtime = runtime or create_runtime(service=service)
+    if active_runtime.settings.auth_mode != "local":
+        raise ValueError(
+            "MCP currently supports owner-controlled local stdio only. "
+            "Hosted MCP requires authenticated principal and tenant binding; use the authenticated Studio API."
+        )
     active = service or active_runtime.service
     mcp = FastMCP("YAPPY-CLIPZ",instructions="Discover and invoke YAPPY-CLIPZ projects, prompts, workflows, providers, and timeline actions.",json_response=True)
 

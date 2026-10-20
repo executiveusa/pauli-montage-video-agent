@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,8 @@ from packages.contracts.validate_contracts import EXAMPLE, validate_project
 from yappy_clipz.api import create_app
 from yappy_clipz.cli import main as cli_main
 from yappy_clipz.mcp_server import build_mcp
+from yappy_clipz.factory import create_runtime
+from yappy_clipz.settings import Settings
 from yappy_clipz.mcp_tools import project_get, project_list, project_validate
 from yappy_clipz.repository import (
     FileProjectRepository,
@@ -136,6 +139,12 @@ class ApplicationServiceTests(unittest.TestCase):
     def test_mcp_server_builds_with_shared_service(self) -> None:
         server = build_mcp(self.service)
         self.assertIsNotNone(server)
+
+    def test_mcp_cannot_expose_direct_project_tools_in_hosted_mode(self) -> None:
+        runtime = create_runtime(Settings(project_root=self.root), service=self.service)
+        runtime = replace(runtime, settings=replace(runtime.settings, auth_mode="hosted"))
+        with self.assertRaisesRegex(ValueError, "authenticated principal and tenant binding"):
+            build_mcp(runtime=runtime)
 
 
 if __name__ == "__main__":

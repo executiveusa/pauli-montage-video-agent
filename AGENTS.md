@@ -415,3 +415,25 @@ A feature is complete only when:
 10. Add anime, avatar, voice, and lip-sync production packs.
 11. Add SaaS tenancy, billing, quotas, audit, and commercial controls.
 12. Run production acceptance tests before launch claims.
+
+## Local code context for maintenance
+
+The optional pinned Trail-Code mapper is developer tooling, independent of
+StudioProject and the application MCP/API. After reading the guides above:
+
+- Install once with `npm run context:install`, then `npm run context:build`.
+- Use `npm run context:ask -- "render retry lease" --json` for a scoped starting
+  point, `node scripts/trail.cjs skeleton yappy_clipz/rendering.py` for its API,
+  and `node scripts/trail.cjs callers RenderService.execute --json` for callers.
+- Use `rg`/source and tests to verify graph results: static call edges are
+  navigation evidence, not proof of dynamic wiring or runtime correctness.
+- MCP-capable clients can load the repo's `montage-code-map` server after
+  installation/build. Tools are `trail_find_code`, `trail_file_api`,
+  `trail_trace_calls`, `trail_find_all`, `trail_repo_map`, `trail_check_freshness`.
+  Codex/Instinct can use the same CLI when their host does not load `.mcp.json`.
+- The launcher pins the tool, disables telemetry, isolates Trail's personal/cloud
+  state, and blocks deep/model/global setup commands. Do not run upstream `init`,
+  cloud connection or history-import commands as part of ordinary maintenance.
+- Keep `graft/` local and ignored; it contains source excerpts. Do not publish its
+  viewer or package its tools/cache into the web/API images. See
+  `docs/development/TRAIL-CONTEXT.md` for limits, evidence and rollback.

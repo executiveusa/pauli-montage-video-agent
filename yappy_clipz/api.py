@@ -5,6 +5,7 @@ import tempfile
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
@@ -56,6 +57,17 @@ def _http_error(exc:Exception)->HTTPException:
 def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=None)->FastAPI:
     active_runtime=runtime or create_runtime(service=service); active=service or active_runtime.service
     app=FastAPI(title="YAPPY-CLIPZ Studio API",version="1.2.2")
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(_request:Request,exc:RequestValidationError):
+        # FastAPI's default error includes input values, including passwords and
+        # reset tokens. Never serialize the body, input, context or validator
+        # message: those may all contain caller-supplied credentials.
+        return JSONResponse(status_code=422,content={"detail":[
+            {"loc":list(error["loc"]),"type":error["type"],"msg":"Invalid request value"}
+            for error in exc.errors()
+        ]})
+
     if active_runtime.settings.cors_origins:
         app.add_middleware(CORSMiddleware,allow_origins=list(active_runtime.settings.cors_origins),allow_credentials=True,allow_methods=["GET","POST","PUT","DELETE","OPTIONS"],allow_headers=["authorization","content-type","content-length","idempotency-key","x-correlation-id"])
 

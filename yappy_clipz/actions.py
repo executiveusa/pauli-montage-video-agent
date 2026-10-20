@@ -85,6 +85,9 @@ class ActionDispatcher:
         if not context.tenant_id: raise ActionProblem("authentication_required", "tenant context is required", 401)
         return context.tenant_id
 
+    def uses_durable_idempotency(self, action_id: str) -> bool:
+        return False
+
     def dispatch(self, action_id: str, input_payload: dict[str, Any] | None = None, *, context: ActionContext | None = None) -> dict[str, Any]:
         c, payload = context or ActionContext(), input_payload or {}
         request_id, correlation_id = c.request_id or f"req_{uuid4().hex}", c.correlation_id or f"corr_{uuid4().hex}"
@@ -98,10 +101,11 @@ class ActionDispatcher:
                 raise ActionProblem("approval_required", "explicit approval is required for this action", 409)
             if cap.get("idempotency") == "required" and not c.idempotency_key:
                 raise ActionProblem("invalid_request", "idempotency key is required for this action", 400)
-            cached = self.idempotency_store.lookup(c.tenant_id or "_system",action_id,c.idempotency_key,payload) if c.idempotency_key else None
+            durable = self.uses_durable_idempotency(action_id)
+            cached = self.idempotency_store.lookup(c.tenant_id or "_system",action_id,c.idempotency_key,payload) if c.idempotency_key and not durable else None
             result = cached if cached is not None else self._handlers[action_id](payload,c)
-            replay = cached is not None
-            if c.idempotency_key and not replay: self.idempotency_store.save(c.tenant_id or "_system",action_id,c.idempotency_key,payload,result)
+            replay = bool(result.get("idempotentReplay")) if durable and isinstance(result, dict) else cached is not None
+            if c.idempotency_key and not replay and not durable: self.idempotency_store.save(c.tenant_id or "_system",action_id,c.idempotency_key,payload,result)
         except ActionProblem: raise
         except (KeyError, CapabilityRegistryError) as exc: raise ActionProblem("not_found", str(exc), 404) from exc
         except PromptNotFound as exc: raise ActionProblem("not_found", str(exc), 404) from exc

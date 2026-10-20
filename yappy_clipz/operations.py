@@ -8,8 +8,10 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import RLock
-from typing import Any, Protocol
+from threading import RLock, local
+from typing import Any, Callable, Protocol
+
+from .repository import FileProjectRepository
 from uuid import uuid4
 
 try:
@@ -23,6 +25,7 @@ class OperationError(RuntimeError): pass
 class OperationNotFound(OperationError): pass
 class InvalidTransition(OperationError): pass
 class BudgetExceeded(OperationError): pass
+class IdempotencyConflict(OperationError): pass
 
 
 def now_iso() -> str: return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
@@ -31,8 +34,11 @@ def epoch() -> int: return int(time.time())
 
 class OperationStore(Protocol):
     def put_job(self, job:dict[str,Any])->dict[str,Any]: ...
+    def mutate_job(self, tenant_id:str, job_id:str, mutator:Callable)->tuple[dict[str,Any],bool]: ...
+    def create_job_once(self, job:dict[str,Any], key:str, contract:dict[str,Any])->tuple[dict[str,Any],bool]: ...
     def get_job(self, tenant_id:str, job_id:str)->dict[str,Any]: ...
     def list_jobs(self, tenant_id:str, project_id:str|None=None)->list[dict[str,Any]]: ...
+    def list_active_jobs(self, states:tuple[str,...])->list[dict[str,Any]]: ...
     def claim_next(self, tenant_id:str, worker_id:str, lease_seconds:int, project_id:str|None=None)->dict[str,Any]|None: ...
     def append_event(self, event:dict[str,Any])->dict[str,Any]: ...
     def list_events(self, tenant_id:str, project_id:str|None=None, after_sequence:int=0)->list[dict[str,Any]]: ...
@@ -45,10 +51,62 @@ class OperationStore(Protocol):
     def put_idempotency(self, tenant_id:str, key:str, value:dict[str,Any])->None: ...
 
 
+
+class OperationFileLock:
+    """Reuse project locking for cross-process local job mutations."""
+    def __init__(self, path):
+        self.path = path
+        self.thread_lock = RLock()
+        self.repository = FileProjectRepository(path.parent)
+        self.local = local()
+
+    def __enter__(self):
+        self.thread_lock.acquire()
+        try:
+            depth = getattr(self.local, "depth", 0)
+            if depth == 0:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                context = self.repository._project_lock(self.path)
+                context.__enter__()
+                self.local.context = context
+            self.local.depth = depth + 1
+        except BaseException:
+            self.thread_lock.release()
+            raise
+        return self
+
+    def __exit__(self, *args):
+        try:
+            self.local.depth -= 1
+            if self.local.depth == 0:
+                self.local.context.__exit__(*args)
+        finally:
+            self.thread_lock.release()
+
+
+def _check_contract(existing, job, contract):
+    stored = existing.get("requestContract")
+    if stored is not None:
+        matches = stored == contract
+    else:
+        # Existing jobs from earlier deployments have no request fingerprint.
+        matches = (job.get("projectId") == contract["projectId"] and
+                   job.get("type") == contract["type"] and
+                   job.get("capability") == contract["capability"])
+        if contract.get("retryOf") != job.get("extensions", {}).get("retryOf"):
+            matches = False
+        if "render" in contract:
+            manifest = (job.get("extensions") or {}).get("renderManifest", {})
+            matches = matches and contract["render"] == {
+                "mode": manifest.get("mode"), "presetId": manifest.get("preset", {}).get("id")}
+    if not matches:
+        raise IdempotencyConflict("idempotency key was already used with different input")
+
+
 class JsonOperationStore:
     """Atomic local operation store for owner-controlled and test modes."""
     def __init__(self, path:Path|str) -> None:
-        self.path=Path(path).expanduser().resolve(); self.lock=RLock()
+        self.path=Path(path).expanduser().resolve(); self.lock=OperationFileLock(self.path)
     def _read(self)->dict[str,Any]:
         if not self.path.is_file(): return {"jobs":{},"events":[],"approvals":{},"costs":[],"idempotency":{},"sequence":0}
         try:return json.loads(self.path.read_text(encoding="utf-8"))
@@ -62,6 +120,35 @@ class JsonOperationStore:
             if os.path.exists(tmp):os.unlink(tmp)
     def put_job(self,job):
         with self.lock:data=self._read();data["jobs"][job["id"]]=json.loads(json.dumps(job));self._write(data);return json.loads(json.dumps(job))
+    def mutate_job(self, tenant_id, job_id, mutator):
+        with self.lock:
+            data = self._read()
+            job = data["jobs"].get(job_id)
+            if not job or job.get("tenantId") != tenant_id:
+                raise OperationNotFound("job not found")
+            changed = bool(mutator(job))
+            if changed:
+                data["jobs"][job_id] = job
+                self._write(data)
+            return json.loads(json.dumps(job)), changed
+
+    def create_job_once(self, job, key, contract):
+        tenant = job["tenantId"]
+        with self.lock:
+            data = self._read()
+            identity = tenant + ":" + key
+            existing = data["idempotency"].get(identity)
+            if existing:
+                accepted = data["jobs"].get(existing["jobId"])
+                if not accepted or accepted.get("tenantId") != tenant:
+                    raise OperationNotFound("job not found")
+                _check_contract(existing, accepted, contract)
+                return json.loads(json.dumps(accepted)), False
+            data["jobs"][job["id"]] = job
+            data["idempotency"][identity] = {"jobId": job["id"], "requestContract": contract}
+            self._write(data)
+            return json.loads(json.dumps(job)), True
+
     def get_job(self,tenant_id,job_id):
         with self.lock:job=self._read()["jobs"].get(job_id)
         if not job or job.get("tenantId")!=tenant_id:raise OperationNotFound("job not found")
@@ -69,9 +156,12 @@ class JsonOperationStore:
     def list_jobs(self,tenant_id,project_id=None):
         with self.lock:rows=list(self._read()["jobs"].values())
         return sorted([r for r in rows if r.get("tenantId")==tenant_id and (project_id is None or r.get("projectId")==project_id)],key=lambda r:r["createdAt"],reverse=True)
+    def list_active_jobs(self, states):
+        with self.lock:rows=list(self._read()["jobs"].values())
+        return [r for r in rows if r.get("state") in states]
     def claim_next(self,tenant_id,worker_id,lease_seconds,project_id=None):
         with self.lock:
-            data=self._read();now=epoch();candidates=[r for r in data["jobs"].values() if r.get("tenantId")==tenant_id and (project_id is None or r.get("projectId")==project_id) and (r.get("state")=="queued" or (r.get("state")=="claimed" and int(r.get("extensions",{}).get("leaseExpires",0))<=now))]
+            data=self._read();now=epoch();candidates=[r for r in data["jobs"].values() if r.get("tenantId")==tenant_id and not r.get("extensions", {}).get("renderManifest") and (project_id is None or r.get("projectId")==project_id) and (r.get("state")=="queued" or (r.get("state")=="claimed" and int(r.get("extensions",{}).get("leaseExpires",0))<=now))]
             if not candidates:return None
             job=sorted(candidates,key=lambda r:r["createdAt"])[0];job["state"]="claimed";job["claimedBy"]=worker_id;job["updatedAt"]=now_iso();job.setdefault("extensions",{})["leaseExpires"]=now+lease_seconds;data["jobs"][job["id"]]=job;self._write(data);return json.loads(json.dumps(job))
     def append_event(self,event):
@@ -107,6 +197,34 @@ class PostgresOperationStore:
     def put_job(self,job):
         with self._c() as c:c.execute("INSERT INTO yappy_jobs(tenant_id,project_id,job_id,document,created_at,updated_at) VALUES(%s,%s,%s,%s::jsonb,now(),now()) ON CONFLICT(job_id) DO UPDATE SET document=EXCLUDED.document,updated_at=now()",(job["tenantId"],job["projectId"],job["id"],json.dumps(job)))
         return job
+    def mutate_job(self, tenant_id, job_id, mutator):
+        with self._c() as c:
+            row = c.execute("SELECT document FROM yappy_jobs WHERE tenant_id=%s AND job_id=%s FOR UPDATE", (tenant_id, job_id)).fetchone()
+            if not row:
+                raise OperationNotFound("job not found")
+            job = row["document"]
+            changed = bool(mutator(job))
+            if changed:
+                c.execute("UPDATE yappy_jobs SET document=%s::jsonb,updated_at=now() WHERE tenant_id=%s AND job_id=%s", (json.dumps(job), tenant_id, job_id))
+            return job, changed
+
+    def create_job_once(self, job, key, contract):
+        tenant = job["tenantId"]
+        with self._c() as c:
+            # Lock a namespaced key before either the job or its mapping exists.
+            c.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (json.dumps(["yappy-job", tenant, key]),))
+            row = c.execute("SELECT document FROM yappy_idempotency WHERE tenant_id=%s AND idempotency_key=%s", (tenant, key)).fetchone()
+            if row:
+                existing = row["document"]
+                accepted = c.execute("SELECT document FROM yappy_jobs WHERE tenant_id=%s AND job_id=%s", (tenant, existing["jobId"])).fetchone()
+                if not accepted:
+                    raise OperationNotFound("job not found")
+                _check_contract(existing, accepted["document"], contract)
+                return accepted["document"], False
+            c.execute("INSERT INTO yappy_jobs(tenant_id,project_id,job_id,document) VALUES(%s,%s,%s,%s::jsonb)", (tenant, job["projectId"], job["id"], json.dumps(job)))
+            c.execute("INSERT INTO yappy_idempotency(tenant_id,idempotency_key,document) VALUES(%s,%s,%s::jsonb)", (tenant, key, json.dumps({"jobId":job["id"], "requestContract":contract})))
+            return job, True
+
     def get_job(self,tenant_id,job_id):
         with self._c() as c:r=c.execute("SELECT document FROM yappy_jobs WHERE tenant_id=%s AND job_id=%s",(tenant_id,job_id)).fetchone()
         if not r:raise OperationNotFound("job not found")
@@ -116,9 +234,11 @@ class PostgresOperationStore:
         if project_id is not None:sql+=" AND project_id=%s";args.append(project_id)
         sql+=" ORDER BY updated_at DESC"
         with self._c() as c:return [r["document"] for r in c.execute(sql,args).fetchall()]
+    def list_active_jobs(self, states):
+        with self._c() as c:return [r["document"] for r in c.execute("SELECT document FROM yappy_jobs WHERE document->>%s = ANY(%s)",("state",list(states))).fetchall()]
     def claim_next(self,tenant_id,worker_id,lease_seconds,project_id=None):
         with self._c() as c:
-            sql="SELECT job_id,document FROM yappy_jobs WHERE tenant_id=%s AND ((document->>'state')='queued' OR ((document->>'state')='claimed' AND COALESCE((document->'extensions'->>'leaseExpires')::bigint,0)<=extract(epoch from now())))";args=[tenant_id]
+            sql="SELECT job_id,document FROM yappy_jobs WHERE tenant_id=%s AND (document->'extensions'->'renderManifest') IS NULL AND ((document->>'state')='queued' OR ((document->>'state')='claimed' AND COALESCE((document->'extensions'->>'leaseExpires')::bigint,0)<=extract(epoch from now())))";args=[tenant_id]
             if project_id is not None:sql+=" AND project_id=%s";args.append(project_id)
             sql+=" ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1";row=c.execute(sql,args).fetchone()
             if not row:return None
@@ -158,11 +278,17 @@ class OperationsService:
     def __init__(self,store:OperationStore)->None:self.store=store
     def event(self,tenant_id,project_id,event_type,subject_id,data=None,correlation_id=None,causation_id=None):
         return self.store.append_event({"id":f"evt_{uuid4().hex[:24]}","tenantId":tenant_id,"projectId":project_id,"type":event_type,"subjectId":subject_id,"data":data or {},"correlationId":correlation_id,"causationId":causation_id,"createdAt":now_iso()})
-    def create_job(self,*,tenant_id,project_id,job_type,capability,input_refs=None,provider_route_id=None,estimated_cost=None,currency="USD",idempotency_key,correlation_id=None,icm_stage=None):
-        existing=self.store.get_idempotency(tenant_id,idempotency_key)
-        if existing:return self.store.get_job(tenant_id,existing["jobId"])
-        job={"id":f"job_{uuid4().hex[:24]}","tenantId":tenant_id,"projectId":project_id,"type":job_type,"capability":capability,"state":"queued","attempt":0,"progress":0,"inputRefs":input_refs or [],"outputRefs":[],"providerRouteId":provider_route_id,"estimatedCost":estimated_cost,"actualCost":None,"currency":currency,"claimedBy":None,"error":None,"createdAt":now_iso(),"updatedAt":now_iso(),"startedAt":None,"finishedAt":None,"extensions":{"correlationId":correlation_id,"icmStage":icm_stage}}
-        self.store.put_job(job);self.store.put_idempotency(tenant_id,idempotency_key,{"jobId":job["id"]});self.event(tenant_id,project_id,"job.queued",job["id"],{"capability":capability},correlation_id);return job
+    def create_job(self,*,tenant_id,project_id,job_type,capability,input_refs=None,provider_route_id=None,estimated_cost=None,currency="USD",idempotency_key,correlation_id=None,icm_stage=None,extensions=None,request_contract=None,return_created=False):
+        contract = {"projectId":project_id,"type":job_type,"capability":capability}
+        if request_contract is not None:
+            contract.update(request_contract)
+        else:
+            contract.update(inputRefs=input_refs or [],providerRouteId=provider_route_id)
+        job={"id":f"job_{uuid4().hex[:24]}","tenantId":tenant_id,"projectId":project_id,"type":job_type,"capability":capability,"state":"queued","attempt":0,"progress":0,"inputRefs":input_refs or [],"outputRefs":[],"providerRouteId":provider_route_id,"estimatedCost":estimated_cost,"actualCost":None,"currency":currency,"claimedBy":None,"error":None,"createdAt":now_iso(),"updatedAt":now_iso(),"startedAt":None,"finishedAt":None,"extensions":{"correlationId":correlation_id,"icmStage":icm_stage,**(extensions or {})}}
+        accepted, created = self.store.create_job_once(job,idempotency_key,contract)
+        if created:
+            self.event(tenant_id,project_id,"job.queued",accepted["id"],{"capability":capability},correlation_id)
+        return (accepted,created) if return_created else accepted
     def get_job(self,tenant_id,job_id):return self.store.get_job(tenant_id,job_id)
     def list_jobs(self,tenant_id,project_id=None):return self.store.list_jobs(tenant_id,project_id)
     def claim(self,tenant_id,worker_id,lease_seconds=120,project_id=None):
@@ -170,16 +296,26 @@ class OperationsService:
         if job:self.event(tenant_id,job["projectId"],"job.claimed",job["id"],{"workerId":worker_id,"leaseSeconds":lease_seconds})
         return job
     def transition(self,tenant_id,job_id,state,*,progress=None,output_refs=None,error=None,actual_cost=None):
-        job=self.store.get_job(tenant_id,job_id);allowed={"queued":{"cancelled","claimed"},"claimed":{"running","queued","cancelled"},"running":{"succeeded","failed","cancelled","awaiting_approval"},"awaiting_approval":{"queued","cancelled"},"failed":{"queued"},"succeeded":set(),"cancelled":set()}
-        if state not in allowed.get(job["state"],set()):raise InvalidTransition(f"cannot transition {job['state']} to {state}")
-        job["state"]=state;job["updatedAt"]=now_iso()
-        if state=="running" and not job.get("startedAt"):job["startedAt"]=now_iso();job["attempt"]+=1
-        if state in {"succeeded","failed","cancelled"}:job["finishedAt"]=now_iso()
-        if progress is not None:job["progress"]=max(0,min(float(progress),1))
-        if output_refs is not None:job["outputRefs"]=output_refs
-        if error is not None:job["error"]=error
-        if actual_cost is not None:job["actualCost"]=actual_cost
-        self.store.put_job(job);self.event(tenant_id,job["projectId"],f"job.{state}",job_id,{"progress":job.get("progress"),"error":error});return job
+        def change(job):
+            allowed={"queued":{"cancelled","claimed","failed"},"claimed":{"running","queued","cancelled","failed"},"running":{"succeeded","failed","cancelled","awaiting_approval"},"awaiting_approval":{"queued","cancelled"},"failed":{"queued"},"succeeded":set(),"cancelled":set()}
+            if state not in allowed.get(job["state"],set()):
+                raise InvalidTransition(f"cannot transition {job['state']} to {state}")
+            if job.get("extensions", {}).get("renderManifest") and state != "cancelled":
+                raise InvalidTransition("render state is worker-owned; use render.retry with a new idempotency key")
+            job["state"]=state;job["updatedAt"]=now_iso()
+            if state=="running":
+                job["startedAt"]=now_iso();job["attempt"]+=1
+            if state in {"succeeded","failed","cancelled"}:job["finishedAt"]=now_iso()
+            if state == "queued":
+                job.update(startedAt=None,finishedAt=None,error=None,progress=0,claimedBy=None)
+            if progress is not None:job["progress"]=max(0,min(float(progress),1))
+            if output_refs is not None:job["outputRefs"]=output_refs
+            if error is not None:job["error"]=error
+            if actual_cost is not None:job["actualCost"]=actual_cost
+            return True
+        job,_=self.store.mutate_job(tenant_id,job_id,change)
+        self.event(tenant_id,job["projectId"],f"job.{state}",job_id,{"progress":job.get("progress"),"error":error})
+        return job
     def cancel(self,tenant_id,job_id):return self.transition(tenant_id,job_id,"cancelled")
     def retry(self,tenant_id,job_id):return self.transition(tenant_id,job_id,"queued")
     def request_approval(self,*,tenant_id,project_id,scope_type,subject_id,requested_by,note=None,evidence=None,expires_at=None):
@@ -198,3 +334,4 @@ class OperationsService:
         e={"id":f"cost_{uuid4().hex[:24]}","tenantId":tenant_id,"projectId":project_id,"jobId":job_id,"kind":"reserved","status":"active","amount":float(amount),"currency":currency,"createdAt":now_iso()};self.store.append_cost(e);self.event(tenant_id,project_id,"cost.reserved",e["id"],{"jobId":job_id,"amount":amount,"currency":currency});return e
     def reconcile_cost(self,*,tenant_id,project_id,job_id,amount,currency="USD"):
         e={"id":f"cost_{uuid4().hex[:24]}","tenantId":tenant_id,"projectId":project_id,"jobId":job_id,"kind":"actual","status":"committed","amount":float(amount),"currency":currency,"createdAt":now_iso()};self.store.append_cost(e);self.event(tenant_id,project_id,"cost.committed",e["id"],{"jobId":job_id,"amount":amount,"currency":currency});return e
+

@@ -1,0 +1,10 @@
+{
+  "name": "montage-trail-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated local-only code map for Montage coding agents",
+  "dependencies": {
+    "@trailhq/trail-code": "0.23.0"
+  },
+  "engines": { "node": ">=22" }
+}
