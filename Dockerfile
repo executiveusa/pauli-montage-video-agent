@@ -6,7 +6,7 @@ COPY remotion-composer ./
 
 FROM python:3.11-slim-bookworm AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 YAPPY_PROJECT_ROOT=/data/projects
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates chromium && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates chromium fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt requirements-studio.txt ./
 RUN pip install --no-cache-dir -r requirements-studio.txt

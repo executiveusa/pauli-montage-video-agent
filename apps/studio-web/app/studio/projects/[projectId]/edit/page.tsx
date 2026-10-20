@@ -58,7 +58,7 @@ export default async function EditProjectPage({ params }: PageProps) {
             <div className="section-label">Review</div>
             <h2 id="review-workspace-title">Make a review copy you can trust.</h2>
           </div>
-          <p>Render through the existing local media worker, then verify the resulting file before it leaves the project.</p>
+          <p>Render the saved edit, then verify the resulting file before sharing it.</p>
         </div>
         <LocalReviewRenderPanel projectId={projectId} />
       </section>

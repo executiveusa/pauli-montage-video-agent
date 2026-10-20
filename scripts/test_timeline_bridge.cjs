@@ -8,7 +8,7 @@ const output = mkdtempSync(join(tmpdir(), 'montage-timeline-tests-'));
 try {
   const config = join(output, 'tsconfig.json');
   const compiledDir = join(output, 'compiled');
-  const names = ['human-timeline-bridge', 'local-studio-store'];
+  const names = ['human-timeline-bridge', 'local-studio-store', 'hosted-review-render'];
   writeFileSync(config, JSON.stringify({
     extends: join(root, 'apps/studio-web/tsconfig.json'),
     compilerOptions: { module: 'commonjs', moduleResolution: 'node', target: 'ES2022', outDir: compiledDir, noEmit: false, incremental: false, typeRoots: [join(root, 'node_modules/@types')], types: ['node'] },

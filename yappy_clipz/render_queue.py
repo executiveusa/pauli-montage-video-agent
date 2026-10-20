@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from typing import Any
 
 from .worker import QUEUE
@@ -20,7 +21,7 @@ class RedisRenderPublisher:
     def __init__(self, redis_url: str) -> None:
         from redis import Redis  # lazy import: only required when a queue is configured
 
-        self._client = Redis.from_url(redis_url)
+        self._client = Redis.from_url(redis_url, socket_connect_timeout=3, socket_timeout=3)
 
     def publish_render_job(self, *, tenant_id: str, job_id: str) -> None:
         payload = json.dumps({"type": "render.execute", "job_id": job_id, "tenant_id": tenant_id})
@@ -48,6 +49,7 @@ def register_render_worker(runtime: Any, *, worker_id: str | None = None) -> str
     """Register render.execute on the durable worker registry; returns the worker id."""
     from . import worker
 
-    resolved = worker_id or os.environ.get("YAPPY_WORKER_ID") or f"worker-{os.uname().nodename}"
+    resolved = worker_id or os.environ.get("YAPPY_WORKER_ID") or f"worker-{socket.gethostname()}"
     worker.register_handler("render.execute", render_execute_handler(runtime, worker_id=resolved))
     return resolved
+
