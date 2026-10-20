@@ -4,6 +4,7 @@ import { useState } from "react";
 import { localEngineHealth, localFileUrl } from "@/lib/local-engine";
 import { getFootageState, registerExport } from "@/lib/local-footage-state";
 import { renderLocalTimelineReview } from "@/lib/local-review-render";
+import { HostedRenderFailure, renderHostedTimelineReview } from "@/lib/hosted-review-render";
 import {
   getLocalSourceAsset,
   getLocalTimeline,
@@ -18,7 +19,8 @@ type RenderState = "idle" | "rendering" | "verified" | "error";
 export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
   const localMode = isLocalProjectId(projectId);
   const [state, setState] = useState<RenderState>("idle");
-  const [message, setMessage] = useState("Save the timeline, then render the same canonical edit as a local 1080×1920 review MP4.");
+  const [message, setMessage] = useState(`Save the timeline, then render the saved edit as a ${localMode ? "local " : ""}1080×1920 review MP4.`);
+  const [failedJobId, setFailedJobId] = useState<string | null>(null);
   const [artifact, setArtifact] = useState<string | null>(null);
   const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
   const [role, setRole] = useState<PresentationRole>("title");
@@ -73,10 +75,24 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
     }
   }
 
-  async function renderReview() {
+  async function renderReview(retryJobId?: string) {
     if (!localMode) {
-      setState("error");
-      setMessage("Hosted render is not connected yet. This zero-credit review path is for browser-local projects.");
+      setFailedJobId(null);
+      setState("rendering");
+      setArtifact(null);
+      setVerification(null);
+      try {
+        const result = await renderHostedTimelineReview(projectId, (status) => setMessage(status), retryJobId);
+        setFailedJobId(null);
+        setArtifact(result.downloadPath);
+        setVerification(result.verification);
+        setState("verified");
+        setMessage(`Hosted render ${result.jobId} verified by ffprobe. The MP4 downloads over an authenticated signed transfer.`);
+      } catch (reason) {
+        setState("error");
+        if (reason instanceof HostedRenderFailure) setFailedJobId(reason.jobId);
+        setMessage(reason instanceof Error ? reason.message : "Hosted review render unavailable. Check status again.");
+      }
       return;
     }
     const timeline = getLocalTimeline(projectId);
@@ -115,13 +131,13 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
       <div className="panel-head">
         <div>
           <div className="section-label">Review gate</div>
-          <h2>Deterministic local review</h2>
+          <h2>{localMode ? "Local review export" : "Review export"}</h2>
         </div>
         <span className={`status-pill ${state === "verified" ? "local-ready" : ""}`}>{state}</span>
       </div>
-      <p className="muted">{message}</p>
+      <p className="muted" role="status" aria-live="polite">{message}</p>
 
-      <div style={{ borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 14, marginTop: 14 }}>
+      {localMode ? <div style={{ borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 14, marginTop: 14 }}>
         <div className="section-label">Timed presentation</div>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,.7fr) minmax(220px,1.5fr) 100px 100px auto", gap: 8, alignItems: "end", marginTop: 8 }}>
           <label className="field"><span>Role</span><select value={role} onChange={(event) => setRole(event.target.value as PresentationRole)}><option value="title">Title</option><option value="episode_marker">Episode marker</option><option value="lower_third">Lower third</option><option value="caption">Manual caption</option></select></label>
@@ -131,14 +147,15 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
           <button className="button secondary" disabled={state === "rendering" || !localMode || !presentationText.trim()} onClick={addPresentation} type="button">Add to timeline</button>
         </div>
         <p className="muted" style={{ marginTop: 8 }}>For founder lower thirds, use two lines if desired: name, then “Founder, ASC3ND Collective”. Timing is stored on the same StudioProject timeline and rendered from that state.</p>
-      </div>
+      </div> : null}
 
       <div className="form-actions" style={{ marginTop: 16 }}>
-        <button className="button secondary" disabled={state === "rendering" || !localMode} onClick={syncCaptions} type="button">Sync transcript captions</button>
-        <button className="button accent" disabled={state === "rendering" || !localMode} onClick={() => void renderReview()} type="button">
+        {localMode ? <button className="button secondary" disabled={state === "rendering"} onClick={syncCaptions} type="button">Sync transcript captions</button> : null}
+        <button className="button accent" disabled={state === "rendering"} onClick={() => void renderReview()} type="button">
           {state === "rendering" ? "Rendering…" : "Render + verify 9:16 review"}
         </button>
-        {artifact ? <a className="button secondary" href={localFileUrl(projectId, "outputs", artifact)} rel="noreferrer" target="_blank">Open verified MP4</a> : null}
+        {!localMode && failedJobId ? <button className="button secondary" disabled={state === "rendering"} onClick={() => void renderReview(failedJobId)} type="button">Retry failed render</button> : null}
+        {artifact ? <a className="button secondary" href={localMode ? localFileUrl(projectId, "outputs", artifact) : artifact} rel="noreferrer" target="_blank">Open verified MP4</a> : null}
       </div>
       {verification ? (
         <div className="engine-facts">
@@ -151,3 +168,4 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
     </section>
   );
 }
+

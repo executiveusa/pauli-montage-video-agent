@@ -7,9 +7,17 @@
     "apps/*"
   ],
   "scripts": {
+    "test:timeline": "node scripts/test_timeline_bridge.cjs",
     "dev:studio": "npm run dev --workspace=@yappyverse/studio-web",
     "build:studio": "npm run build --workspace=@yappyverse/studio-web",
-    "typecheck:studio": "npm run typecheck --workspace=@yappyverse/studio-web"
+    "typecheck:studio": "npm run typecheck --workspace=@yappyverse/studio-web",
+    "context:install": "node scripts/trail-install.cjs",
+    "context:build": "node scripts/trail.cjs build",
+    "context:ask": "node scripts/trail.cjs ask",
+    "context:map": "node scripts/trail.cjs map",
+    "context:check": "node scripts/trail.cjs build --check",
+    "context:mcp": "node scripts/trail.cjs mcp",
+    "context:test": "node scripts/test_trail_context.cjs"
   },
   "overrides": {
     "postcss": "8.5.23",

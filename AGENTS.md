@@ -416,20 +416,24 @@ A feature is complete only when:
 11. Add SaaS tenancy, billing, quotas, audit, and commercial controls.
 12. Run production acceptance tests before launch claims.
 
-<!-- trail:start -->
-## Trail - repo context graph
+## Local code context for maintenance
 
-This repo is indexed in `.trail/cache/` (local, gitignored): a map of every file,
-function and caller, kept in sync with the code. Ask the graph BEFORE grepping or
-opening source files:
+The optional pinned Trail-Code mapper is developer tooling, independent of
+StudioProject and the application MCP/API. After reading the guides above:
 
-- `trail map` - orientation: dir clusters, hubs, hotspots (no LLM, no key, $0)
-- `trail ask "<question>" --source` - ranked nodes with code spans inlined
-- `trail grep "<literal>"` - exhaustive occurrences grouped by enclosing symbol
-- `trail skeleton <file>` / `trail callers <symbol>` - API surface / blast radius
-
-Open source files only at the exact file:line a node gives you. After big code
-changes, refresh with `trail build` (deterministic, no API key). Session learnings
-live in `.trail/learnings/`: read them first, and add one when a session took real
-digging. Install: `npm i -g @trailhq/trail-code`.
-<!-- trail:end -->
+- Install once with `npm run context:install`, then `npm run context:build`.
+- Use `npm run context:ask -- "render retry lease" --json` for a scoped starting
+  point, `node scripts/trail.cjs skeleton yappy_clipz/rendering.py` for its API,
+  and `node scripts/trail.cjs callers RenderService.execute --json` for callers.
+- Use `rg`/source and tests to verify graph results: static call edges are
+  navigation evidence, not proof of dynamic wiring or runtime correctness.
+- MCP-capable clients can load the repo's `montage-code-map` server after
+  installation/build. Tools are `trail_find_code`, `trail_file_api`,
+  `trail_trace_calls`, `trail_find_all`, `trail_repo_map`, `trail_check_freshness`.
+  Codex/Instinct can use the same CLI when their host does not load `.mcp.json`.
+- The launcher pins the tool, disables telemetry, isolates Trail's personal/cloud
+  state, and blocks deep/model/global setup commands. Do not run upstream `init`,
+  cloud connection or history-import commands as part of ordinary maintenance.
+- Keep `graft/` local and ignored; it contains source excerpts. Do not publish its
+  viewer or package its tools/cache into the web/API images. See
+  `docs/development/TRAIL-CONTEXT.md` for limits, evidence and rollback.

@@ -104,6 +104,16 @@ def main() -> int:
             expect(timeline_clips).to_have_count(1)
             timeline_clips.first.click()
 
+            # Trim and slip use the immutable asset's duration, not the active
+            # clip out-point. Restore the original before the split flow.
+            page.get_by_role("button", name="Trim −1 frame", exact=True).click()
+            expect(page.get_by_text("Clip duration adjusted by frame.", exact=False)).to_be_visible()
+            page.get_by_role("button", name="Slip +1 frame", exact=True).click()
+            expect(page.get_by_text("Source slipped by frame.", exact=False)).to_be_visible()
+            page.get_by_role("button", name="Slip −1 frame", exact=True).click()
+            page.get_by_role("button", name="Trim +1 frame", exact=True).click()
+            expect(page.get_by_text("Clip duration adjusted by frame.", exact=False)).to_be_visible()
+
             # Seek with the actual accessible range control. Keyboard arrows fire
             # the product's real input/change path while keeping the selected clip.
             playhead.focus()
@@ -124,6 +134,14 @@ def main() -> int:
             expect(timeline_clips).to_have_count(2)
 
             save = page.get_by_role("button", name=re.compile(r"Save v\d+"))
+            save.click()
+            expect(page.get_by_text(re.compile(r"Saved locally as timeline v\d+"))).to_be_visible(timeout=10_000)
+            # Saving keeps editing history; undo/redo must use the newly saved
+            # persistence version so a second save does not self-conflict.
+            page.get_by_role("button", name="Undo", exact=True).click()
+            expect(timeline_clips).to_have_count(1)
+            page.get_by_role("button", name="Redo", exact=True).click()
+            expect(timeline_clips).to_have_count(2)
             save.click()
             expect(page.get_by_text(re.compile(r"Saved locally as timeline v\d+"))).to_be_visible(timeout=10_000)
             page.get_by_role("button", name="Reopen saved").click()

@@ -4,7 +4,7 @@ from typing import Any
 from .actions import ActionContext
 from .errors import ActionProblem
 from .hosted_actions import HostedActionDispatcher,HostedCapabilityRegistry,_cap
-from .operations import BudgetExceeded,InvalidTransition,OperationError,OperationNotFound,OperationsService
+from .operations import BudgetExceeded,IdempotencyConflict,InvalidTransition,OperationError,OperationNotFound,OperationsService
 from .router import OmniRouter
 
 _OP_CAPS={
@@ -48,6 +48,7 @@ class OperationsActionDispatcher(HostedActionDispatcher):
   try:return super().dispatch(*args,**kwargs)
   except ActionProblem:raise
   except OperationNotFound as exc:raise ActionProblem("not_found",str(exc),404) from exc
+  except IdempotencyConflict as exc:raise ActionProblem("idempotency_conflict",str(exc),409) from exc
   except InvalidTransition as exc:raise ActionProblem("invalid_transition",str(exc),409) from exc
   except BudgetExceeded as exc:raise ActionProblem("budget_exceeded",str(exc),409) from exc
   except OperationError as exc:raise ActionProblem("invalid_request",str(exc),400) from exc

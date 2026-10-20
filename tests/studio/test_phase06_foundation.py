@@ -48,7 +48,7 @@ class FoundationTests(unittest.TestCase):
 
     def test_prompt_locker_compiles_typed_workflow_inputs(self):
         locker=PromptLocker(ROOT/'prompt_locker')
-        self.assertEqual(len(locker.list_prompts()),6)
+        self.assertEqual(len(locker.list_prompts()),7)
         result=locker.compile_workflow('seedance.ugc.ab-test',{'dialogue':'This product solved a real workflow problem.','setting':'a working edit studio','wardrobe':'a charcoal overshirt','tone':'calm and specific','image_urls':['https://media.example/product.jpg'],'audio_urls':['https://media.example/voice.wav']})
         self.assertEqual(len(result['steps']),4)
         self.assertEqual(result['steps'][0]['providerInput']['image_urls'],['https://media.example/product.jpg'])
