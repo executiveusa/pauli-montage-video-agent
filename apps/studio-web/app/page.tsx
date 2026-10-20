@@ -47,23 +47,12 @@ const faqs = [
   ["Can I use Montage today?", "Montage is in private beta. We are opening access in small groups while the public runtime and provider connections are verified. Request beta access and we will invite people in as capacity opens."],
 ] as const;
 
-function BrandMark() {
-  return (
-    <svg className="landing-logo-mark" viewBox="0 0 64 64" aria-hidden="true">
-      <g fill="none" stroke="currentColor" strokeLinecap="square" strokeLinejoin="miter">
-        <rect x="5" y="9" width="54" height="46" rx="1.5" strokeWidth="3.5" />
-        <path d="M15 46V20L32 38L49 20V46" strokeWidth="4.5" />
-      </g>
-    </svg>
-  );
-}
-
 export default function HomePage() {
   return (
     <main className="landing">
       <a className="skip-link landing-skip" href="#landing-content">Skip to main content</a>
       <header className="landing-nav">
-        <Link className="landing-logo" href="/" aria-label="Montage home"><BrandMark /><span>Montage</span></Link>
+        <Link className="landing-logo" href="/" aria-label="Montage home"><img className="montage-nav-wordmark" src="/brand/montage-horizontal-white.svg" width="180" height="42" alt="Montage" /></Link>
         <nav className="landing-nav-center" aria-label="Primary">
           <a href="#why">Why Montage</a>
           <a href="#flow">Workflow</a>
