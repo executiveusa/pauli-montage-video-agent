@@ -1,0 +1,7 @@
+.agents/
+.claude/
+.hyperframes/
+node_modules/
+renders/
+*.log
+assets/hero-score*.wav
