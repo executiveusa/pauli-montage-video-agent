@@ -87,3 +87,7 @@ yappy-clipz action run workflow.compile --input compile.json
 ```
 
 The result contains complete prompt text and candidate payloads. It does not contact fal or another provider.
+
+## Motion prompt library
+
+`motion.prompt-library.video` wraps one prompt picked from the studio's Motion prompt library (Create page, "Motion prompt library" button) into a single approval-gated text-to-video step. Compiling never submits paid work. The library data lives in `apps/studio-web/data/motion-prompts/` and comes from yihui-dev/awesome-opus5-5-videos (MIT, notice kept in that folder). Nothing from motionvideo.xyz is copied.

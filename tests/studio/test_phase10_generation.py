@@ -52,4 +52,14 @@ class GenerationTests(unittest.TestCase):
  def test_workflow_plan_preserves_step_costs(self):
   plan=self.generation.plan_workflow(tenant_id="tenant_gen",project_id=self.project["project"]["id"],workflow_id="seedance.product.launch",variables={"dialogue":"This is a useful product.","setting":"a real studio","wardrobe":"charcoal overshirt","tone":"calm","image_urls":["https://cdn.example/product.png"],"video_urls":[],"audio_urls":[]})
   self.assertEqual(len(plan["steps"]),3);self.assertGreater(plan["estimatedCost"]["amount"],0)
+ def test_motion_library_workflow_compiles_without_paid_submission(self):
+  plan=self.generation.plan_workflow(tenant_id="tenant_gen",project_id=self.project["project"]["id"],workflow_id="motion.prompt-library.video",variables={"library_prompt":"Animate a recipe as a 30s explainer with canvas."})
+  step=plan["steps"][0]
+  self.assertEqual(len(plan["steps"]),1);self.assertIn("estimatedCost",plan)
+  sent=str(step)
+  self.assertIn("Animate a recipe as a 30s explainer",sent);self.assertIn("8 second clip",sent)
+  self.assertEqual(self.ops.list_jobs("tenant_gen"),[])
+ def test_motion_library_workflow_requires_the_picked_prompt(self):
+  with self.assertRaises(Exception):
+   self.generation.plan_workflow(tenant_id="tenant_gen",project_id=self.project["project"]["id"],workflow_id="motion.prompt-library.video",variables={})
 if __name__=="__main__":unittest.main(verbosity=2)
