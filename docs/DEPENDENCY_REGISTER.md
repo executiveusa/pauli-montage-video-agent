@@ -43,3 +43,31 @@ External specialist repos are adapted as services/packages behind YAPPY contract
 - **Fallback:** the existing ffmpeg render lane (`RenderService`) remains the default engine; HyperFrames is opt-in per render action.
 - **Tenant isolation:** actions are scope-gated (`render.hyperframes.check` requires `render:write`; `render` requires `render:write` + `job:write` + `asset:write` with explicit approval) and idempotent; renders write only into per-tenant workspace roots.
 - **Removal:** delete the lane (`yappy_clipz/hyperframes*.py`, `tools/video/hyperframes_compose.py`); no state outside workspace roots and durable job records.
+
+## Trail-Code developer context (npm `@trailhq/trail-code@0.23.0`)
+
+- **Classification:** USE; local development tooling, not an application engine.
+- **Gap filled:** deterministic Python/TypeScript symbol lookup and call-graph
+  navigation for coding agents. Complements rg and ICM; replaces repeated manual
+  repo rediscovery, not project state, tool execution, or the Studio MCP server.
+- **Source inspected:** `trailhq/Trail-Code` commit
+  `dfcbf4c168a1b0ae7e22a2fb4ed5452872320172`. Published package and its MIT notice
+  verified separately. Exact transitive versions/integrities are locked under
+  `tooling/trail/package-lock.json`; the app's npm/Python locks stay unchanged.
+- **License:** MIT, copyright 2026 Context Graph Engine contributors, retained in
+  the installed package. No source vendoring. Compatible local commercial use
+  subject to the upstream license notice; this does not change Montage's AGPL.
+- **Runtime:** Node >=22, owner-local stdio MCP/CLI. Installed with lifecycle
+  scripts disabled; bundled WASM parsers are used when native parsers are absent.
+- **Data/cost:** structural graph requires no model or key. Launcher forces
+  `DO_NOT_TRACK=1`, prevents application dotenv loading, strips common provider
+  keys, and keeps Trail personal/cloud state in the ignored repo cache. No
+  workspace connection, past-session reading, global agent hooks or deep pass
+  is installed. Upstream may still check npm for a version update; local-only
+  describes source processing, not a network sandbox.
+- **Audit:** initial pinned-tree audit reports five moderate dependency-chain
+  entries from the same unpatched `sprintf-js` denial-of-service advisory
+  (GHSA-hp3w-g68c-fv3c), zero high/critical. Track upstream rather than silently
+  accepting automatic upgrades. Tooling is excluded from runtime images.
+- **Removal:** revert the tooling change, remove `graft/` and
+  `tooling/trail/node_modules/` locally; no data migration or app rollback.

@@ -1,0 +1,37 @@
+name: Trail code-context integration
+on:
+  pull_request:
+    paths:
+      - 'tooling/trail/**'
+      - 'scripts/trail*.cjs'
+      - 'scripts/test_trail_context.cjs'
+      - '.mcp.json'
+      - 'AGENTS.md'
+      - 'package.json'
+      - '.gitignore'
+      - '.dockerignore'
+      - '.github/workflows/trail-context.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-code-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DO_NOT_TRACK: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tooling/trail/package-lock.json
+      - run: npm run context:install
+      - run: npm audit --prefix tooling/trail --omit=dev --audit-level=high
+      - run: npm run context:test
+      - name: Keep generated context out of the commit
+        run: |
+          git check-ignore graft/.graph/wiring.json
+          git diff --exit-code
