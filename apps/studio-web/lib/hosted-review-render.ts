@@ -80,5 +80,13 @@ export async function renderHostedTimelineReview(projectId: string, onStatus?: (
   const token = typeof download.path === "string" ? download.path.split("/").pop() : "";
   if (!token) throw new Error("The download service did not return a transfer token. Check status again.");
   sessionStorage.removeItem(storageKey);
-  return { jobId, assetId, downloadPath: `/api/studio/assets/transfers/${encodeURIComponent(token)}`, verification };
+  const probe = verification.probe && typeof verification.probe === "object" ? verification.probe as ActionResponse : {};
+  const streams = Array.isArray(probe.streams) ? probe.streams as ActionResponse[] : [];
+  const video = streams.find((stream) => stream.codec_type === "video");
+  const format = probe.format && typeof probe.format === "object" ? probe.format as ActionResponse : {};
+  return {
+    jobId, assetId, downloadPath: `/api/studio/assets/transfers/${encodeURIComponent(token)}`,
+    verification: { ...verification, width: video?.width, height: video?.height,
+      duration_seconds: Number(format.duration || 0), has_audio: streams.some((stream) => stream.codec_type === "audio") },
+  };
 }

@@ -17,13 +17,17 @@ test("unwraps real action envelopes and signs the verified export", async () => 
   globalThis.fetch = async (url) => {
     const action = String(url).split("/").pop()!; calls.push(action);
     if (action === "render.preview") return respond({ job: completed });
-    if (action === "render.verify") return respond({ verified: true });
+    if (action === "render.verify") return respond({ verified: true, probe: { format: { duration: "3.5" }, streams: [{ codec_type: "video", width: 1080, height: 1920 }, { codec_type: "audio" }] } });
     if (action === "asset.download.request") return respond({ path: "/api/v1/assets/transfers/token-1" });
     throw new Error(`unexpected ${action}`);
   };
   const result = await renderHostedTimelineReview("project-1");
   assert.equal(result.downloadPath, "/api/studio/assets/transfers/token-1");
   assert.deepEqual(calls, ["render.preview", "render.verify", "asset.download.request"]);
+  assert.equal(result.verification.width, 1080);
+  assert.equal(result.verification.height, 1920);
+  assert.equal(result.verification.duration_seconds, 3.5);
+  assert.equal(result.verification.has_audio, true);
   assert.equal(memory.size, 0);
 });
 
