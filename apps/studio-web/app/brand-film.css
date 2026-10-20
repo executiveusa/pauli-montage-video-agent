@@ -1,17 +1,25 @@
 /* Preserve approved vector lettering alongside the readable page headline. */
 .landing-logo .montage-nav-wordmark { display:block; width:180px; height:auto; }
-.brand-hero.brand-film-hero { display:block; min-height:0; padding:126px max(28px,calc((100vw - 1500px)/2)) 44px; background:#0a0a0a; }
-.brand-film-hero .brand-hero-content { width:100%; max-width:1100px; padding:24px 0 48px; }
-.montage-hero-wordmark { display:block; width:min(620px,80vw); height:auto; }
-.brand-film-hero h1 { max-width:1050px; font-size:clamp(2.5rem,5vw,5.5rem); }
+.brand-hero.brand-film-hero { display:grid; grid-template-columns:minmax(300px,.78fr) minmax(0,1.3fr); gap:40px; align-items:center; min-height:min(900px,100svh); padding:126px max(28px,calc((100vw - 1600px)/2)) 64px; background:#0a0a0a; }
+.brand-film-hero .brand-hero-content { width:100%; max-width:650px; padding:24px 0; }
+.montage-hero-wordmark { display:block; width:min(440px,100%); height:auto; }
+.brand-film-hero h1 { max-width:650px; font-size:clamp(2.3rem,3.2vw,3.8rem); }
+.brand-film-hero .brand-promise { font-size:clamp(1rem,1.2vw,1.15rem); }
+.brand-film-hero .brand-hero-actions { flex-wrap:wrap; }
 .montage-brand-film { margin:0; width:100%; }
 .montage-brand-film video { display:block; width:100%; height:auto; aspect-ratio:16/9; object-fit:contain; background:#0a0a0a; }
 .montage-brand-film figcaption { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; margin-top:14px; color:#bcb8b0; font-size:12px; line-height:1.5; }
 .montage-brand-film a { color:#f4f1ea; text-underline-offset:4px; }
 .montage-brand-film a:focus-visible { outline:2px solid #d7a95b; outline-offset:5px; }
+@media (max-width:1000px) {
+  .brand-hero.brand-film-hero { display:block; min-height:0; padding:104px 24px 40px; }
+  .brand-film-hero .brand-hero-content { max-width:760px; padding:16px 0 32px; }
+  .brand-film-hero h1 { max-width:760px; font-size:clamp(2.25rem,5.5vw,3.6rem); }
+}
 @media (max-width:620px) {
   .landing-logo .montage-nav-wordmark { width:136px; }
   .brand-hero.brand-film-hero { padding:96px 18px 28px; }
   .brand-film-hero .brand-hero-content { padding:12px 0 30px; }
+  .montage-hero-wordmark { width:min(300px,80vw); }
   .brand-film-hero h1 { font-size:clamp(2.25rem,10vw,3.6rem); }
 }
