@@ -10,10 +10,10 @@ function statusCopy(error: ServiceError | null, hasLocalProjects: boolean) {
   if (!error) return null;
   if (error.error === "authentication_required") {
     return {
-      title: "Hosted projects need sign-in",
+      title: "Local workspace ready",
       detail: hasLocalProjects
         ? "Your browser-local projects are available below. Hosted projects remain private until a session is available."
-        : "The hosted studio service is online, but its projects stay private until an authenticated session is available.",
+        : "Create a project to edit in this browser. Sign in to open hosted projects.",
     };
   }
   if (error.error === "authentication_not_configured") {
