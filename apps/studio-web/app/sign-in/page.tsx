@@ -23,8 +23,9 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
         <div className={styles.formWrap}>
           <div className={styles.kicker}>Montage Studio</div>
           <h2 className={styles.title}>Open your Studio.</h2>
-          <p className={styles.copy}>Sign in to create a project, bring in your footage, and edit the timeline.</p>
+          <p className={styles.copy}>Sign in to open your hosted workspace, footage, and exports.</p>
           <p className={styles.copy}>Browser-local projects stay on this device. Hosted projects and cloud footage use your authorized workspace.</p>
+          <Link className={styles.button} href="/studio">Continue without sign-in</Link>
           <details>
             <summary>Owner sign-in</summary>
             {configurationError ? (
