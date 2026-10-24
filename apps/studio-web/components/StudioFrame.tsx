@@ -32,6 +32,7 @@ export function StudioFrame({ children, active = "Projects" }: { children: React
           <strong>One project truth</strong>
           <span>Footage, edits, review renders, and versions stay traceable to their source.</span>
         </div>
+        <Link className="button secondary" href="/sign-in">Hosted sign-in</Link>
         <form action="/api/auth/sign-out" className="side-sign-out" method="post">
           <button type="submit">Sign out</button>
         </form>

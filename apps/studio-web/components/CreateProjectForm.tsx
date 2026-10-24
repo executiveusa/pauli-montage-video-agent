@@ -7,6 +7,7 @@ import type { CreateProjectInput, ServiceError } from "@/lib/studio-api";
 import { createLocalProject } from "@/lib/local-studio-store";
 
 const LOCAL_FALLBACK_ERRORS = new Set([
+  "authentication_required",
   "service_not_connected",
   "authentication_not_configured",
   "service_unreachable",
