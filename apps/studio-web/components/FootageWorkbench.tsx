@@ -30,6 +30,7 @@ import {
   updateLocalSource,
 } from "@/lib/local-studio-store";
 import { HostedAssetLibrary } from "@/components/HostedAssetLibrary";
+import { browserSourceUrl, saveBrowserSource } from "@/lib/browser-source-media";
 
 type BusyAction = "connect" | "upload" | "transcribe" | "cut" | "reframe" | "captions" | "verify" | null;
 type EngineState = "checking" | "offline" | "ready" | "missing-dependencies";
@@ -188,6 +189,19 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
     };
   }, [transientPreviewUrl]);
 
+  // Rehydrate the original source after refresh; blob: URLs are intentionally never persisted.
+  useEffect(() => {
+    const assetId = source?.id;
+    if (!assetId) return;
+    let canceled = false;
+    let url: string | null = null;
+    void browserSourceUrl(projectId, assetId).then((next) => {
+      if (canceled) { if (next) URL.revokeObjectURL(next); return; }
+      if (next) { url = next; setTransientPreviewUrl(next); }
+    }).catch(() => undefined);
+    return () => { canceled = true; if (url) URL.revokeObjectURL(url); };
+  }, [projectId, source?.id]);
+
   useEffect(() => {
     if (!localMode || source) return;
     const legacy = getFootageState(projectId).source;
@@ -241,7 +255,13 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
     });
     setSource(registered.asset);
     setPendingFile(file);
-    setMessage(`Added ${file.name} to the canonical StudioProject. Local processing can sync separately.`);
+    try {
+      await saveBrowserSource(projectId, registered.asset.id, file);
+      setMessage(`Saved ${file.name} in this browser for offline preview and browser review export. The local FFmpeg engine remains optional.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to persist footage in this browser.");
+      setMessage("The project record is saved, but original media bytes could not be stored here. Reimport the file before a browser export.");
+    }
     if (engineState === "ready" && health) {
       await uploadAndBind(file, registered.asset.id);
     }
