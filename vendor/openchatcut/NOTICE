@@ -1,0 +1,41 @@
+OpenChatCut (vendored copy)
+===========================
+
+This directory contains a copy of OpenChatCut.
+
+  Upstream:  https://github.com/0xsline/OpenChatCut
+  Commit:    2e6f4a29b784200cfb32b859b16f2561592bc3e8
+             ("chore(release): prepare v0.2.16", 2026-10-07)
+  Version:   0.2.16
+  License:   GNU Affero General Public License v3.0 or later
+             (AGPL-3.0-or-later). See ./LICENSE, kept unchanged from upstream.
+
+OpenChatCut is not affiliated with the commercial ChatCut product.
+Third-party components and assets inside this tree remain under their own
+licenses (see the upstream repository for details).
+
+How it is included
+------------------
+The tree is vendored as-is and inert: it is NOT part of the npm workspaces of
+the host repository (it lives in vendor/, outside the apps/* workspace glob, and
+is not in the host package-lock.json), it is excluded from host runtime Docker build contexts, is not built by host CI or deploy, and no install or lifecycle script is run
+for it. To run it, work inside this directory in a separate checkout.
+
+Modifications from upstream
+---------------------------
+1. src/i18n/dict/es/**        New Mexican Spanish (es-MX) UI dictionaries,
+                              built from the English dictionaries (key = Chinese
+                              original text, as in the other locales).
+2. src/i18n/locale.ts         Added locale 'es' (document language es-MX,
+                              system-language detection, stored-locale check,
+                              agent language name "Spanish (Mexico)").
+3. src/i18n/dictRegistry.ts   Added the 'es' dictionary branch (falls back to
+                              English for untranslated entries, like 'it').
+4. README.es-MX.md            New Mexican Spanish README (summary).
+5. README.md                  One line: link to README.es-MX.md.
+6. NOTICE                     This file.
+
+Everything else is byte-identical to the upstream commit above. Because
+OpenChatCut is AGPL, any modified version made available to users over a
+network must offer its corresponding source; the changes listed here are in
+the git history of the host repository.

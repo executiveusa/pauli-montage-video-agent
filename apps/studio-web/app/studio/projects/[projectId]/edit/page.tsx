@@ -24,6 +24,11 @@ export default async function EditProjectPage({ params }: PageProps) {
       </header>
 
       <nav className={styles.stageNav} aria-label="Project workflow">
+        <Link href={`/studio/projects/${encoded}/animator`}>
+          <span>+</span>
+          <strong>Animator</strong>
+          <small>Code-drawn animation with review gates</small>
+        </Link>
         <Link href={`/studio/projects/${encoded}/footage`}>
           <span>01</span>
           <strong>Footage</strong>

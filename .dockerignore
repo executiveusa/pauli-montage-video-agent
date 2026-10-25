@@ -22,3 +22,6 @@ tooling/trail/
 scripts/trail*.cjs
 scripts/test_trail_context.cjs
 .mcp.json
+
+# Reference-only editor; never package its third-party code/assets in runtime images.
+/vendor/openchatcut/

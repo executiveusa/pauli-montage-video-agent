@@ -32,7 +32,7 @@ class GenerationCapabilityRegistry:
 
 class GenerationActionDispatcher(OperationsActionDispatcher):
  def __init__(self,*,generation:GenerationService,**kwargs):
-  self.generation=generation;super().__init__(**kwargs);self._handlers.update({"generation.plan":self._plan,"generation.workflow.plan":self._workflow_plan,"generation.workflow.submit":self._workflow_submit,"generation.sync":self._sync,"generation.cancel":self._cancel})
+  self.generation=generation;super().__init__(**kwargs);self._handlers.update({"generation.plan":self._generation_plan,"generation.workflow.plan":self._workflow_plan,"generation.workflow.submit":self._workflow_submit,"generation.sync":self._sync,"generation.cancel":self._cancel})
   for action_id in _MEDIA_ACTIONS:self._handlers[action_id]=self._submit_media
  def dispatch(self,*args,**kwargs):
   try:return super().dispatch(*args,**kwargs)
@@ -41,7 +41,7 @@ class GenerationActionDispatcher(OperationsActionDispatcher):
   except GenerationExecutionUnavailable as exc:raise ActionProblem("policy_denied",str(exc),403) from exc
   except GenerationResultInvalid as exc:raise ActionProblem("provider_result_invalid",str(exc),502,True) from exc
   except GenerationError as exc:raise ActionProblem("invalid_request",str(exc),400) from exc
- def _plan(self,p,c):return self.generation.prepare(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),capability=self.req(p,"capability"),provider_input=self.req(p,"providerInput"),model_id=p.get("modelId"),quality_lane=p.get("qualityLane","economy"),privacy_lane=p.get("privacyLane","cloud"),max_cost=p.get("maxCost"),preferred_provider=p.get("preferredProvider","fal"),webhook_url=p.get("webhookUrl"))
+ def _generation_plan(self,p,c):return self.generation.prepare(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),capability=self.req(p,"capability"),provider_input=self.req(p,"providerInput"),model_id=p.get("modelId"),quality_lane=p.get("qualityLane","economy"),privacy_lane=p.get("privacyLane","cloud"),max_cost=p.get("maxCost"),preferred_provider=p.get("preferredProvider","fal"),webhook_url=p.get("webhookUrl"))
  def _workflow_plan(self,p,c):return self.generation.plan_workflow(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),workflow_id=self.req(p,"workflowId"),variables=p.get("variables",{}),max_cost=p.get("maxCost"),quality_lane=p.get("qualityLane","economy"),privacy_lane=p.get("privacyLane","cloud"))
  def _submit_media(self,p,c):
   return self.generation.submit(tenant_id=self.tenant(c),project_id=self.req(p,"projectId"),capability=self.registry.describe(c.request_id or "").get("actionId") if False else self.req(p,"capability") if p.get("capability") else p.get("_actionId",""),provider_input=self.req(p,"providerInput"),actor_id=c.actor_id or "unknown",approved=c.approved,idempotency_key=c.idempotency_key or self.req(p,"idempotencyKey"),model_id=p.get("modelId"),quality_lane=p.get("qualityLane","economy"),privacy_lane=p.get("privacyLane","cloud"),max_cost=p.get("maxCost"),budget_limit=p.get("budgetLimit"),input_refs=p.get("inputRefs",[]),correlation_id=c.correlation_id,webhook_url=p.get("webhookUrl"))

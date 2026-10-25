@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 import json
 import mimetypes
 import re
@@ -12,6 +14,7 @@ from uuid import uuid4
 
 from .repository import ProjectRepository, ProjectNotFound, validate_identifier
 from .storage import ObjectStorage, ObjectNotFound, StorageError, TransferSigner
+from .media_probe import probe_media
 
 
 class AssetError(RuntimeError):
@@ -38,8 +41,8 @@ def _asset(project: dict[str, Any], asset_id: str) -> dict[str, Any]:
 
 
 class AssetService:
-    def __init__(self, repository: ProjectRepository, storage: ObjectStorage, signer: TransferSigner, *, max_upload_bytes: int = 2_147_483_648) -> None:
-        self.repository = repository; self.storage = storage; self.signer = signer; self.max_upload_bytes = max_upload_bytes
+    def __init__(self, repository: ProjectRepository, storage: ObjectStorage, signer: TransferSigner, *, max_upload_bytes: int = 2_147_483_648, ffprobe_binary: str = "ffprobe") -> None:
+        self.repository = repository; self.storage = storage; self.signer = signer; self.max_upload_bytes = max_upload_bytes; self.ffprobe_binary = ffprobe_binary
 
     @staticmethod
     def _storage_key(tenant_id: str, project_id: str, asset_id: str, filename: str) -> str:
@@ -47,6 +50,43 @@ class AssetService:
         project = hashlib.sha256(project_id.encode()).hexdigest()[:24]
         cleaned = _SAFE_NAME.sub("-", filename).strip(".-") or "asset.bin"
         return f"tenants/{tenant}/projects/{project}/assets/{asset_id}/v1/{cleaned}"
+
+    def _probe_upload(self, *, kind: str, source: Path | str) -> dict[str, Any] | None:
+        """Best-effort ffprobe of freshly uploaded bytes; never raises."""
+        if kind not in {"video", "audio"}:
+            return None
+        try:
+            return probe_media(source, ffprobe_binary=self.ffprobe_binary)
+        except Exception:
+            return None
+
+    def _clear_probe(self, storage_key: str) -> None:
+        try:
+            self.storage.delete(storage_key + ".probe.json")
+        except Exception:
+            pass
+
+    def _persist_probe(self, *, storage_key: str, checksum_sha256: str, media: dict[str, Any] | None) -> None:
+        """Bind best-effort facts to these exact bytes, never a prior upload."""
+        if not media:
+            self._clear_probe(storage_key)
+            return
+        try:
+            payload = {"checksumSha256": checksum_sha256, "media": media}
+            self.storage.put_bytes(storage_key + ".probe.json", json.dumps(payload).encode(), content_type="application/json")
+        except Exception:
+            pass
+
+    def _read_probe(self, *, storage_key: str, checksum_sha256: str) -> dict[str, Any]:
+        """Keep facts available until project persistence succeeds, including retries."""
+        try:
+            payload = json.loads(self.storage.get_bytes(storage_key + ".probe.json").decode())
+        except Exception:
+            return {}
+        if not isinstance(payload, dict) or payload.get("checksumSha256") != checksum_sha256:
+            return {}
+        media = payload.get("media")
+        return media if isinstance(media, dict) else {}
 
     def request_upload(self, *, tenant_id: str, project_id: str, filename: str, kind: str, role: str, mime_type: str | None, bytes_expected: int, checksum_sha256: str | None, source_type: str = "upload") -> dict[str, Any]:
         tenant = validate_identifier(tenant_id,"tenant_id"); project_id = validate_identifier(project_id,"project_id")
@@ -68,7 +108,24 @@ class AssetService:
         if len(data) != int(claims["maxBytes"]): raise AssetError("uploaded byte count does not match reservation")
         expected = claims.get("checksumSha256"); actual = hashlib.sha256(data).hexdigest()
         if expected and not hmac_compare(expected.lower(), actual): raise AssetError("uploaded checksum does not match reservation")
+        probe = None
+        if claims.get("kind") in {"video", "audio"}:
+            probe_path = None
+            try:
+                descriptor, probe_path = tempfile.mkstemp(prefix="yappy-probe-")
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(data)
+                probe = self._probe_upload(kind=claims["kind"], source=probe_path)
+            except OSError:
+                pass
+            finally:
+                if probe_path:
+                    try:
+                        Path(probe_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
         info = self.storage.put_bytes(claims["storageKey"], data, content_type=content_type or claims.get("mimeType"))
+        self._persist_probe(storage_key=claims["storageKey"], checksum_sha256=info.checksum_sha256, media=probe)
         return {"uploaded":True,"assetId":claims["assetId"],"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256}}
 
     def accept_upload_path(self, *, tenant_id: str, token: str, path: Path | str, content_type: str | None) -> dict[str, Any]:
@@ -81,6 +138,7 @@ class AssetService:
         actual=checksum.hexdigest(); expected=claims.get("checksumSha256")
         if expected and not hmac_compare(expected.lower(),actual): raise AssetError("uploaded checksum does not match reservation")
         info=self.storage.put_file(claims["storageKey"],source,content_type=content_type or claims.get("mimeType"))
+        self._persist_probe(storage_key=claims["storageKey"], checksum_sha256=info.checksum_sha256, media=self._probe_upload(kind=claims.get("kind"), source=source))
         return {"uploaded":True,"assetId":claims["assetId"],"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256}}
 
     def complete_upload(self, *, tenant_id: str, project_id: str, transfer_token: str, created_by: str | None = None) -> dict[str, Any]:
@@ -94,13 +152,18 @@ class AssetService:
         duplicate=next((item for item in current.get("assets",[]) if item.get("checksum",{}).get("value")==info.checksum_sha256 and not item.get("extensions",{}).get("archived")),None)
         if duplicate:
             if duplicate.get("storage",{}).get("key") != info.key: self.storage.delete(info.key)
+            self._clear_probe(info.key)
             return json.loads(json.dumps(duplicate))
-        asset = {"id":claims["assetId"],"tenantId":tenant_id,"projectId":project_id,"kind":claims["kind"],"role":claims["role"],"name":claims["filename"],"mimeType":info.content_type,"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256},"storage":{"type":self.storage.storage_type,"key":info.key,"bucket":getattr(self.storage,"bucket",None),"url":None},"source":{"type":claims.get("sourceType","upload"),"provider":None,"externalId":None,"parentAssetIds":[],"license":None,"attribution":None,"sourceUrl":None},"media":{},"rights":{"commercialUse":None,"consentRecordIds":[],"releaseAssetIds":[],"expiresAt":None},"tags":[],"createdAt":_now(),"createdBy":created_by,"extensions":{"archived":False,"versions":[{"version":1,"storageKey":info.key,"checksum":info.checksum_sha256,"createdAt":_now()}]}}
+        asset = {"id":claims["assetId"],"tenantId":tenant_id,"projectId":project_id,"kind":claims["kind"],"role":claims["role"],"name":claims["filename"],"mimeType":info.content_type,"bytes":info.bytes,"checksum":{"algorithm":"sha256","value":info.checksum_sha256},"storage":{"type":self.storage.storage_type,"key":info.key,"bucket":getattr(self.storage,"bucket",None),"url":None},"source":{"type":claims.get("sourceType","upload"),"provider":None,"externalId":None,"parentAssetIds":[],"license":None,"attribution":None,"sourceUrl":None},"media":self._read_probe(storage_key=claims["storageKey"], checksum_sha256=info.checksum_sha256),"rights":{"commercialUse":None,"consentRecordIds":[],"releaseAssetIds":[],"expiresAt":None},"tags":[],"createdAt":_now(),"createdBy":created_by,"extensions":{"archived":False,"versions":[{"version":1,"storageKey":info.key,"checksum":info.checksum_sha256,"createdAt":_now()}]}}
         def mutate(project: dict[str, Any]) -> dict[str, Any]:
             if any(item.get("id") == asset["id"] for item in project.get("assets",[])): return project
             project.setdefault("assets",[]).append(asset); project["project"]["updatedAt"] = _now(); return project
-        self.repository.mutate(tenant_id, project_id, mutate)
-        return asset
+        stored = self.repository.mutate(tenant_id, project_id, mutate)
+        # Another completion may have committed this asset while we were reading
+        # probe facts. Return the persisted winner rather than our stale candidate.
+        result = json.loads(json.dumps(_asset(stored, asset["id"])))
+        self._clear_probe(info.key)
+        return result
 
     def list(self, *, tenant_id: str, project_id: str, include_archived: bool = False) -> list[dict[str, Any]]:
         project = self.repository.get(tenant_id, project_id)

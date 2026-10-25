@@ -17,3 +17,30 @@ Verified 2026-08-09 against the pinned upstream commits below. This register aut
 ## Admission gate
 
 Before source material enters the repository, the implementing OpenSpec must record the exact source path and commit, destination, applicable license, required notices, modification status, transitive assets/models, commercial eligibility, and removal path. Unknown or conflicting rights fail closed.
+
+## Restored isolated craft renderer binaries (2026-10-24)
+
+These are existing server-branch integrations consolidated into the canonical
+repository, not new source-vendoring. Exact release binaries and SHA-256 pins
+remain in `deploy/craft-renderer/Dockerfile`. Apache-2.0 license text was checked
+at `LICENSE-APACHE` for every listed tag; original release notices are retained
+in the renderer image alongside `deploy/craft-renderer/licenses/`.
+
+| Upstream | Release | Integration and removal boundary |
+| --- | --- | --- |
+| https://github.com/storytold/pdfcraft | v0.5.0 | Isolated PDF CLI; remove its craft runner and registry entry |
+| https://github.com/storytold/photocraft | v0.6.0 | Isolated image CLI; remove its craft runner and registry entry |
+| https://github.com/storytold/lightcraft | v0.5.0 | Isolated development CLI; remove its craft runner and registry entry |
+| https://github.com/storytold/vectorcraft | v0.8.0 | Isolated vector CLI; remove its craft runner and registry entry |
+
+No GUI, MCP/serve invocation, source rewrite, or new provider billing is enabled.
+Runtime availability is probed; unavailable engines remain explicitly unavailable.
+
+## OpenChatCut reference archive
+
+`vendor/openchatcut` preserves upstream `0xsline/OpenChatCut` at
+`2e6f4a29b784200cfb32b859b16f2561592bc3e8` under AGPL-3.0-or-later.
+LICENSE and NOTICE remain alongside it; third-party assets retain their own rights.
+This is reference-only source with es-MX dictionaries, excluded from Docker runtime
+contexts and npm workspaces. It is not activated as another editor or shipped as
+Montage UI/media. Human timeline behavior already uses the existing project contract.
