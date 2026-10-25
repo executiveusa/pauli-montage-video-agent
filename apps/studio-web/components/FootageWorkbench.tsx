@@ -77,6 +77,33 @@ function workerStorageFilename(assetId: string, filename: string): string {
   return `${assetId}__${filename}`;
 }
 
+async function browserVideoDuration(objectUrl: string): Promise<number | null> {
+  const video = document.createElement("video");
+  video.preload = "metadata";
+  video.src = objectUrl;
+  try {
+    return await new Promise<number | null>((resolve) => {
+      const timeout = window.setTimeout(() => finish(null), 10000);
+      function finish(value: number | null) {
+        window.clearTimeout(timeout);
+        video.removeEventListener("loadedmetadata", loaded);
+        video.removeEventListener("error", failed);
+        resolve(value);
+      }
+      function loaded() {
+        const value = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null;
+        finish(value);
+      }
+      function failed() { finish(null); }
+      video.addEventListener("loadedmetadata", loaded, { once: true });
+      video.addEventListener("error", failed, { once: true });
+    });
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+  }
+}
+
 export function FootageWorkbench({projectId}:{projectId:string}){return isLocalProjectId(projectId)?<LocalFootageWorkbench projectId={projectId}/>:<HostedAssetLibrary projectId={projectId}/>;}
 
 function LocalFootageWorkbench({ projectId }: { projectId: string }) {
@@ -241,11 +268,12 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
     }
     const blobPreview = URL.createObjectURL(file);
     setTransientPreviewUrl(blobPreview);
+    const detectedDuration = file.type.startsWith("video/") ? await browserVideoDuration(blobPreview) : null;
     const registered = registerLocalSource(projectId, {
       filename: file.name,
       sizeBytes: file.size,
       mimeType: file.type || "application/octet-stream",
-      durationSeconds: null,
+      durationSeconds: detectedDuration,
       width: null,
       height: null,
       status: "pending-worker",
