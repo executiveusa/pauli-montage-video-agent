@@ -20,10 +20,11 @@ function probeDuration(file: File): Promise<number> {
     const timeout = window.setTimeout(() => finish(new Error("Could not read the video duration.")), 15000);
     function finish(error?: Error) {
       window.clearTimeout(timeout);
+      const measuredDuration = video.duration;
       URL.revokeObjectURL(url);
       video.removeAttribute("src");
       video.load();
-      error ? reject(error) : resolve(video.duration);
+      error ? reject(error) : resolve(measuredDuration);
     }
     video.addEventListener("loadedmetadata", () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) { finish(new Error("This browser cannot read the video.")); return; }
