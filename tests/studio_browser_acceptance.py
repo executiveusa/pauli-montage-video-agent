@@ -249,8 +249,17 @@ def main() -> int:
             video_streams = [stream for stream in browser_metadata.get("streams", []) if stream.get("codec_type") == "video"]
             if not video_streams or (video_streams[0].get("width"), video_streams[0].get("height")) != (540, 960):
                 raise AssertionError(f"browser proof export dimensions invalid: {video_streams}")
-            if float(browser_metadata.get("format", {}).get("duration", 0)) <= 0.1:
-                raise AssertionError("browser export has no playable duration")
+            # MediaRecorder WebM can omit format.duration entirely even when
+            # frames/packets decode correctly. Check presentation timestamps.
+            packets_probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "packet=pts_time", "-of", "json", str(downloaded)],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+            packets = json.loads(packets_probe.stdout).get("packets", [])
+            stamps = [float(p["pts_time"]) for p in packets if p.get("pts_time") is not None]
+            if len(stamps) < 3 or max(stamps) - min(stamps) <= 0.1:
+                raise AssertionError(f"browser export has no playable duration: {len(stamps)} timed packets")
             # A hard reload must rehydrate the original source and saved timeline.
             page.reload(wait_until="networkidle")
             expect(page.locator('button[class*="timelineClip"]')).to_have_count(2)
