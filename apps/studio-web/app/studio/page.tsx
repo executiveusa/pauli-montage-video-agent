@@ -1,10 +1,5 @@
-import { ProjectDashboard } from "@/components/ProjectDashboard";
-import { StudioFrame } from "@/components/StudioFrame";
+import { ChatFirstStudio } from "@/components/ChatFirstStudio";
 
 export default function StudioPage() {
-  return (
-    <StudioFrame active="Projects">
-      <ProjectDashboard />
-    </StudioFrame>
-  );
+  return <ChatFirstStudio />;
 }
