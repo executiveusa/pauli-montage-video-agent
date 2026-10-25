@@ -87,6 +87,8 @@ def main() -> int:
 
             page.get_by_role("link", name="Timeline").click()
             page.wait_for_url(re.compile(r"/studio/projects/local_.+/edit$"), timeout=10_000)
+            # The traditional editor remains as an opt-in power-user escape hatch.
+            page.goto(page.url + "?classic=1", wait_until="networkidle")
             expect(page.get_by_text("source-backed playback")).to_be_visible(timeout=10_000)
             video = page.locator("video").first
             # Browser originals are loaded from device-local IndexedDB, not the worker endpoint.
@@ -267,6 +269,16 @@ def main() -> int:
             expect(page.get_by_text(founder_lower_third, exact=True)).to_be_visible()
             expect(page.locator("video").first).to_have_attribute("src", re.compile(r"^blob:"), timeout=15_000)
 
+            # Default surface is the OpenChatCut-inspired chat-first editor.
+            page.goto(page.url.replace("?classic=1", ""), wait_until="networkidle")
+            expect(page.get_by_text("Montage Director", exact=True)).to_be_visible()
+            expect(page.get_by_label("Tell Montage what to edit")).to_be_visible()
+            expect(page.get_by_role("button", name="Upload footage")).to_be_visible()
+            page.get_by_label("Tell Montage what to edit").fill("Add title CHAT UI PROOF")
+            page.get_by_role("button", name="Send", exact=True).click()
+            expect(page.get_by_text("Added “CHAT UI PROOF”", exact=False)).to_be_visible(timeout=10_000)
+            page.reload(wait_until="networkidle")
+            expect(page.get_by_text("Montage Director", exact=True)).to_be_visible()
             if page_errors:
                 raise AssertionError(f"uncaught browser errors: {page_errors}")
             context.tracing.stop(path=str(TRACE))
