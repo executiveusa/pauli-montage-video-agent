@@ -19,6 +19,7 @@ import type {
 } from "@/lib/timeline";
 import { applyHumanTimelineCommand, HumanTimelineEditError } from "@/lib/human-timeline-bridge";
 import styles from "./TimelineEditor.module.css";
+import { browserSourceUrl } from "@/lib/browser-source-media";
 
 type EditorState = "loading" | "ready" | "dirty" | "saving" | "saved" | "conflict" | "error";
 type Selection = { trackId: string; itemId: string } | null;
@@ -107,6 +108,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [playing, setPlaying] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [directorCommand, setDirectorCommand] = useState("");
+  const [browserPreviewUrl, setBrowserPreviewUrl] = useState<string | null>(null);
   const savingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const localMode = isLocalProjectId(projectId);
@@ -177,7 +179,20 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     return getLocalAsset(projectId, activePreview.item.assetId);
   }, [activePreview?.item.assetId, localMode, projectId, timeline]);
 
-  const previewUrl = activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
+  // Blob URLs are transient: recreate them from IndexedDB when the user reopens the editor.
+  useEffect(() => {
+    if (!localMode || !activeLocalAsset?.id) { setBrowserPreviewUrl(null); return; }
+    let canceled = false;
+    let url: string | null = null;
+    void browserSourceUrl(projectId, activeLocalAsset.id).then((next) => {
+      if (canceled) { if (next) URL.revokeObjectURL(next); return; }
+      url = next;
+      setBrowserPreviewUrl(next);
+    }).catch(() => setBrowserPreviewUrl(null));
+    return () => { canceled = true; if (url) URL.revokeObjectURL(url); };
+  }, [projectId, localMode, activeLocalAsset?.id]);
+
+  const previewUrl = browserPreviewUrl || activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
   const sourceStatus = activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
 
   const editingLocked = state === "saving" || state === "conflict" || state === "loading";
