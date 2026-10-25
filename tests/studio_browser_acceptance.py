@@ -262,7 +262,9 @@ def main() -> int:
                 raise AssertionError(f"browser export has no playable duration: {len(stamps)} timed packets")
             # A hard reload must rehydrate the original source and saved timeline.
             page.reload(wait_until="networkidle")
-            expect(page.locator('button[class*="timelineClip"]')).to_have_count(2)
+            # Two source clips plus title and lower-third are retained after reload.
+            expect(page.locator('button[class*="timelineClip"]')).to_have_count(4)
+            expect(page.get_by_text(founder_lower_third, exact=True)).to_be_visible()
             expect(page.locator("video").first).to_have_attribute("src", re.compile(r"^blob:"), timeout=15_000)
 
             if page_errors:
