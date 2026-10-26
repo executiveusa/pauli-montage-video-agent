@@ -1,0 +1,251 @@
+import { generateText } from 'ai';
+import type { LanguageModel } from 'ai';
+import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
+import { resolveModelRequestPolicy } from '../../shared/llm-providers';
+import {
+  MODEL,
+  OPENAI_API_MODE,
+  PROVIDER,
+} from './providerConfig';
+import type { LlmProvider, OpenAiApiMode } from './providerConfig';
+import { normalizeLlmMessages, withoutModelImages } from './messages';
+import { getActiveAgentModelChoice, getAgentModelSnapshot, type AgentModelChoice } from './model-selection';
+import { effectiveOutputTokenBudget } from './context-compaction';
+import type { AgentCacheMode } from './settings/agentSettings';
+
+export {
+  MODEL,
+  OPENAI_API_MODE,
+  PROVIDER,
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_OPENAI_API_MODE,
+  defaultModelForProvider,
+  normalizeLlmProvider,
+  normalizeOpenAiApiMode,
+  protocolForProvider,
+  providerApiPath,
+  setLlmConfig,
+  setLlmModel,
+  setLlmProvider,
+} from './providerConfig';
+export type { LlmProvider, OpenAiApiMode } from './providerConfig';
+export type ConfiguredLanguageModel = Exclude<LanguageModel, string>;
+
+const ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+// The server proxy target owns the provider/version prefix. AI SDK appends the
+// native operation path, which also supports compatible APIs such as
+// `/v1beta/openai/chat/completions`.
+const PROXY_API_BASE = `${ORIGIN}/llm`;
+const PROXY_KEY = 'proxy-injects-the-real-key';
+
+
+interface ProviderOptions {
+  baseURL: string;
+  apiKey: string;
+  headers: Record<string, string>;
+  fetch: typeof fetch;
+}
+
+type ModelFactory = (model: string) => ConfiguredLanguageModel;
+type OpenAiProvider = {
+  chat: ModelFactory;
+  responses: ModelFactory;
+};
+
+const factoryPromises = new Map<LlmProvider, Promise<ModelFactory>>();
+const openAiProviderPromises = new Map<LlmProvider, Promise<OpenAiProvider>>();
+
+function normalizeToolCallDeltaLine(line: string): string {
+  if (!line.startsWith('data:')) return line;
+  try {
+    const chunk = JSON.parse(line.slice(5)) as {
+      choices?: Array<{ delta?: { tool_calls?: Array<{ type?: unknown }> } }>;
+    } | null;
+    if (!Array.isArray(chunk?.choices)) return line;
+    let changed = false;
+    for (const choice of chunk.choices) {
+      const calls = choice?.delta?.tool_calls;
+      if (!Array.isArray(calls)) continue;
+      for (const call of calls) {
+        // StepFun-compatible gateways use an empty type on continuation chunks.
+        // Omit that placeholder; leave unknown nonempty types for SDK validation.
+        if (call?.type === '') {
+          delete call.type;
+          changed = true;
+        }
+      }
+    }
+    return changed ? `data: ${JSON.stringify(chunk)}` : line;
+  } catch {
+    // Preserve [DONE], provider errors and malformed data for the SDK to handle.
+    return line;
+  }
+}
+
+const providerFetch: typeof fetch = async (input, init) => {
+  const response = await globalThis.fetch(input, init);
+  const url = input instanceof Request ? input.url : String(input);
+  if (!new URL(url, ORIGIN).pathname.endsWith('/chat/completions') || !response.ok || !response.body
+    || !response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream')) return response;
+
+  let pending = '';
+  const stream = response.body.pipeThrough(new TextDecoderStream()).pipeThrough(new TransformStream<string, string>({
+    transform(text, controller) {
+      pending += text;
+      let end: number;
+      while ((end = pending.search(/[\r\n]/)) !== -1) {
+        controller.enqueue(normalizeToolCallDeltaLine(pending.slice(0, end)) + pending[end]);
+        pending = pending.slice(end + 1);
+      }
+    },
+    flush(controller) {
+      if (pending) controller.enqueue(normalizeToolCallDeltaLine(pending));
+    },
+  })).pipeThrough(new TextEncoderStream());
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  return new Response(stream, { status: response.status, statusText: response.statusText, headers });
+};
+
+function providerOptions(provider: LlmProvider): ProviderOptions {
+  return {
+    baseURL: PROXY_API_BASE,
+    apiKey: PROXY_KEY,
+    headers: { 'x-openchatcut-provider': provider },
+    fetch: providerFetch,
+  };
+}
+
+// The configured provider is runtime-selected. Every branch is a literal so
+// Vite discovers all allowed chunks without evaluating unselected SDKs.
+async function createProviderFactory(provider: LlmProvider): Promise<ModelFactory> {
+  const options = providerOptions(provider);
+  switch (provider) {
+    case 'anthropic':
+      return (await import('@ai-sdk/anthropic')).createAnthropic(options);
+    case 'gemini':
+      return (await import('@ai-sdk/google')).createGoogleGenerativeAI(options);
+    case 'kimi':
+      return (await import('@ai-sdk/moonshotai')).createMoonshotAI(options);
+    case 'qwen':
+      return (await import('@ai-sdk/alibaba')).createAlibaba(options);
+    case 'deepseek':
+      return (await import('@ai-sdk/deepseek')).createDeepSeek(options);
+    case 'mistral':
+      return (await import('@ai-sdk/mistral')).createMistral(options);
+    case 'xai':
+      return (await import('@ai-sdk/xai')).createXai(options);
+    default: {
+      const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible');
+      return createOpenAICompatible({ name: provider, ...options });
+    }
+  }
+}
+
+function providerFactory(provider: LlmProvider): Promise<ModelFactory> {
+  const existing = factoryPromises.get(provider);
+  if (existing) return existing;
+  const created = createProviderFactory(provider);
+  factoryPromises.set(provider, created);
+  created.catch(() => factoryPromises.delete(provider));
+  return created;
+}
+
+function openAiProvider(provider: LlmProvider): Promise<OpenAiProvider> {
+  const existing = openAiProviderPromises.get(provider);
+  if (existing) return existing;
+  const created = import('@ai-sdk/openai')
+    .then(({ createOpenAI }) => createOpenAI(providerOptions(provider)))
+    .catch((error: unknown) => {
+      openAiProviderPromises.delete(provider);
+      throw error;
+    });
+  openAiProviderPromises.set(provider, created);
+  return created;
+}
+export async function getLanguageModel(
+  provider: LlmProvider = PROVIDER,
+  model: string = MODEL,
+  openAiApiMode: OpenAiApiMode = OPENAI_API_MODE,
+): Promise<ConfiguredLanguageModel> {
+  const policy = resolveModelRequestPolicy(provider, openAiApiMode);
+  if (policy.protocol === 'openai') {
+    const openai = await openAiProvider(provider);
+    return policy.apiMode === 'chat' ? openai.chat(model) : openai.responses(model);
+  }
+  return (await providerFactory(provider))(model);
+}
+
+export function getLanguageModelProviderOptions(
+  provider: LlmProvider = PROVIDER,
+  openAiApiMode: OpenAiApiMode = OPENAI_API_MODE,
+  cacheMode: AgentCacheMode = 'short',
+): SharedV4ProviderOptions | undefined {
+  return resolveModelRequestPolicy(provider, openAiApiMode, cacheMode).providerOptions;
+}
+export function cacheTtlMsForProvider(
+  provider: LlmProvider,
+  cacheMode: AgentCacheMode,
+): number | undefined {
+  return resolveModelRequestPolicy(provider, undefined, cacheMode).cacheTtlMs;
+}
+
+
+function generationChoice(): AgentModelChoice | undefined {
+  const active = getActiveAgentModelChoice();
+  if (active?.backend === 'api') return active;
+  return getAgentModelSnapshot().choices.find((choice) => (
+    choice.backend === 'api' && choice.provider === PROVIDER && choice.model === MODEL
+  ));
+}
+
+// A fixed 60s total budget silently capped what these calls could produce:
+// MG/shader generation asks for up to 64k output tokens, and most providers
+// stream well under 100 tok/s, so large generations failed as "timeout" no
+// matter how healthy the connection was. Scale the ceiling with the requested
+// budget instead, keeping 60s as the floor for small asks.
+const GENERATION_TIMEOUT_FLOOR_MS = 60_000;
+const GENERATION_TIMEOUT_MAX_MS = 600_000;
+const GENERATION_TOKENS_PER_SECOND = 40;
+
+export function generationTimeoutMs(maxOutputTokens: number): number {
+  if (!Number.isFinite(maxOutputTokens) || maxOutputTokens <= 0) return GENERATION_TIMEOUT_FLOOR_MS;
+  const streamingMs = (maxOutputTokens / GENERATION_TOKENS_PER_SECOND) * 1000;
+  return Math.min(GENERATION_TIMEOUT_MAX_MS, Math.max(GENERATION_TIMEOUT_FLOOR_MS, Math.round(streamingMs)));
+}
+
+export async function generateAgentText(options: {
+  system?: string;
+  prompt?: string;
+  messages?: readonly unknown[];
+  maxOutputTokens: number;
+}): Promise<string> {
+  const choice = generationChoice();
+  const provider = choice?.provider ?? PROVIDER;
+  const model = choice?.model ?? MODEL;
+  const apiMode = choice?.openAiApiMode ?? OPENAI_API_MODE;
+  const providerOptions = getLanguageModelProviderOptions(provider, apiMode);
+  const modelOutputLimit = choice
+    ? effectiveOutputTokenBudget(
+        choice.capabilities.maxOutputTokens.value,
+        choice.capabilities.contextWindowTokens.value,
+      )
+    : options.maxOutputTokens;
+  const maxOutputTokens = Math.min(options.maxOutputTokens, modelOutputLimit);
+  const base = {
+    model: await getLanguageModel(provider, model, apiMode),
+    system: options.system,
+    maxOutputTokens,
+    timeout: { totalMs: generationTimeoutMs(maxOutputTokens) },
+    ...(providerOptions ? { providerOptions } : {}),
+  };
+  const normalized = options.messages ? normalizeLlmMessages(options.messages) : null;
+  const messages = normalized && choice?.capabilities.supportsImages.value === false
+    ? withoutModelImages(normalized)
+    : normalized;
+  const result = messages
+    ? await generateText({ ...base, messages })
+    : await generateText({ ...base, prompt: options.prompt ?? '' });
+  return result.text;
+}

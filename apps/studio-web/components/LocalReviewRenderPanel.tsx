@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { renderBrowserReview } from "@/lib/browser-review-render";
 import { localEngineHealth, localFileUrl } from "@/lib/local-engine";
 import { getFootageState, registerExport } from "@/lib/local-footage-state";
 import { renderLocalTimelineReview } from "@/lib/local-review-render";
@@ -27,6 +28,40 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
   const [presentationText, setPresentationText] = useState("WHY WE STARTED");
   const [presentationStart, setPresentationStart] = useState("0");
   const [presentationDuration, setPresentationDuration] = useState("2.5");
+  const browserRenderAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => browserRenderAbort.current?.abort(), [projectId]);
+  const [browserArtifactUrl, setBrowserArtifactUrl] = useState<string | null>(null);
+  const [browserFilename, setBrowserFilename] = useState<string | null>(null);
+
+  useEffect(() => () => { if (browserArtifactUrl) URL.revokeObjectURL(browserArtifactUrl); }, [browserArtifactUrl]);
+
+  async function exportBrowserPreview() {
+    if (!localMode) return;
+    const timeline = getLocalTimeline(projectId);
+    if (!timeline) { setState("error"); setMessage("Save the project timeline before exporting."); return; }
+    setState("rendering");
+    setMessage("Recording the saved timeline in your browser. Keep this tab open until export finishes.");
+    setBrowserArtifactUrl(null);
+    setBrowserFilename(null);
+    setVerification(null);setArtifact(null);
+    const controller = new AbortController();
+    browserRenderAbort.current?.abort();browserRenderAbort.current = controller;
+    try {
+      const result = await renderBrowserReview(projectId, timeline, { signal:controller.signal });
+      if(controller.signal.aborted)return;
+      const url = URL.createObjectURL(result.blob);
+      setBrowserArtifactUrl(url);
+      setBrowserFilename(result.filename);
+      setState("idle");
+      setMessage(`Browser preview recorded: ${result.durationSeconds.toFixed(1)}s, 540×960, ${result.mimeType}. ${result.withAudio ? "Audio track captured." : "Audio not confirmed."} This is a browser proof export, not an FFmpeg/ffprobe-verified master.`);
+    } catch (error) {
+      if(controller.signal.aborted)return;
+      setState("error");
+      setMessage(error instanceof Error ? error.message : "Browser export was unsuccessful.");
+    } finally {
+      if(browserRenderAbort.current === controller)browserRenderAbort.current = null;
+    }
+  }
 
   function addPresentation() {
     if (!localMode) {
@@ -151,12 +186,15 @@ export function LocalReviewRenderPanel({ projectId }: { projectId: string }) {
 
       <div className="form-actions" style={{ marginTop: 16 }}>
         {localMode ? <button className="button secondary" disabled={state === "rendering"} onClick={syncCaptions} type="button">Sync transcript captions</button> : null}
-        <button className="button accent" disabled={state === "rendering"} onClick={() => void renderReview()} type="button">
-          {state === "rendering" ? "Rendering…" : "Render + verify 9:16 review"}
+        {localMode ? <button className="button accent" disabled={state === "rendering"} onClick={() => void exportBrowserPreview()} type="button">{state === "rendering" ? "Rendering…" : "Export in browser · no server"}</button> : null}
+        <button className={localMode ? "button secondary" : "button accent"} disabled={state === "rendering"} onClick={() => void renderReview()} type="button">
+          {state === "rendering" ? "Rendering…" : localMode ? "FFmpeg MP4 (local engine)" : "Render + verify 9:16 review"}
         </button>
         {!localMode && failedJobId ? <button className="button secondary" disabled={state === "rendering"} onClick={() => void renderReview(failedJobId)} type="button">Retry failed render</button> : null}
         {artifact ? <a className="button secondary" href={localMode ? localFileUrl(projectId, "outputs", artifact) : artifact} rel="noreferrer" target="_blank">Open verified MP4</a> : null}
+        {browserArtifactUrl && browserFilename ? <a className="button secondary" href={browserArtifactUrl} download={browserFilename}>Download browser review</a> : null}
       </div>
+      {browserArtifactUrl ? <div style={{ marginTop: 14 }}><video controls playsInline preload="metadata" src={browserArtifactUrl} style={{ width: "100%", maxHeight: 420, borderRadius: 12 }} aria-label="Browser review export preview" /><p className="muted" style={{ marginTop: 8 }}>Review export stays on this device. Check the playable file before sharing; production master and audio verification require FFmpeg.</p></div> : null}
       {verification ? (
         <div className="engine-facts">
           <span>{String(verification.width || "?")}×{String(verification.height || "?")}</span>

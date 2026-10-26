@@ -1,0 +1,128 @@
+name: montage-images
+# Builds the Montage API/worker and studio-web images in CI and pushes them to GHCR.
+# prod-city-1 only pulls finished images (house rule: nothing builds on the box).
+on:
+  pull_request:
+    paths:
+      - "yappy_clipz/**"
+      - "tests/studio/**"
+      - "deploy/renderer/**"
+      - "deploy/craft-renderer/**"
+      - "requirements*.txt"
+      - ".github/workflows/montage-images.yml"
+  push:
+    branches: [deploy/prod-city-1]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: montage-images-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  renderer-tests:
+    # Isolation + real-browser tests run inside the image that gets shipped; images are pushed only if they pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/renderer/Dockerfile
+          target: test
+          load: true
+          tags: montage-renderer-test:ci
+          cache-from: type=gha,scope=montage-renderer
+          cache-to: type=gha,mode=max,scope=montage-renderer
+      - name: Run renderer tests in the image
+        run: docker run --rm --shm-size=256m montage-renderer-test:ci
+  craft-renderer-tests:
+    # Real pinned-binary tests run inside the image that gets shipped; images are pushed only if they pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/craft-renderer/Dockerfile
+          target: test
+          load: true
+          tags: montage-craft-renderer-test:ci
+          cache-from: type=gha,scope=montage-craft-renderer
+          cache-to: type=gha,mode=max,scope=montage-craft-renderer
+      - name: Run craft tests in the image
+        run: docker run --rm montage-craft-renderer-test:ci
+  api-animator-tests:
+    # API-side pipeline, wiring and gate tests with the full studio requirements and a real browser.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg chromium-browser || sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r requirements-studio.txt pytest
+      - name: Fetch the pinned PdfCraft CLI (same tag and sha256 as the craft renderer image)
+        run: |
+          V=$(grep -oP 'ARG PDFCRAFT_VERSION=\K.*' deploy/craft-renderer/Dockerfile)
+          SHA=$(grep -oP 'ARG PDFCRAFT_SHA256=\K.*' deploy/craft-renderer/Dockerfile)
+          curl -fsSL -o /tmp/pdfcraft.tgz "https://github.com/storytold/pdfcraft/releases/download/v${V}/pdfcraft-cli-${V}-linux-x86_64.tar.gz"
+          echo "${SHA}  /tmp/pdfcraft.tgz" | sha256sum -c -
+          mkdir -p /tmp/pdfcraft && tar -xzf /tmp/pdfcraft.tgz -C /tmp/pdfcraft --strip-components=1
+          echo "YAPPY_PDFCRAFT_BIN=/tmp/pdfcraft/pdfcraft-cli" >> "$GITHUB_ENV"
+      - name: Fetch the pinned PhotoCraft and LightCraft CLIs (same tags and sha256 as the craft renderer image)
+        run: |
+          for E in PHOTOCRAFT LIGHTCRAFT VECTORCRAFT; do
+            e=$(echo "$E" | tr 'A-Z' 'a-z')
+            V=$(grep -oP "ARG ${E}_VERSION=\K.*" deploy/craft-renderer/Dockerfile)
+            SHA=$(grep -oP "ARG ${E}_SHA256=\K.*" deploy/craft-renderer/Dockerfile)
+            curl -fsSL -o /tmp/$e.tgz "https://github.com/storytold/$e/releases/download/v${V}/$e-${V}-linux-x86_64.tar.gz"
+            echo "${SHA}  /tmp/$e.tgz" | sha256sum -c -
+            mkdir -p /tmp/$e && tar -xzf /tmp/$e.tgz -C /tmp/$e --strip-components=1
+            echo "YAPPY_${E}_BIN=/tmp/$e/bin/$e-cli" >> "$GITHUB_ENV"
+          done
+      - name: Animator and engine API tests
+        env:
+          YAPPY_ANIMATOR_CHROMIUM: /usr/bin/google-chrome
+        run: python -m pytest -q -p no:cacheprovider tests/studio/test_code_animator_core.py tests/studio/test_code_animator_wiring.py tests/studio/test_code_animator_pipeline.py tests/studio/test_media_library.py tests/studio/test_engine_registry.py tests/studio/test_pdfcraft_core.py tests/studio/test_pdfcraft_pipeline.py tests/studio/test_imagecraft_core.py tests/studio/test_imagecraft_pipeline.py tests/studio/test_engine_dispatch_isolation.py tests/studio/test_vectorcraft_core.py tests/studio/test_vectorcraft_pipeline.py
+  build:
+    if: github.event_name != 'pull_request'
+    needs: [renderer-tests, craft-renderer-tests, api-animator-tests]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: montage-api
+            dockerfile: Dockerfile
+          - name: montage-web
+            dockerfile: apps/studio-web/Dockerfile
+          - name: montage-renderer
+            dockerfile: deploy/renderer/Dockerfile
+            target: runtime
+          - name: montage-craft-renderer
+            dockerfile: deploy/craft-renderer/Dockerfile
+            target: runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/executiveusa/${{ matrix.name }}:prod-city-1
+            ghcr.io/executiveusa/${{ matrix.name }}:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

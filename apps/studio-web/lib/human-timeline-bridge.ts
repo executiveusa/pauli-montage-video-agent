@@ -9,6 +9,7 @@ import type { Timeline, TimelineItem } from "./timeline";
 export type HumanTimelineCommand =
   | { type: "move"; trackId: string; itemId: string; startFrame: number }
   | { type: "trim"; trackId: string; itemId: string; startFrame: number; durationFrames: number; sourceInFrame?: number }
+  | { type: "split"; trackId: string; itemId: string; splitFrame: number; rightItemId: string }
   | { type: "slip"; trackId: string; itemId: string; deltaFrames: number };
 
 export type HumanTimelineSource = { durationSeconds: number };
@@ -83,6 +84,20 @@ export function applyHumanTimelineCommand(timeline: Timeline, command: HumanTime
     if (sourceLimit !== undefined && item.sourceEndSeconds > sourceLimit + 1e-9) {
       throw new HumanTimelineEditError("Clip exceeds the known source duration.");
     }
+  }
+  if (command.type === "split") {
+    const split = integer(command.splitFrame, "splitFrame");
+    if (split <= start || split >= start + duration) throw new HumanTimelineEditError("Split must be strictly inside the selected clip.");
+    if (!command.rightItemId?.trim() || timeline.tracks.some(t => t.items.some(clip => clip.id === command.rightItemId))) {
+      throw new HumanTimelineEditError("Split requires a unique new clip ID.");
+    }
+    const leftFrames = split - start;
+    const sourceSplit = (sourceIn + leftFrames) / fps;
+    const left = { ...item, durationSeconds:leftFrames/fps, ...(sourceBacked ? { sourceEndSeconds:sourceSplit } : {}) };
+    const right = { ...item, id:command.rightItemId, startSeconds:split/fps, durationSeconds:(duration-leftFrames)/fps,
+      ...(sourceBacked ? { sourceStartSeconds:sourceSplit } : {}),
+      extensions:item.extensions?.role === "source-master" ? { ...item.extensions, role:"source-fragment" } : item.extensions };
+    return { ...timeline, tracks:timeline.tracks.map(t => t.id === track.id ? { ...t, items:t.items.flatMap(clip => clip.id === item.id ? [left,right] : [clip]) } : t) };
   }
   let patch: Partial<TimelineItem>;
 

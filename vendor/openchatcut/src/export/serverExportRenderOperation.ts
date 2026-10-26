@@ -1,0 +1,248 @@
+import type { ExportDestination } from './exportDestination';
+import { exportMediaExtension } from './exportMediaExtension';
+import {
+  exportFailureFrom,
+  ExportFailureError,
+  type ExportFailure,
+} from './exportFailure';
+import { cancelRenderJob, readRenderJobSnapshot, RenderJobRequestError, submitRenderJob } from './renderJobClient';
+import {
+  markServerExportOutputReady,
+  persistServerExportJob,
+  retireServerExportJob,
+  type PersistedServerExportJob,
+} from './serverExportRecovery';
+import type {
+  ExportEngineInfo,
+  ExportJobResult,
+  ExportJobSnapshot,
+  ExportPhase,
+  ExportProgress,
+  RenderEngine,
+  StateSetter,
+  Translate,
+  UseExportWorkflowOptions,
+} from './exportWorkflowTypes';
+
+export interface ServerExportContext {
+  autoQaEnabled: boolean;
+  createOperationId?: () => string;
+  destination: ExportDestination;
+  options: UseExportWorkflowOptions;
+  targetPath?: string | null;
+  beginTargetCommit(): void;
+  endTargetCommit(): void;
+  markTargetCommitted(): void;
+  setBusy: StateSetter<string | null>;
+  setEngineInfo: StateSetter<ExportEngineInfo | null>;
+  setEngineReason: StateSetter<string | null>;
+  setProgress: StateSetter<ExportProgress | null>;
+  setRenderEngine: StateSetter<RenderEngine>;
+  t: Translate;
+  verifyCompletedExport: (completed: ExportJobResult, signal?: AbortSignal) => Promise<void>;
+}
+
+export type ExportFormat = 'video' | 'audio';
+export type ExportCodec = 'h264' | 'vp8' | 'prores' | 'mp3';
+
+function recoveryRecord(
+  context: ServerExportContext,
+  renderId: string,
+  format: ExportFormat,
+  codec: ExportCodec,
+): PersistedServerExportJob {
+  const projectId = context.options.projectId;
+  const ext = exportMediaExtension(format, codec);
+  const now = Date.now();
+  return {
+    version: 1,
+    renderId,
+    projectId,
+    label: `${context.options.base}.${ext}`,
+    targetPath: context.targetPath ?? null,
+    createdAt: now,
+    updatedAt: now,
+    format,
+    codec,
+    base: context.options.base,
+    fps: context.options.fps,
+    state: context.options.state,
+    destination: context.destination,
+    autoQaEnabled: context.autoQaEnabled,
+    stage: 'polling',
+  };
+}
+
+export class ServerRenderError extends Error {
+  readonly failure?: ExportFailure;
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'ServerRenderError';
+    const failure = exportFailureFrom(cause);
+    if (failure) this.failure = failure;
+  }
+}
+
+export function isServerRenderError(error: unknown): error is ServerRenderError {
+  return error instanceof ServerRenderError;
+}
+
+function wait(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException('Export cancelled', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function submissionBody(
+  context: ServerExportContext,
+  format: ExportFormat,
+  codec: ExportCodec,
+  operationId: string,
+) {
+  const { state, project, timelineId, base, resolution, fps, requestedVideoBitrate } = context.options;
+  const body: Record<string, unknown> = {
+    state, format, codec, name: base, operationId,
+    ...(project && timelineId ? { project, timelineId } : {}),
+  };
+  if (format !== 'video') return body;
+  body.resolution = resolution;
+  if (fps !== state.fps) body.fps = fps;
+  if (requestedVideoBitrate !== undefined) body.videoBitrate = requestedVideoBitrate;
+  return body;
+}
+
+async function submitExport(
+  context: ServerExportContext,
+  format: ExportFormat,
+  codec: ExportCodec,
+  operationId: string,
+  signal?: AbortSignal,
+) {
+  try {
+    return await submitRenderJob(submissionBody(context, format, codec, operationId), signal);
+  } catch (error) {
+    if (error instanceof RenderJobRequestError) {
+      throw new Error(error.responseMessage ?? context.t('导出失败 ({status})', { status: error.status }));
+    }
+    throw error;
+  }
+}
+
+async function readSnapshot(
+  renderId: string,
+  t: Translate,
+  signal?: AbortSignal,
+): Promise<ExportJobSnapshot> {
+  try {
+    return await readRenderJobSnapshot(renderId, signal);
+  } catch (error) {
+    if (error instanceof RenderJobRequestError) {
+      throw new Error(error.responseMessage ?? t('无法读取导出进度 ({status})', { status: error.status }));
+    }
+    throw error;
+  }
+}
+
+function activePhase(snapshot: ExportJobSnapshot): ExportPhase {
+  if (snapshot.phase === 'queued') return 'queued';
+  if (snapshot.phase === 'finalizing') return 'finalizing';
+  return snapshot.phase === 'rendering' ? 'rendering' : 'preparing';
+}
+
+type ServerExportPollContext = Pick<ServerExportContext, 'setProgress' | 't'>;
+
+function updateActiveProgress(context: ServerExportPollContext, snapshot: ExportJobSnapshot): void {
+  context.setProgress((current) => current ? {
+    ...current,
+    phase: activePhase(snapshot),
+    percent: Math.min(99, Math.max(current.percent, Math.round(snapshot.progress))),
+    processedFrames: snapshot.processedFrames,
+    totalFrames: snapshot.totalFrames,
+    detail: snapshot.phase === 'queued'
+      ? context.t('已有其他导出任务正在运行，当前任务将在其完成后自动开始')
+      : current.phase === 'queued' ? undefined : current.detail,
+  } : current);
+}
+
+function completeSnapshot(context: ServerExportPollContext, snapshot: ExportJobSnapshot): ExportJobResult {
+  if (!snapshot.result?.path) throw new Error(context.t('导出完成，但没有可下载的文件'));
+  context.setProgress((current) => current ? {
+    ...current,
+    phase: 'finalizing',
+    detail: current.phase === 'queued' ? undefined : current.detail,
+    percent: 99,
+    processedFrames: snapshot.processedFrames,
+    totalFrames: snapshot.totalFrames,
+  } : current);
+  return snapshot.result;
+}
+
+export async function pollExport(
+  context: ServerExportPollContext,
+  renderId: string,
+  signal?: AbortSignal,
+): Promise<ExportJobResult> {
+  while (true) {
+    const snapshot = await readSnapshot(renderId, context.t, signal);
+    if (snapshot.status === 'failed') {
+      const cause = snapshot.failure
+        ? new ExportFailureError(snapshot.failure)
+        : new Error(snapshot.error ?? context.t('导出失败'));
+      throw new ServerRenderError(cause);
+    }
+    if (snapshot.status === 'succeeded') return completeSnapshot(context, snapshot);
+    updateActiveProgress(context, snapshot);
+    await wait(300, signal);
+  }
+}
+
+export async function deleteExportJob(renderId: string): Promise<void> {
+  try {
+    await cancelRenderJob(renderId);
+  } catch (error) {
+    if (error instanceof RenderJobRequestError) {
+      throw new Error(error.responseMessage ?? `server export cleanup failed (${error.status})`);
+    }
+    throw error;
+  }
+}
+
+export async function retireAndDeleteExportJob(renderId: string): Promise<boolean> {
+  if (!await retireServerExportJob(renderId)) return false;
+  await deleteExportJob(renderId);
+  return true;
+}
+
+export async function renderCompleted(
+  context: ServerExportContext,
+  format: ExportFormat,
+  codec: ExportCodec,
+  signal?: AbortSignal,
+): Promise<{ renderId: string; completed: ExportJobResult }> {
+  const renderId = context.createOperationId?.() ?? globalThis.crypto.randomUUID();
+  let submissionAccepted = false;
+  let outputObserved = false;
+  try {
+    await persistServerExportJob(recoveryRecord(context, renderId, format, codec));
+    await submitExport(context, format, codec, renderId, signal);
+    submissionAccepted = true;
+    const completed = await pollExport(context, renderId, signal);
+    outputObserved = true;
+    await markServerExportOutputReady(renderId);
+    return { renderId, completed };
+  } catch (error) {
+    if (submissionAccepted && !outputObserved) {
+      await retireAndDeleteExportJob(renderId).catch(() => false);
+    }
+    throw error;
+  }
+}

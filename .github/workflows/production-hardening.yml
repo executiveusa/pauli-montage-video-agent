@@ -35,6 +35,9 @@ jobs:
           pip install -r requirements-dev.txt -r requirements-studio.txt
       - name: Compile Python
         run: python -m compileall -q lib tools yappy_clipz tests
+      - name: Install Chromium for browser regression tests
+        run: python -m playwright install --with-deps chromium
+
       - name: Run Python tests with timeout
         run: timeout 15m python -m pytest -q --disable-warnings --maxfail=1
       - name: Validate pipeline definitions

@@ -56,8 +56,11 @@ def build_index(path: Path, rows: list[dict]) -> None:
             "link TEXT, kind TEXT, canonical_id TEXT, vision TEXT, tier TEXT)"
         )
         connection.execute(
-            "CREATE VIRTUAL TABLE clips_fts USING fts5(name, path, vision, content='clips', content_rowid='rowid')"
+            "CREATE VIRTUAL TABLE clips_fts USING fts5(id UNINDEXED, name, path, capture_date, text, tokenize='unicode61')"
         )
+        # Real index shape: standalone FTS with its own rowids. A leading row for an
+        # unrelated id misaligns every later rowid against clips.rowid.
+        connection.execute("INSERT INTO clips_fts (id, name, path, capture_date, text) VALUES ('orphan','','','','')")
         connection.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
         connection.execute("INSERT INTO meta VALUES ('schema', 'media-brain-1')")
         for row in rows:
@@ -66,9 +69,14 @@ def build_index(path: Path, rows: list[dict]) -> None:
                 f"INSERT INTO clips ({','.join(_COLUMNS)}) VALUES ({','.join('?' for _ in _COLUMNS)})", values
             )
             connection.execute(
-                "INSERT INTO clips_fts (rowid, name, path, vision) VALUES (?, ?, ?, ?)",
-                (cursor.lastrowid, row.get("name"), row.get("path"), row.get("vision")),
+                "INSERT INTO clips_fts (id, name, path, capture_date, text) VALUES (?, ?, ?, ?, '')",
+                (row["id"], row.get("name"), row.get("path"), row.get("capture_date")),
             )
+            if row.get("vision") and row.get("vision") != "todo":
+                connection.execute(
+                    "INSERT INTO clips_fts (id, name, path, capture_date, text) VALUES (?, '', '', '', ?)",
+                    (row["id"], "VISION " + row["vision"]),
+                )
         connection.commit()
     finally:
         connection.close()
@@ -80,6 +88,116 @@ def second_clip(**overrides) -> dict:
                  "mime": "video/quicktime", "capture_date": "2023-03", "link": None, "vision": "trees timelapse workers"})
     clip.update(overrides)
     return clip
+
+
+class MediaLibraryVisionSearchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.index = Path(self.temp.name) / "media-index.snapshot.db"
+        build_index(self.index, [SAMPLE_CLIP, second_clip()])
+        self.service = MediaLibraryService(index_path=self.index, host_root="/mnt/mb-gdrive-samsung", enabled=True)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def add_vision_tables(self) -> None:
+        connection = sqlite3.connect(self.index)
+        connection.execute("CREATE TABLE vtags (clip_id TEXT PRIMARY KEY, duration REAL, tags TEXT, secs REAL)")
+        connection.execute("CREATE TABLE frames (clip_id TEXT, t REAL, emb BLOB, PRIMARY KEY (clip_id, t))")
+        connection.execute(
+            "CREATE TABLE photos (id TEXT PRIMARY KEY, zip TEXT, member TEXT, album TEXT, name TEXT, kind TEXT, "
+            "bytes INTEGER, taken TEXT, year TEXT, lat REAL, lon REAL, description TEXT, vision TEXT)"
+        )
+        connection.execute("INSERT INTO vtags VALUES (?,?,?,?)", (SAMPLE_CLIP["id"], 30.0, '["a boxer hits a heavy bag","a gym with red mats"]', 5.0))
+        connection.execute("INSERT INTO vtags VALUES (?,?,?,?)", ("clip-2", 20.0, '["workers pour concrete"]', 5.0))
+        for t in (0.0, 5.0):
+            connection.execute("INSERT INTO frames VALUES (?,?,?)", (SAMPLE_CLIP["id"], t, b"\x00" * 1024))
+        connection.execute("INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           ("takeout:z1:IMG_1.jpg", "z1", "IMG_1.jpg", "Trips", "IMG_1.jpg", "photo", 1000, "2021-05-01", "2021", None, None, "a boxer at a gym", "done"))
+        connection.commit()
+        connection.close()
+
+    def test_missing_tables_are_reported_not_errors(self):
+        result = self.service.search_vision(query="boxer")
+        self.assertEqual(result["visionTablesPresent"], {"photos": False, "frames": False, "vtags": False})
+        self.assertEqual((result["clips"], result["photos"]), ([], []))
+        self.assertEqual(self.service.status()["visionTablesPresent"]["vtags"], False)
+
+    def test_vtags_and_photos_match_with_all_words(self):
+        self.add_vision_tables()
+        result = self.service.search_vision(query="boxer gym")
+        self.assertEqual([c["id"] for c in result["clips"]], [SAMPLE_CLIP["id"]])
+        self.assertIn("a boxer hits a heavy bag", result["clips"][0]["matchedTags"])
+        self.assertEqual(result["clips"][0]["frameTimes"], [0.0, 5.0])
+        self.assertEqual([p["id"] for p in result["photos"]], ["takeout:z1:IMG_1.jpg"])
+        self.assertEqual(result["photos"][0]["visionStatus"], "done")
+        self.assertEqual(self.service.search_vision(query="boxer concrete")["clips"], [])
+
+    def test_wildcards_in_query_are_literal(self):
+        self.add_vision_tables()
+        self.assertEqual(self.service.search_vision(query="%")["clips"], [])
+        self.assertEqual(self.service.search_vision(query="b_xer")["photos"], [])
+        with self.assertRaises(MediaLibraryError):
+            self.service.search_vision(query="  ")
+
+
+class MediaLibraryMultiRootTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.index = Path(self.temp.name) / "media-index.snapshot.db"
+        other = second_clip(id="exec-1", remote="gdrive-exec", account="exec@example.test", path="Footage/2024")
+        stray = second_clip(id="stray-1", remote="gdrive-other", account="other@example.test")
+        build_index(self.index, [SAMPLE_CLIP, other, stray])
+        self.roots = {"remote:gdrive-samsung": "/mnt/mb-gdrive-samsung", "remote:gdrive-exec": "/mnt/mb-gdrive-exec"}
+        self.service = MediaLibraryService(index_path=self.index, host_root="/mnt/mb-gdrive-samsung", enabled=True, host_roots=self.roots)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_each_remote_maps_to_its_own_root(self):
+        self.assertTrue(self.service.get_clip(SAMPLE_CLIP["id"])["hostPath"].startswith("/mnt/mb-gdrive-samsung/"))
+        self.assertEqual(self.service.get_clip("exec-1")["hostPath"], "/mnt/mb-gdrive-exec/Footage/2024/timelapse build site.mov")
+
+    def test_unmapped_remote_fails_closed(self):
+        with self.assertRaises(MediaLibraryError):
+            self.service.get_clip("stray-1")
+
+    def test_listings_skip_and_flag_unmapped_clips(self):
+        page = self.service.list_clips(limit=10)
+        self.assertEqual(sorted(i["id"] for i in page["items"]), sorted([SAMPLE_CLIP["id"], "exec-1"]))
+        self.assertEqual([x["id"] for x in page["unmappedSkipped"]], ["stray-1"])
+        found = self.service.search(query="timelapse")
+        self.assertEqual([i["id"] for i in found["items"]], ["exec-1"])
+        self.assertEqual([x["id"] for x in found["unmappedSkipped"]], ["stray-1"])
+
+    def test_account_key_is_used_when_remote_is_not_mapped(self):
+        service = MediaLibraryService(index_path=self.index, host_root="/mnt/x", enabled=True,
+                                      host_roots={"account:other@example.test": "/mnt/mb-other"})
+        self.assertTrue(service.get_clip("stray-1")["hostPath"].startswith("/mnt/mb-other/"))
+
+    def test_invalid_mapping_is_rejected(self):
+        for bad in ({"drive:x": "/mnt/a"}, {"remote:x": "relative/path"}, {"remote:": "/mnt/a"}):
+            with self.assertRaises(MediaLibraryError):
+                MediaLibraryService(index_path=self.index, host_root="/mnt/x", host_roots=bad)
+
+    def test_status_lists_roots(self):
+        self.assertEqual(self.service.status()["hostRoots"], self.roots)
+
+
+class MediaLibraryFtsJoinTests(unittest.TestCase):
+    def test_fts_matches_join_on_id_not_rowid_and_dedupe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            index = Path(temp) / "media-index.snapshot.db"
+            build_index(index, [SAMPLE_CLIP, second_clip(), second_clip(id="clip-3", name="trees at dusk.mov", vision="trees dusk")])
+            service = MediaLibraryService(index_path=index, host_root="/mnt/mb-gdrive-samsung", enabled=True)
+            hit = service.search(query="timelapse")
+            self.assertEqual(hit["mode"], "fts")
+            self.assertEqual([i["id"] for i in hit["items"]], ["clip-2"])
+            # clip-2 has a name row and a VISION row that both match "trees": one result.
+            ids = [i["id"] for i in service.search(query="trees")["items"]]
+            self.assertEqual(sorted(ids), ["clip-2", "clip-3"])
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertEqual([i["id"] for i in service.search(query="dusk")["items"]], ["clip-3"])
 
 
 class MediaLibraryServiceTests(unittest.TestCase):

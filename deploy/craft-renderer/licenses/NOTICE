@@ -1,0 +1,14 @@
+Montage isolated craft renderer third-party binaries
+
+The renderer distributes the following upstream command-line binaries under
+Apache-2.0. Each binary download is pinned by SHA-256 in its Dockerfile.
+The Apache license was verified at each exact release tag on 2026-10-24.
+
+PDFCraft v0.5.0: https://github.com/storytold/pdfcraft/tree/v0.5.0
+PhotoCraft v0.6.0: https://github.com/storytold/photocraft/tree/v0.6.0
+LightCraft v0.5.0: https://github.com/storytold/lightcraft/tree/v0.5.0
+VectorCraft v0.8.0: https://github.com/storytold/vectorcraft/tree/v0.8.0
+
+Upstream copyright and additional license/notice files are preserved from
+the release archives. Montage does not modify these binaries. Its Python
+validation, transport, job and review wrappers are separate repository code.

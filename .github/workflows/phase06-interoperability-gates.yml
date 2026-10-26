@@ -50,7 +50,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Studio dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements-studio.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-studio.txt -r requirements-dev.txt
 
       - name: Compile application modules
         run: python -m py_compile yappy_clipz/*.py yappy_clipz/providers/*.py

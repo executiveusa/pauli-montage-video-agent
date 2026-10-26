@@ -212,7 +212,7 @@ class AuthService:
         return self.tokens.issue(
             tenant_id=self.owner_tenant_id,
             actor_id=f"user:{self.owner_username}",
-            scopes=self.DEFAULT_SCOPES,
+            scopes=(*self.DEFAULT_SCOPES, "system:admin"),
             token_type="session",
             ttl_seconds=self.session_ttl_seconds,
         )

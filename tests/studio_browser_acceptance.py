@@ -7,6 +7,7 @@ undo/redo -> save/reopen -> timed presentation -> deterministic render -> verify
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -86,9 +87,11 @@ def main() -> int:
 
             page.get_by_role("link", name="Timeline").click()
             page.wait_for_url(re.compile(r"/studio/projects/local_.+/edit$"), timeout=10_000)
+            # The traditional editor remains the default for local and hosted projects.
             expect(page.get_by_text("source-backed playback")).to_be_visible(timeout=10_000)
             video = page.locator("video").first
-            expect(video).to_have_attribute("src", re.compile(r"127\.0\.0\.1:4788/files/.+/assets/"))
+            # Browser originals are loaded from device-local IndexedDB, not the worker endpoint.
+            expect(video).to_have_attribute("src", re.compile(r"^blob:"))
 
             # Prove this is not a decorative preview: the real media element must
             # decode/play and advance the canonical timeline playhead.
@@ -168,7 +171,7 @@ def main() -> int:
             # Canonical StudioProject text remains exact; wrapping is render-only.
             expect(page.get_by_text(founder_lower_third, exact=True)).to_be_visible(timeout=10_000)
 
-            page.get_by_role("button", name="Render + verify 9:16 review").click()
+            page.get_by_role("button", name="FFmpeg MP4 (local engine)").click()
             expect(page.get_by_text(re.compile(r"Verified \d+ source range"))).to_be_visible(timeout=120_000)
 
             overlay_payloads = [payload for payload in operation_payloads if payload.get("operation") == "overlay_text"]
@@ -227,6 +230,56 @@ def main() -> int:
             if left < 40 or right > 1020:
                 raise AssertionError(f"decoded lower-third pixels exceed 9:16 horizontal safe bounds: {bounds}")
 
+            # The new zero-backend MVP must export a real playable video even when
+            # localhost FFmpeg requests are unavailable, using the SAVED timeline.
+            page.route("http://127.0.0.1:4788/**", lambda route: route.abort())
+            # Source trims were restored before splitting; its original saved
+            # canvas duration therefore agrees with the two contiguous clips.
+            page.get_by_role("button", name="Export in browser · no server").click()
+            expect(page.get_by_text(re.compile(r"Browser preview recorded:"))).to_be_visible(timeout=90_000)
+            download_link = page.get_by_role("link", name="Download browser review")
+            expect(download_link).to_be_visible()
+            with page.expect_download() as download_info:
+                download_link.click()
+            downloaded = download_info.value.path()
+            if not downloaded:
+                raise AssertionError("browser review did not produce downloadable bytes")
+            browser_probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(downloaded)],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+            browser_metadata = json.loads(browser_probe.stdout)
+            video_streams = [stream for stream in browser_metadata.get("streams", []) if stream.get("codec_type") == "video"]
+            if not video_streams or (video_streams[0].get("width"), video_streams[0].get("height")) != (540, 960):
+                raise AssertionError(f"browser proof export dimensions invalid: {video_streams}")
+            # MediaRecorder WebM can omit format.duration entirely even when
+            # frames/packets decode correctly. Check presentation timestamps.
+            packets_probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "packet=pts_time", "-of", "json", str(downloaded)],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+            packets = json.loads(packets_probe.stdout).get("packets", [])
+            stamps = [float(p["pts_time"]) for p in packets if p.get("pts_time") is not None]
+            if len(stamps) < 3 or max(stamps) - min(stamps) <= 0.1:
+                raise AssertionError(f"browser export has no playable duration: {len(stamps)} timed packets")
+            # A hard reload must rehydrate the original source and saved timeline.
+            page.reload(wait_until="networkidle")
+            # Two source clips plus title and lower-third are retained after reload.
+            expect(page.locator('button[class*="timelineClip"]')).to_have_count(4)
+            expect(page.get_by_text(founder_lower_third, exact=True)).to_be_visible()
+            expect(page.locator("video").first).to_have_attribute("src", re.compile(r"^blob:"), timeout=15_000)
+
+            # Chat editing is an explicit local-only beta; hosted/default routes stay classic.
+            page.goto(page.url.split("?")[0] + "?chat=1", wait_until="networkidle")
+            expect(page.get_by_text("Montage Director", exact=True)).to_be_visible()
+            expect(page.get_by_label("Tell Montage what to edit")).to_be_visible()
+            expect(page.get_by_role("button", name="Upload footage")).to_be_visible()
+            page.get_by_label("Tell Montage what to edit").fill("Add title CHAT UI PROOF")
+            page.get_by_role("button", name="Send", exact=True).click()
+            expect(page.get_by_text("Added “CHAT UI PROOF”", exact=False)).to_be_visible(timeout=10_000)
+            page.reload(wait_until="networkidle")
+            expect(page.get_by_text("Montage Director", exact=True)).to_be_visible()
             if page_errors:
                 raise AssertionError(f"uncaught browser errors: {page_errors}")
             context.tracing.stop(path=str(TRACE))

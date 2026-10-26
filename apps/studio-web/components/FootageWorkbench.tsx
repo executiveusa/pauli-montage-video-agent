@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_LOCAL_ENGINE_URL,
   LocalEngineHealth,
@@ -30,6 +30,7 @@ import {
   updateLocalSource,
 } from "@/lib/local-studio-store";
 import { HostedAssetLibrary } from "@/components/HostedAssetLibrary";
+import { browserSourceUrl, saveBrowserSource } from "@/lib/browser-source-media";
 
 type BusyAction = "connect" | "upload" | "transcribe" | "cut" | "reframe" | "captions" | "verify" | null;
 type EngineState = "checking" | "offline" | "ready" | "missing-dependencies";
@@ -76,6 +77,33 @@ function workerStorageFilename(assetId: string, filename: string): string {
   return `${assetId}__${filename}`;
 }
 
+async function browserVideoDuration(objectUrl: string): Promise<number | null> {
+  const video = document.createElement("video");
+  video.preload = "metadata";
+  video.src = objectUrl;
+  try {
+    return await new Promise<number | null>((resolve) => {
+      const timeout = window.setTimeout(() => finish(null), 10000);
+      function finish(value: number | null) {
+        window.clearTimeout(timeout);
+        video.removeEventListener("loadedmetadata", loaded);
+        video.removeEventListener("error", failed);
+        resolve(value);
+      }
+      function loaded() {
+        const value = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null;
+        finish(value);
+      }
+      function failed() { finish(null); }
+      video.addEventListener("loadedmetadata", loaded, { once: true });
+      video.addEventListener("error", failed, { once: true });
+    });
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+  }
+}
+
 export function FootageWorkbench({projectId}:{projectId:string}){return isLocalProjectId(projectId)?<LocalFootageWorkbench projectId={projectId}/>:<HostedAssetLibrary projectId={projectId}/>;}
 
 function LocalFootageWorkbench({ projectId }: { projectId: string }) {
@@ -87,6 +115,7 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [transientPreviewUrl, setTransientPreviewUrl] = useState<string | null>(null);
   const [state, setState] = useState<LocalFootageState>({ projectId, beads: [], exports: [], updatedAt: "" });
+  const importing = useRef(false);
   const [busy, setBusy] = useState<BusyAction>(null);
   const [message, setMessage] = useState("Choose footage now. Local processing can connect separately.");
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +217,19 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
     };
   }, [transientPreviewUrl]);
 
+  // Rehydrate the original source after refresh; blob: URLs are intentionally never persisted.
+  useEffect(() => {
+    const assetId = source?.id;
+    if (!assetId) return;
+    let canceled = false;
+    let url: string | null = null;
+    void browserSourceUrl(projectId, assetId).then((next) => {
+      if (canceled) { if (next) URL.revokeObjectURL(next); return; }
+      if (next) { url = next; setTransientPreviewUrl(next); }
+    }).catch(() => undefined);
+    return () => { canceled = true; if (url) URL.revokeObjectURL(url); };
+  }, [projectId, source?.id]);
+
   useEffect(() => {
     if (!localMode || source) return;
     const legacy = getFootageState(projectId).source;
@@ -225,27 +267,28 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
       event.target.value = "";
       return;
     }
-    const blobPreview = URL.createObjectURL(file);
-    setTransientPreviewUrl(blobPreview);
-    const registered = registerLocalSource(projectId, {
-      filename: file.name,
-      sizeBytes: file.size,
-      mimeType: file.type || "application/octet-stream",
-      durationSeconds: null,
-      width: null,
-      height: null,
-      status: "pending-worker",
-      workerAssetId: null,
-      workerStorageFilename: null,
-      previewUrl: null,
-    });
-    setSource(registered.asset);
-    setPendingFile(file);
-    setMessage(`Added ${file.name} to the canonical StudioProject. Local processing can sync separately.`);
-    if (engineState === "ready" && health) {
-      await uploadAndBind(file, registered.asset.id);
-    }
-    event.target.value = "";
+    if(importing.current){event.target.value="";return;}
+    importing.current=true;setBusy("upload");
+    const input=event.target;
+    const blobPreview=URL.createObjectURL(file);
+    let committed=false;
+    try {
+      const detectedDuration=file.type.startsWith("video/")?await browserVideoDuration(blobPreview):null;
+      const assetId="asset_local_"+crypto.randomUUID().replaceAll("-","");
+      // Store bytes before replacing canonical source identity. Quota failure
+      // leaves the existing source and timeline intact in browser-only mode.
+      let browserSaved=false;
+      try {await saveBrowserSource(projectId,assetId,file);browserSaved=true;}
+      catch(reason){if(engineState!=="ready"||!health)throw reason;}
+      const registered=registerLocalSource(projectId,{
+        id:assetId,filename:file.name,sizeBytes:file.size,mimeType:file.type||"application/octet-stream",durationSeconds:detectedDuration,
+        width:null,height:null,status:"pending-worker",workerAssetId:null,workerStorageFilename:null,previewUrl:null,
+      });
+      committed=true;setTransientPreviewUrl(blobPreview);setSource(registered.asset);setPendingFile(file);
+      setMessage(browserSaved?`Saved ${file.name} on this device for preview and browser review export.`:"Browser storage is unavailable for this source. Sync it to the local FFmpeg engine; reselect the source after refresh.");
+      if(engineState==="ready"&&health)await uploadAndBind(file,registered.asset.id);
+    }catch(reason){setError(reason instanceof Error?reason.message:"Source import failed.");if(!committed)setMessage("Import did not replace the previous source or saved timeline.");}
+    finally{if(!committed)URL.revokeObjectURL(blobPreview);importing.current=false;setBusy(null);input.value="";}
   }
 
   async function syncPendingSource() {
@@ -436,6 +479,7 @@ function LocalFootageWorkbench({ projectId }: { projectId: string }) {
         </div>
         <div className="form-actions">
           <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/edit`}>Timeline</Link>
+          <Link className="button secondary" href={`/studio/projects/${encodeURIComponent(projectId)}/animator`}>Animator</Link>
           <Link className="button secondary" href="/studio">Projects</Link>
         </div>
       </header>

@@ -1,0 +1,88 @@
+"""VectorCraft actions through the shared CLI/API/MCP/UI action contract."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .actions import ActionContext
+from .crafts.vectorpipeline import VectorCraftService
+from .crafts.pipeline import CraftError
+from .errors import ActionProblem
+from .hosted_actions import _cap
+from .imagecraft_actions import ImageCraftActionDispatcher, ImageCraftCapabilityRegistry
+
+_R = ["project:read", "asset:read"]
+_W = ["project:write", "asset:read"]
+_F = ["project:write", "asset:read", "asset:write"]
+_S = "08_images"
+_LABEL = {"vectorcraft": ("VectorCraft", "allowlisted vector transforms and SVG/PDF export")}
+
+def _caps(engine: str) -> dict[str, dict[str, Any]]:
+    name, what = _LABEL[engine]
+    p = engine + "."
+    c = lambda a, t, d, **k: (p + a, _cap(p + a, f"{name} {t}", d, stage=_S, **k))  # noqa: E731
+    return dict([
+        c("options.get", "options", f"{name} descriptor, option schema, limits and input policy.", scopes=["project:read"]),
+        c("job.create", "create job", f"Create a {name} job: one registered SVG asset id, {what}, and output format.", scopes=_W, risk="medium", idempotency="supported"),
+        c("job.revise", "revise job", "Replace the job spec; clears plan, preview and review.", scopes=_W, risk="medium", idempotency="supported"),
+        c("job.get", "get job", "Job state, plan, preview, self-check, receipts, and the next allowed actions.", scopes=_R),
+        c("job.list", "list jobs", f"List {name} jobs, optionally by project.", scopes=_R),
+        c("plan.run", "plan", "Read the input vector document in the isolated engine and fix the artboard size and output format; binds the job digest.", scopes=_W, risk="low", idempotency="supported"),
+        c("preview.render", "render preview", "Run the operations in the isolated engine; returns the output image, a before/after contact sheet, and mechanical checks as evidence for a reviewer.", scopes=_W, risk="medium", idempotency="supported"),
+        c("review.submit", "submit review", "A human or reviewer agent that is not an author passes or fails the preview. A pass needs every mechanical check to hold.", scopes=_W, risk="medium", idempotency="supported"),
+        c("final.render", "final", "Promote the reviewed preview and register it as a project SVG/PDF asset.", scopes=_F, risk="medium", approval="explicit", idempotency="required"),
+        c("job.cancel", "cancel job", "Cancel an unfinished job.", scopes=_W, risk="low", idempotency="supported"),
+        c("artifact.get", "get artifact", "Base64 preview image, before/after contact sheet, or final image (bounded size).", scopes=_R),
+    ])
+
+
+_VECTOR_CAPS: dict[str, dict[str, Any]] = {}
+for _e in _LABEL:
+    _VECTOR_CAPS.update(_caps(_e))
+
+
+class VectorCraftCapabilityRegistry(ImageCraftCapabilityRegistry):
+    def list(self, *, lifecycle: str | None = None) -> list[dict[str, Any]]:
+        rows = super().list(lifecycle=lifecycle)
+        rows.extend(v for v in _VECTOR_CAPS.values() if lifecycle is None or v["lifecycle"] == lifecycle)
+        return sorted(rows, key=lambda row: row["actionId"])
+
+    def describe(self, action_id: str) -> dict[str, Any]:
+        return dict(_VECTOR_CAPS[action_id]) if action_id in _VECTOR_CAPS else super().describe(action_id)
+
+    def contains(self, action_id: str) -> bool:
+        return action_id in _VECTOR_CAPS or super().contains(action_id)
+
+    def action_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(set(super().action_ids()) | set(_VECTOR_CAPS)))
+
+
+class VectorCraftActionDispatcher(ImageCraftActionDispatcher):
+    def __init__(self, *, vectorcraft: VectorCraftService, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.vectorcraft = vectorcraft
+        self._handlers.update(self._vector_handlers_for("vectorcraft", vectorcraft))
+
+    @staticmethod
+    def _vector_spec(q: dict[str, Any]) -> dict[str, Any]:
+        spec = q.get("spec")
+        if not isinstance(spec, dict):
+            raise ActionProblem("invalid_request", "spec must be an object", 400)
+        return spec
+
+    def _vector_handlers_for(self, engine: str, svc: VectorCraftService) -> dict[str, Any]:
+        p = engine + "."
+        jid = lambda q: str(self.req(q, "jobId"))  # noqa: E731
+        return {
+            p + "options.get": lambda q, c: svc.options(),
+            p + "job.create": lambda q, c: svc.create(tenant=self.tenant(c), project=str(self.req(q, "projectId")), actor=c.actor_id, spec=self._vector_spec(q)),
+            p + "job.revise": lambda q, c: svc.revise(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id, spec=self._vector_spec(q)),
+            p + "job.get": lambda q, c: svc.get(self.tenant(c), jid(q)),
+            p + "job.list": lambda q, c: svc.list(self.tenant(c), q.get("projectId")),
+            p + "plan.run": lambda q, c: svc.run_plan(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id),
+            p + "preview.render": lambda q, c: svc.render_preview(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id),
+            p + "review.submit": lambda q, c: svc.submit_review(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id, verdict=str(self.req(q, "verdict")), notes=q.get("notes")),
+            p + "final.render": lambda q, c: svc.render_final(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id),
+            p + "job.cancel": lambda q, c: svc.cancel(tenant=self.tenant(c), job_id=jid(q), actor=c.actor_id),
+            p + "artifact.get": lambda q, c: svc.artifact(tenant=self.tenant(c), job_id=jid(q), name=str(self.req(q, "artifact"))),
+        }

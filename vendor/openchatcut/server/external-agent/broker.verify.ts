@@ -1,0 +1,279 @@
+import assert from 'node:assert/strict';
+import {
+  cancelEditorCallsForOwner,
+  connectedProjectIds,
+  editorBinding,
+  editSessionOwnerMatches,
+  editorStatuses,
+  ExternalEditorCallError,
+  invokeEditorTool,
+  isProjectConnected,
+  nextEditorCall,
+  nextEditorCancellation,
+  onRegisteredToolsChanged,
+  pendingEditorCallsForTest,
+  registerEditor,
+  resetExternalAgentBrokerForTest,
+  settleEditorCall,
+  unregisterEditor,
+} from './broker.ts';
+
+const projectId = 'project-check';
+const editorId = 'editor-check';
+const revision = 'v1-project-check';
+const tools = [{
+  name: 'read_timeline',
+  input_schema: { type: 'object' as const, properties: {} },
+}];
+
+function hasOutcome(outcome: ExternalEditorCallError['outcome']): (error: unknown) => boolean {
+  return (error) => error instanceof ExternalEditorCallError && error.outcome === outcome;
+}
+
+resetExternalAgentBrokerForTest();
+let toolChanges = 0;
+const stopWatchingTools = onRegisteredToolsChanged(() => { toolChanges += 1; });
+let registrationCapability = registerEditor(projectId, editorId, revision, tools, undefined, null);
+assert.match(registrationCapability, /^[A-Za-z0-9_-]{43}$/);
+assert.equal(toolChanges, 1, 'first editor registration announces the expanded tool list');
+assert.throws(
+  () => registerEditor(projectId, editorId, revision, tools, undefined, 'w'.repeat(43)),
+  hasOutcome('stale'),
+  'a client that only knows the public editor id cannot renew its registration',
+);
+assert.equal(
+  registerEditor(projectId, editorId, revision, tools, undefined, registrationCapability),
+  registrationCapability,
+  'the owning editor can renew without rotating its live capability',
+);
+assert.equal(toolChanges, 1, 'heartbeats with the same schemas do not spam list-changed');
+stopWatchingTools();
+assert.deepEqual(connectedProjectIds(), [projectId]);
+
+const binding = editorBinding(projectId);
+assert(binding);
+assert.equal(JSON.stringify(editorStatuses()).includes(registrationCapability), false,
+  'registration capabilities are never exposed through editor status');
+const resultPromise = invokeEditorTool('owner-success', binding, 'read_timeline', {});
+const call = await nextEditorCall(
+  projectId,
+  editorId,
+  revision,
+  new AbortController().signal,
+  registrationCapability,
+);
+assert(call);
+assert.equal(call.name, 'read_timeline');
+assert.deepEqual(call.binding, binding);
+assert.equal(isProjectConnected(projectId, Date.now() + 60_000), true, 'in-flight calls keep a busy editor connected');
+assert.equal(settleEditorCall(call.id, 'applied', { fps: 30 }, registrationCapability), true);
+assert.equal(isProjectConnected(projectId, Date.now() + 60_000), false, 'settled calls no longer mask an offline editor');
+assert.deepEqual(await resultPromise, { fps: 30 });
+
+const inFlightPromise = invokeEditorTool('owner-evicted', binding, 'read_timeline', {});
+const inFlight = await nextEditorCall(
+  projectId,
+  editorId,
+  revision,
+  new AbortController().signal,
+  registrationCapability,
+);
+assert(inFlight);
+assert.equal(cancelEditorCallsForOwner('owner-evicted'), 1);
+await assert.rejects(inFlightPromise, hasOutcome('cancelled'));
+const cancellation = await nextEditorCancellation(
+  projectId,
+  editorId,
+  AbortSignal.timeout(100),
+  registrationCapability,
+);
+assert.equal(cancellation?.id, inFlight.id, 'in-flight cancellation is delivered cooperatively to the editor');
+assert.equal(cancellation?.outcome, 'cancelled');
+assert.equal(settleEditorCall(inFlight.id, 'applied', { late: true }), false, 'late mutation results cannot revive a cancelled call');
+
+const queuedPromise = invokeEditorTool('owner-project-close', binding, 'read_timeline', {});
+assert.equal(await unregisterEditor(projectId, editorId, 'w'.repeat(43)), false);
+assert.equal(await unregisterEditor(projectId, editorId, registrationCapability), true);
+await assert.rejects(queuedPromise, hasOutcome('cancelled'));
+assert.equal(pendingEditorCallsForTest().length, 0, 'project close settles queued calls instead of leaving them pending');
+
+registrationCapability = registerEditor(projectId, editorId, revision, tools, undefined, null);
+const staleBinding = editorBinding(projectId);
+assert(staleBinding);
+const stalePromise = invokeEditorTool('owner-stale', staleBinding, 'read_timeline', {});
+registerEditor(projectId, editorId, 'v2-project-check', tools, undefined, registrationCapability);
+await assert.rejects(stalePromise, hasOutcome('stale'));
+assert.equal(pendingEditorCallsForTest().length, 0, 'revision changes remove stale calls from the dequeue path');
+// Same-editor revision advance now adopts the registry's current binding
+// instead of rejecting the call (autosave/registry-sync progression is
+// legitimate, not a stale takeover). The adopted call runs normally.
+const adoptedPromise = invokeEditorTool('owner-old-binding', staleBinding, 'read_timeline', {});
+adoptedPromise.catch(() => undefined);
+assert.equal(pendingEditorCallsForTest().length, 1, 'adopted call is queued');
+const adopted = pendingEditorCallsForTest()[0];
+assert.notEqual(adopted, undefined);
+assert.equal(cancelEditorCallsForOwner('owner-old-binding'), 1);
+await assert.rejects(adoptedPromise, hasOutcome('cancelled'));
+
+const currentBinding = editorBinding(projectId);
+assert(currentBinding);
+const ownerlessListPromise = invokeEditorTool(
+  'owner-after-broker-restart',
+  currentBinding,
+  'list_edit_sessions',
+  {},
+);
+const ownerlessListCall = await nextEditorCall(
+  projectId,
+  editorId,
+  currentBinding.baseRevision,
+  new AbortController().signal,
+  registrationCapability,
+);
+assert(ownerlessListCall);
+assert.equal(settleEditorCall(ownerlessListCall.id, 'applied', [{
+  editSessionId: 'persisted-ownerless-draft',
+  status: 'drafting',
+  stale: false,
+}], registrationCapability), true);
+assert.deepEqual(await ownerlessListPromise, [{
+  editSessionId: 'persisted-ownerless-draft',
+  status: 'drafting',
+  stale: false,
+  ownerOnline: false,
+  orphaned: true,
+  recoveryPending: false,
+  recoveryActions: ['resume', 'discard'],
+  ownedByCurrentTransport: false,
+}], 'a persisted draft without an in-memory transport owner is recoverable after broker restart');
+
+const recoveryPromise = invokeEditorTool(
+  'recovery-owner-one',
+  currentBinding,
+  'recover_edit_session',
+  { editSessionId: 'persisted-ownerless-draft', action: 'resume' },
+);
+assert.throws(
+  () => invokeEditorTool(
+    'recovery-owner-two',
+    currentBinding,
+    'recover_edit_session',
+    { editSessionId: 'persisted-ownerless-draft', action: 'resume' },
+  ),
+  (error) => error instanceof ExternalEditorCallError
+    && error.outcome === 'rejected'
+    && error.message.includes('already being recovered'),
+  'an orphan is reserved atomically before the first recovery reaches the editor',
+);
+const recoveryCall = await nextEditorCall(
+  projectId,
+  editorId,
+  currentBinding.baseRevision,
+  new AbortController().signal,
+  registrationCapability,
+);
+assert(recoveryCall);
+assert.equal(settleEditorCall(recoveryCall.id, 'applied', {
+  editSessionId: 'persisted-ownerless-draft',
+  status: 'drafting',
+}, registrationCapability), true);
+await recoveryPromise;
+assert.equal(editSessionOwnerMatches(
+  'recovery-owner-one',
+  currentBinding,
+  'persisted-ownerless-draft',
+), true);
+
+assert.equal(cancelEditorCallsForOwner('recovery-owner-one'), 0);
+const failedRecovery = invokeEditorTool(
+  'recovery-owner-two',
+  currentBinding,
+  'recover_edit_session',
+  { editSessionId: 'persisted-ownerless-draft', action: 'resume' },
+);
+const failedRecoveryCall = await nextEditorCall(
+  projectId,
+  editorId,
+  currentBinding.baseRevision,
+  new AbortController().signal,
+  registrationCapability,
+);
+assert(failedRecoveryCall);
+assert.equal(settleEditorCall(
+  failedRecoveryCall.id,
+  'failed',
+  'simulated recovery failure',
+  registrationCapability,
+), true);
+await assert.rejects(failedRecovery, hasOutcome('failed'));
+const retriedRecovery = invokeEditorTool(
+  'recovery-owner-three',
+  currentBinding,
+  'recover_edit_session',
+  { editSessionId: 'persisted-ownerless-draft', action: 'resume' },
+);
+const retriedRecoveryCall = await nextEditorCall(
+  projectId,
+  editorId,
+  currentBinding.baseRevision,
+  new AbortController().signal,
+  registrationCapability,
+);
+assert(retriedRecoveryCall);
+assert.equal(settleEditorCall(retriedRecoveryCall.id, 'applied', {
+  editSessionId: 'persisted-ownerless-draft',
+  status: 'drafting',
+}, registrationCapability), true);
+await retriedRecovery;
+assert.equal(editSessionOwnerMatches(
+  'recovery-owner-three',
+  currentBinding,
+  'persisted-ownerless-draft',
+), true, 'a failed recovery releases its claim for another authenticated transport');
+
+async function reuseDraft(ownerId: string, stale = false): Promise<unknown> {
+  const result = invokeEditorTool(ownerId, currentBinding!, 'begin_edit_session', { reuseExisting: true });
+  const next = await nextEditorCall(
+    projectId, editorId, currentBinding!.baseRevision, AbortSignal.timeout(1_000), registrationCapability,
+  );
+  assert(next);
+  assert.equal(next.name, 'begin_edit_session');
+  settleEditorCall(next.id, 'applied', {
+    editSessionId: 'persisted-ownerless-draft', status: 'drafting', stale,
+  }, registrationCapability);
+  return result;
+}
+
+await reuseDraft('recovery-owner-three');
+assert.equal(editSessionOwnerMatches('recovery-owner-three', currentBinding, 'persisted-ownerless-draft'), true);
+await assert.rejects(reuseDraft('competing-owner'), hasOutcome('rejected'),
+  'reuseExisting must not steal a live draft from another transport');
+assert.equal(editSessionOwnerMatches('recovery-owner-three', currentBinding, 'persisted-ownerless-draft'), true,
+  'a rejected adoption leaves the original owner able to continue editing');
+
+cancelEditorCallsForOwner('recovery-owner-three');
+const reservedRecovery = invokeEditorTool('reserved-owner', currentBinding, 'recover_edit_session', {
+  editSessionId: 'persisted-ownerless-draft', action: 'resume',
+});
+const reservedCall = await nextEditorCall(
+  projectId, editorId, currentBinding.baseRevision, AbortSignal.timeout(1_000), registrationCapability,
+);
+assert(reservedCall);
+await assert.rejects(reuseDraft('competing-owner'), hasOutcome('rejected'),
+  'reuseExisting cannot bypass an in-flight recovery reservation');
+settleEditorCall(reservedCall.id, 'applied', {
+  editSessionId: 'persisted-ownerless-draft', status: 'drafting',
+}, registrationCapability);
+await reservedRecovery;
+assert.equal(editSessionOwnerMatches('reserved-owner', currentBinding, 'persisted-ownerless-draft'), true);
+
+cancelEditorCallsForOwner('reserved-owner');
+await assert.rejects(reuseDraft('reconnected-owner', true), hasOutcome('rejected'),
+  'a stale draft must not be silently adopted at a new project revision');
+await reuseDraft('reconnected-owner');
+assert.equal(editSessionOwnerMatches('reconnected-owner', currentBinding, 'persisted-ownerless-draft'), true,
+  'a disconnected owner can be replaced without losing its unchanged draft');
+
+await import('./mcp.verify.ts');
+await import('./broker-poll-refresh.verify.ts');
+console.log('external-agent broker check passed');

@@ -68,6 +68,8 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
             for error in exc.errors()
         ]})
 
+    from .status import StatusMonitor
+    status_monitor = StatusMonitor(active_runtime)
     if active_runtime.settings.cors_origins:
         app.add_middleware(CORSMiddleware,allow_origins=list(active_runtime.settings.cors_origins),allow_credentials=True,allow_methods=["GET","POST","PUT","DELETE","OPTIONS"],allow_headers=["authorization","content-type","content-length","idempotency-key","x-correlation-id"])
 
@@ -139,6 +141,12 @@ def create_app(service:StudioService|None=None,runtime:ApplicationRuntime|None=N
     @app.get("/api/v1/system/health")
     def system_health():
         result=active_runtime.dispatcher.dispatch("system.health")["result"]; result.update(repository=active_runtime.settings.repository_backend,authMode=active_runtime.settings.auth_mode,authConfigured=active_runtime.auth.configured,storage=active_runtime.storage.storage_type); return result
+    @app.get("/api/v1/system/status")
+    def system_status(request:Request,tenant:OptionalTenantHeader=None):
+        try:
+            owner = require(principal(request,tenant),"system:admin")
+            return JSONResponse(status_monitor.get(owner.tenant_id),headers={"Cache-Control":"private, no-store"})
+        except Exception as exc: raise _http_error(exc) from exc
     @app.get("/api/v1/system/version")
     def system_version(): return active_runtime.dispatcher.dispatch("system.version")["result"]
     @app.get("/api/v1/capabilities")

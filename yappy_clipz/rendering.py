@@ -194,6 +194,23 @@ class RenderService:
                     "durationSeconds": item["durationSeconds"],
                     "sourceStartSeconds": item.get("sourceStartSeconds") or 0,
                 })
+        canvas_raw = float((timeline.get("canvas") or {}).get("durationSeconds") or 0)
+        canvas_cap = canvas_raw if math.isfinite(canvas_raw) and canvas_raw > 0 else None
+        if canvas_cap is not None:
+            # An explicit canvas duration is the export window: clips are
+            # clamped to it, clips starting at or beyond it contribute
+            # nothing, and overlays follow the same boundary.
+            clamped_items = []
+            for row in media_items:
+                start = float(row["startSeconds"])
+                if start >= canvas_cap:
+                    continue
+                row = dict(row)
+                row["durationSeconds"] = min(float(row["durationSeconds"]), canvas_cap - start)
+                clamped_items.append(row)
+            media_items = clamped_items
+            overlays = [dict(overlay, duration=min(float(overlay["duration"]), canvas_cap - float(overlay["start"])))
+                        for overlay in overlays if float(overlay["start"]) < canvas_cap]
         video_items = [item for item in media_items if item["trackType"] == "video"]
         if not video_items:
             raise RenderError("FFmpeg render v1 requires at least one video asset")
@@ -219,9 +236,10 @@ class RenderService:
             "inputs": media_items,
             "overlays": overlays,
             "mediaPolicy": "source-audio-and-timeline-gaps-v1",
-            "durationSeconds": max(float((timeline.get("canvas") or {}).get("durationSeconds") or 0),
-                                   max(float(row["startSeconds"]) + float(row["durationSeconds"]) for row in media_items),
-                                   max((float(row["start"]) + float(row["duration"]) for row in overlays), default=0)),
+            "durationSeconds": (canvas_cap if canvas_cap is not None else
+                                max(canvas_raw if math.isfinite(canvas_raw) else 0.0,
+                                    max(float(row["startSeconds"]) + float(row["durationSeconds"]) for row in media_items),
+                                    max((float(row["start"]) + float(row["duration"]) for row in overlays), default=0))),
             "warnings": warnings,
             "engine": "ffmpeg",
         }

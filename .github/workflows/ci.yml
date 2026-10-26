@@ -37,7 +37,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install dependencies
-        run: make install-dev
+        run: make install-dev PYTHON_VERSION=3.11
+
+      - name: Install Chromium for browser regression tests
+        run: .venv/bin/python -m playwright install --with-deps chromium
 
       - name: Run lint smoke checks
         run: make lint

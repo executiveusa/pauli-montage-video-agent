@@ -309,6 +309,16 @@ YAPPY-CLIPZ reuses selected capabilities without copying whole repositories into
 
 See [`docs/YAPPY-CLIPZ-MASTER-PLAN.md`](docs/YAPPY-CLIPZ-MASTER-PLAN.md) for the complete consolidation plan.
 
+## Vendored: OpenChatCut (inert)
+
+`vendor/openchatcut` is a copy of [OpenChatCut](https://github.com/0xsline/OpenChatCut) (AGPL-3.0-or-later), pinned at commit `2e6f4a29b784200cfb32b859b16f2561592bc3e8` (v0.2.16). It is a separate agent-native video editor and is **not** the editor used by this platform (that is Twick, see above). It is kept here for reference and localization work only:
+
+- It lives outside the `apps/*` workspace glob, so it is not an npm workspace and is not in `package-lock.json`. `vercel.json` builds `apps/studio-web` only, and no CI job touches it.
+- `LICENSE` is the upstream AGPL text. `NOTICE` lists the source, the commit and every change made to the copy.
+- Added: Mexican Spanish (es-MX) UI dictionaries and `README.es-MX.md` (Spanish README for the vendored app).
+
+Translation of the remaining Chinese in the vendored source and docs follows in later changes.
+
 ## Deployment
 
 ### Vercel link

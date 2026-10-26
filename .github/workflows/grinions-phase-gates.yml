@@ -212,7 +212,7 @@ jobs:
         run: npm install --prefix ops/grinions --ignore-scripts
 
       - name: Install Studio/API/MCP dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements-studio.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-studio.txt -r requirements-dev.txt
 
       - name: StudioProject v1 contract tests
         run: |

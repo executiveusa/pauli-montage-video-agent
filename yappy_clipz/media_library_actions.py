@@ -40,6 +40,13 @@ _LIBRARY_CAPS = {
         scopes=["asset:read"],
         stage="01_second_brain_ingest",
     ),
+    "library.media.searchVision": _cap(
+        "library.media.searchVision",
+        "Search library vision metadata",
+        "Search vision caption tags on library clips and Takeout photo descriptions; every query word must match.",
+        scopes=["asset:read"],
+        stage="01_second_brain_ingest",
+    ),
     "library.media.get": _cap(
         "library.media.get",
         "Inspect library clip",
@@ -91,6 +98,7 @@ class MediaLibraryActionDispatcher(OneDriveActionDispatcher):
                 "library.media.status": self._library_status,
                 "library.media.list": self._library_list,
                 "library.media.search": self._library_search,
+                "library.media.searchVision": self._library_search_vision,
                 "library.media.get": self._library_get,
                 "library.media.register": self._library_register,
             }
@@ -136,6 +144,13 @@ class MediaLibraryActionDispatcher(OneDriveActionDispatcher):
             query=str(self.req(payload, "query")),
             limit=int(payload.get("limit", 50)),
             offset=int(payload.get("offset", 0)),
+        )
+
+    def _library_search_vision(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
+        self._require_owner(context)
+        return self.media_library.search_vision(
+            query=str(self.req(payload, "query")),
+            limit=int(payload.get("limit", 50)),
         )
 
     def _library_get(self, payload: dict[str, Any], context: ActionContext) -> dict[str, Any]:
