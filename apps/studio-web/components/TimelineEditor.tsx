@@ -19,6 +19,7 @@ import type {
 } from "@/lib/timeline";
 import { applyHumanTimelineCommand, HumanTimelineEditError } from "@/lib/human-timeline-bridge";
 import styles from "./TimelineEditor.module.css";
+import { browserSourceUrl } from "@/lib/browser-source-media";
 
 type EditorState = "loading" | "ready" | "dirty" | "saving" | "saved" | "conflict" | "error";
 type Selection = { trackId: string; itemId: string } | null;
@@ -107,6 +108,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [playing, setPlaying] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [directorCommand, setDirectorCommand] = useState("");
+  const [browserPreviewUrl, setBrowserPreviewUrl] = useState<string | null>(null);
   const savingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const localMode = isLocalProjectId(projectId);
@@ -177,7 +179,20 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     return getLocalAsset(projectId, activePreview.item.assetId);
   }, [activePreview?.item.assetId, localMode, projectId, timeline]);
 
-  const previewUrl = activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
+  // Blob URLs are transient: recreate them from IndexedDB when the user reopens the editor.
+  useEffect(() => {
+    if (!localMode || !activeLocalAsset?.id) { setBrowserPreviewUrl(null); return; }
+    let canceled = false;
+    let url: string | null = null;
+    void browserSourceUrl(projectId, activeLocalAsset.id).then((next) => {
+      if (canceled) { if (next) URL.revokeObjectURL(next); return; }
+      url = next;
+      setBrowserPreviewUrl(next);
+    }).catch(() => {if(!canceled)setBrowserPreviewUrl(null);});
+    return () => { canceled = true; if (url) URL.revokeObjectURL(url); };
+  }, [projectId, localMode, activeLocalAsset?.id]);
+
+  const previewUrl = browserPreviewUrl || activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
   const sourceStatus = activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
 
   const editingLocked = state === "saving" || state === "conflict" || state === "loading";
@@ -340,34 +355,15 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
       setMessage("Move the playhead inside the selected clip before splitting.");
       return;
     }
-    const leftDuration = splitAt - item.startSeconds;
-    const rightDuration = itemEnd - splitAt;
-    const hasSourceRange = item.sourceStartSeconds != null && item.sourceEndSeconds != null;
-    const sourceSpan = hasSourceRange ? item.sourceEndSeconds! - item.sourceStartSeconds! : null;
-    const sourceSplit = sourceSpan != null && item.durationSeconds > 0
-      ? item.sourceStartSeconds! + sourceSpan * (leftDuration / item.durationSeconds)
-      : null;
     const secondId = nextId(`${item.kind}_split`);
-    const first: TimelineItem = {
-      ...item,
-      durationSeconds: leftDuration,
-      sourceEndSeconds: sourceSplit ?? item.sourceEndSeconds ?? null,
-    };
-    const second: TimelineItem = {
-      ...item,
-      id: secondId,
-      startSeconds: splitAt,
-      durationSeconds: rightDuration,
-      sourceStartSeconds: sourceSplit ?? item.sourceStartSeconds ?? null,
-      extensions: item.extensions?.role === "source-master"
-        ? { ...item.extensions, role: "source-fragment" }
-        : item.extensions,
-    };
-    const items = track.items.flatMap((candidate) => (candidate.id === item.id ? [first, second] : [candidate]));
-    mark(
-      { ...timeline, tracks: timeline.tracks.map((candidate) => (candidate.id === track.id ? { ...candidate, items } : candidate)) },
-      `Selected clip split at ${fmt(splitAt)}`,
-    );
+    try {
+      const asset = localMode && item.assetId ? getLocalAsset(projectId, item.assetId) : null;
+      const next = applyHumanTimelineCommand(timeline, { type:"split", trackId:track.id, itemId:item.id, splitFrame:Math.round(splitAt * timeline.canvas.fps), rightItemId:secondId }, asset?.durationSeconds ? { durationSeconds:asset.durationSeconds } : undefined);
+      mark(next, `Selected clip split at ${fmt(splitAt)}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Split could not be applied.");
+      return;
+    }
     setSelection({ trackId: track.id, itemId: secondId });
   }
 

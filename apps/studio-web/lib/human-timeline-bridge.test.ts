@@ -107,3 +107,17 @@ test("media container tail does not create an off-grid source clip", () => {
   assert.throws(() => sourceClipDuration(0.001, 30), HumanTimelineEditError);
   assert.throws(() => sourceClipDuration(Infinity, 30), HumanTimelineEditError);
 });
+
+test("split uses the same frame/source/lock boundary for chat and timeline editing",()=>{
+ const original=baseline();const edited=applyHumanTimelineCommand(original,{type:"split",trackId:"V1",itemId:"clip",splitFrame:60,rightItemId:"right"},{durationSeconds:8});
+ const [left,right]=edited.tracks[0].items;
+ assert.equal(left.durationSeconds,1);assert.equal(left.sourceStartSeconds,2);assert.equal(left.sourceEndSeconds,3);
+ assert.equal(right.startSeconds,2);assert.equal(right.durationSeconds,2);assert.equal(right.sourceStartSeconds,3);assert.equal(right.sourceEndSeconds,5);
+ assert.equal(right.assetId,"immutable-master");assert.deepEqual(right.effects,original.tracks[0].items[0].effects);assert.equal(original.tracks[0].items.length,1);assert.equal(edited.version,original.version);
+ const command={type:"split" as const,trackId:"V1",itemId:"clip",splitFrame:60,rightItemId:"right"};
+ const locked=baseline();locked.tracks[0].locked=true;assert.throws(()=>applyHumanTimelineCommand(locked,command),/locked/);
+ assert.throws(()=>applyHumanTimelineCommand(original,{...command,rightItemId:"clip"}),/unique/);
+ assert.throws(()=>applyHumanTimelineCommand(original,{...command,splitFrame:30}),/strictly inside/);
+ const retimed=baseline();retimed.tracks[0].items[0].sourceEndSeconds=6;assert.throws(()=>applyHumanTimelineCommand(retimed,command),/retimed/);
+ assert.throws(()=>applyHumanTimelineCommand(original,command,{durationSeconds:4}),/exceeds/);
+});

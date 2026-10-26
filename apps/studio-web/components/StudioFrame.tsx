@@ -32,10 +32,19 @@ export function StudioFrame({ children, active = "Projects" }: { children: React
           <strong>One project truth</strong>
           <span>Footage, edits, review renders, and versions stay traceable to their source.</span>
         </div>
-        <Link className="button secondary" href="/sign-in">Hosted sign-in</Link>
-        <form action="/api/auth/sign-out" className="side-sign-out" method="post">
-          <button type="submit">Sign out</button>
-        </form>
+        {process.env.YAPPY_STUDIO_API_URL ? (
+          <>
+            <Link className="button secondary" href="/sign-in">Hosted sign-in</Link>
+            <form action="/api/auth/sign-out" className="side-sign-out" method="post">
+              <button type="submit">Sign out</button>
+            </form>
+          </>
+        ) : (
+          <div className="side-note" role="status">
+            <strong>Browser-local test studio</strong>
+            <span>Projects and original media stay on this device. Protected preview access uses Vercel sign-in; no separate Montage account is required.</span>
+          </div>
+        )}
       </aside>
       <main className="studio-main" id="studio-content" tabIndex={-1}>{children}</main>
     </div>
