@@ -49,6 +49,9 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
   const [messages, setMessages] = useState<Message[]>([{ id: 1, role: "assistant", text: starter }]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState("gpt-4.1-mini");
+  const [modelConnected, setModelConnected] = useState(false);
+  const [models, setModels] = useState<{id:string;name:string;available:boolean}[]>([]);
   const [advanced, setAdvanced] = useState(false);
   const [clips, setClips] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +60,7 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
   const nextUrl = useRef<string | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { void fetch("/api/director", {cache:"no-store"}).then(r => r.json()).then(data => {setModelConnected(Boolean(data.connected));setModels(Array.isArray(data.models)?data.models:[]);}).catch(() => setModelConnected(false)); }, []);
   const say = (role: Message["role"], text: string) => setMessages(prev => [...prev, { id: nextMessage.current++, role, text }]);
   const refresh = (id: string) => {
     if(nextUrl.current){URL.revokeObjectURL(nextUrl.current);nextUrl.current=null;}
@@ -188,7 +192,15 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
       finally { if(renderAbort.current===controller){setBusy(false); renderAbort.current=null;} }
       return;
     }
-    say("assistant", "I can make that edit once it is supported. For now, try “Trim to 10 seconds”, “Split at 5 seconds”, “Add title My Video”, or “Export preview”. I won't pretend a change was applied.");
+    if (modelConnected) {
+      setBusy(true);
+      try {
+        const res = await fetch("/api/director", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model,message:prompt,context:JSON.stringify({project:projectTitle,source:source?.name,durationSeconds:source?.duration,clipCount:clips})})});
+        const data = await res.json();
+        say("assistant", res.ok && typeof data.answer === "string" ? data.answer : (data.error || "Model temporarily unavailable."));
+      } catch {say("assistant", "Could not reach the model gateway. Your project was not changed.");}
+      finally {setBusy(false);}
+    } else say("assistant", "The model gateway is not connected yet. I can still trim, split, add titles, and export. To discuss creative concepts and external motion references, connect Synthia Gateway to an authorized model API.");
   };
   return <main className={styles.shell}>
     <aside className={styles.rail}>
@@ -208,11 +220,11 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
           <div className={styles.advanced}><button type="button" onClick={() => setAdvanced(!advanced)}>{advanced ? "Hide" : "Show"} traditional editor</button>{advanced && currentId && <Link href={`/studio/projects/${encodeURIComponent(currentId)}/footage`}>Footage tools</Link>}{advanced && currentId && <Link href={`/studio/projects/${encodeURIComponent(currentId)}/edit?classic=1`}>Timeline editor</Link>}</div>
         </div>
         <section className={styles.chat}>
-          <div className={styles.chatHeader}><div className={styles.agentAvatar}>M</div><div><strong>Montage Director</strong><span>Talk to edit · actions are saved to your project</span></div></div>
+          <div className={styles.chatHeader}><div className={styles.agentAvatar}>M</div><div><strong>Montage Director</strong><span>{modelConnected ? "AI creative direction · supported edits save to project" : "Local editor · connect Synthia to enable AI chat"}</span></div><select aria-label="Choose AI model" value={model} disabled={!modelConnected || busy} onChange={e=>setModel(e.target.value)} style={{marginLeft:"auto",maxWidth:150,border:"1px solid #343b4a",background:"#202631",color:"white",borderRadius:8,padding:8,fontSize:12}}>{models.length ? models.map(m=><option key={m.id} value={m.id}>{m.name}</option>) : <option value="gpt-4.1-mini">Model offline</option>}</select></div>
           <div className={styles.messages} aria-live="polite">{messages.map(m => <div key={m.id} className={m.role === "assistant" ? styles.assistantMessage : styles.userMessage}><span>{m.role === "assistant" ? "Montage" : "You"}</span><p>{m.text}</p></div>)}<div ref={transcriptEnd}/></div>
           <div className={styles.suggestions}>{["Trim to 10 seconds", "Add title My Story", "Export preview"].map(text => <button key={text} disabled={busy} onClick={() => void execute(text)} type="button">{text}</button>)}</div>
           <form className={styles.composer} onSubmit={e => { e.preventDefault(); void execute(draft); }}><textarea aria-label="Tell Montage what to edit" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void execute(draft); } }} placeholder="Tell Montage what you want to make…" rows={2} disabled={busy}/><div><button type="button" onClick={() => inputRef.current?.click()} disabled={busy} title="Upload footage">Attach footage</button><button type="submit" disabled={busy || !draft.trim()}>{busy ? "Working…" : "Send"}</button></div></form>
-          <p className={styles.disclosure}>This version runs verified editing commands, not a connected general-purpose AI agent. Unsupported requests are not executed.</p>
+          <p className={styles.disclosure}>{modelConnected ? `Creative ideas powered by ${model}. Only supported timeline commands execute automatically; footage is not sent to the model.` : "Synthia model gateway not configured. ChatGPT and Claude subscriptions do not automatically provide API access."}</p>
         </section>
       </div>
     </section>
