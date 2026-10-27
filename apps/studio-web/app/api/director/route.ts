@@ -41,7 +41,7 @@ function validQuote(token: unknown, digest: string, amount: number): boolean {
 }
 
 export async function GET() {
-  const connected = isConfigured();
+  const connected = await authorized();
   return NextResponse.json({
     connected, defaultModel: DEFAULT_MODEL,
     models: MODELS.map(m => ({
