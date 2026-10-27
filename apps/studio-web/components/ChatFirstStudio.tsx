@@ -209,10 +209,10 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
       const requestBody = {model,message:prompt,context:JSON.stringify({project:projectTitle,source:source?.name,durationSeconds:source?.duration,clipCount:clips}),history:messages.slice(-8).map(m=>({role:m.role,content:m.text.slice(0,1200)}))};
       const quoteResponse = await fetch("/api/director", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...requestBody,preview:true})});
       const quote = await quoteResponse.json();
-      if (!quoteResponse.ok || typeof quote.estimateUsd !== "number") {say("assistant",quote.error || "Unable to estimate model cost. No request sent.");return;}
+      if (!quoteResponse.ok || typeof quote.estimateUsd !== "number" || typeof quote.approvalToken !== "string") {say("assistant",quote.error || "Unable to estimate model cost. No request sent.");return;}
       const approved = window.confirm("Send this creative chat request to " + selected.name + "?\\nEstimated upper cost: $" + quote.estimateUsd.toFixed(5) + " USD. Actual billing may differ.\\nNo video is sent.\\n\\nOK = approve paid inference; Cancel = do not spend.");
       if (!approved) {say("assistant", "AI request cancelled. No paid inference was requested.");return;}
-      const response = await fetch("/api/director", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...requestBody,approved:true,approvedEstimateUsd:quote.estimateUsd})});
+      const response = await fetch("/api/director", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...requestBody,approved:true,approvalToken:quote.approvalToken})});
       const data = await response.json();
       say("assistant", response.ok && typeof data.answer === "string" ? data.answer : (data.error || "Model temporarily unavailable."));
     } catch {say("assistant", "Could not reach the model gateway. Your project was not changed.");}
