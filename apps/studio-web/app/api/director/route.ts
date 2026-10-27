@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { getSession, authConfigured } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -22,6 +23,22 @@ const DEFAULT_MODEL = "jdopensource/JoyAI-Video-Edit";
 const MAX_OUTPUT_TOKENS = 650;
 const isConfigured = () => Boolean(process.env.SYNTHIA_GATEWAY_URL && process.env.SYNTHIA_GATEWAY_API_KEY && authConfigured());
 async function authorized() { return isConfigured() && Boolean(await getSession()); }
+function quoteSignature(body: string): string {
+  return createHmac("sha256", process.env.MONTAGE_SESSION_SECRET!).update(body).digest("base64url");
+}
+function validQuote(token: unknown, digest: string, amount: number): boolean {
+  if (typeof token !== "string" || token.length > 2048) return false;
+  const [body, supplied, extra] = token.split(".");
+  if (!body || !supplied || extra !== undefined) return false;
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(quoteSignature(body));
+  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) return false;
+  try {
+    const quote = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as {digest?:string;amount?:number;expiresAt?:number};
+    return quote.digest === digest && quote.amount === amount &&
+      typeof quote.expiresAt === "number" && Date.now() <= quote.expiresAt;
+  } catch { return false; }
+}
 
 export async function GET() {
   const connected = isConfigured();
@@ -55,7 +72,7 @@ export async function POST(request: NextRequest) {
   let payload: unknown;
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Invalid request." }, { status: 400 }); }
   if (!payload || typeof payload !== "object") return NextResponse.json({error:"Invalid request."},{status:400});
-  const { model, message, context, history, preview, approved, approvedEstimateUsd } = payload as Record<string, unknown>;
+  const { model, message, context, history, preview, approved, approvalToken } = payload as Record<string, unknown>;
   const selection = MODELS.find(m => m.id === model);
   if (!selection || typeof message !== "string" || message.length < 1 || message.length > 5000) return NextResponse.json({error:"Invalid model or message."},{status:400});
   if (selection.provider === null) return NextResponse.json({error:"Selected model is a suggestion only. Its video/3D/local inference adapter is not installed. No model was called."},{status:409});
@@ -72,12 +89,17 @@ export async function POST(request: NextRequest) {
   const inputTokenBudget = Buffer.byteLength(JSON.stringify(messages), "utf8") + 256;
   const estimateUsd = Math.ceil(((inputTokenBudget * ("inputRate" in selection ? selection.inputRate : 0)) +
     (MAX_OUTPUT_TOKENS * ("outputRate" in selection ? selection.outputRate : 0))) / 1000000 * 100000) / 100000;
-  if (preview === true) return NextResponse.json({
-    estimateUsd, currency: "USD", model: selection.id, maxOutputTokens: MAX_OUTPUT_TOKENS,
-    notice: "Estimate based on public list pricing and a conservative text budget; upstream billing may differ. Approve before paid inference.",
-  }, {headers:{"Cache-Control":"no-store"}});
-  if (approved !== true || typeof approvedEstimateUsd !== "number" || approvedEstimateUsd !== estimateUsd)
-    return NextResponse.json({error:"Paid inference needs a previewed estimate and explicit approval.",estimateUsd},{status:428});
+  const digest = createHash("sha256").update(JSON.stringify({model: selection.id, contextText, turns, message, estimateUsd})).digest("hex");
+  if (preview === true) {
+    const body = Buffer.from(JSON.stringify({digest, amount:estimateUsd, expiresAt:Date.now()+5*60*1000})).toString("base64url");
+    return NextResponse.json({
+      estimateUsd, currency: "USD", model: selection.id, maxOutputTokens: MAX_OUTPUT_TOKENS,
+      approvalToken: body + "." + quoteSignature(body),
+      notice: "Estimate based on public list pricing and a conservative text budget; upstream billing may differ. Approve before paid inference.",
+    }, {headers:{"Cache-Control":"no-store"}});
+  }
+  if (approved !== true || !validQuote(approvalToken, digest, estimateUsd))
+    return NextResponse.json({error:"Paid inference needs a matching signed estimate and explicit approval.",estimateUsd},{status:428});
   const gateway = process.env.SYNTHIA_GATEWAY_URL!;
   let base: URL;
   try {
