@@ -49,6 +49,9 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
   const [messages, setMessages] = useState<Message[]>([{ id: 1, role: "assistant", text: starter }]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState("jdopensource/JoyAI-Video-Edit");
+  const [modelConnected, setModelConnected] = useState(false);
+  const [models, setModels] = useState<{id:string;name:string;available:boolean;category:string;kind:string;reason:string;modelUrl?:string}[]>([]);
   const [advanced, setAdvanced] = useState(false);
   const [clips, setClips] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +60,7 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
   const nextUrl = useRef<string | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { void fetch("/api/director", {cache:"no-store"}).then(r => r.json()).then(data => {setModelConnected(Boolean(data.connected));setModels(Array.isArray(data.models)?data.models:[]);}).catch(() => setModelConnected(false)); }, []);
   const say = (role: Message["role"], text: string) => setMessages(prev => [...prev, { id: nextMessage.current++, role, text }]);
   const refresh = (id: string) => {
     if(nextUrl.current){URL.revokeObjectURL(nextUrl.current);nextUrl.current=null;}
@@ -128,14 +132,19 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
     if (/^(upload|import|add footage|choose video)/.test(lowered)) { inputRef.current?.click(); say("assistant", "Choose a video and I’ll prepare it for editing."); return; }
     const id = currentId;
     const timeline = id ? getLocalTimeline(id) : null;
-    if (!timeline || !getLocalSourceAsset(id)) { say("assistant", "First, upload your footage. I'll create the project and prepare the video automatically."); inputRef.current?.click(); return; }
-    const track = timeline.tracks.find(t => t.type === "video");
-    const item = track?.items[0];
-    if (!track || !item) { say("assistant", "I couldn't find a video clip on this project. Reimport your footage."); return; }
     const trim = matchChatTime(prompt,"trim");
     const split = matchChatTime(prompt,"split");
     const title = prompt.match(/(?:add|put|show|change)\s+(?:a\s+)?(?:title|text|caption)\s*(?:that says|saying|to|:)?\s+(.+)/i);
-    if (trim) {
+    const localExport = /(export|render|download|make a preview|review copy)/.test(lowered);
+    const requiresFootage = Boolean(trim || split || title || localExport);
+    if (requiresFootage && (!timeline || !getLocalSourceAsset(id))) {
+      say("assistant", "First, upload your footage to make that timeline edit.");
+      inputRef.current?.click(); return;
+    }
+    const track = timeline?.tracks.find(t => t.type === "video");
+    const item = track?.items[0];
+    if (requiresFootage && (!track || !item)) { say("assistant", "I couldn't find a video clip on this project. Reimport your footage."); return; }
+    if (trim && timeline && track && item) {
       const seconds = trim.seconds;
       const fps = timeline.canvas.fps || 30;
       const frames = seconds == null ? 0 : Math.round(seconds * fps);
@@ -152,7 +161,7 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
       } catch(e) { say("assistant", e instanceof Error ? e.message : "That trim could not be applied."); }
       return;
     }
-    if (split) {
+    if (split && timeline && track && item) {
       const seconds = split.seconds;
       const fps = timeline.canvas.fps || 30;
       if (seconds == null || seconds <= 0 || seconds >= item.durationSeconds) { say("assistant", "Choose a split point inside the clip."); return; }
@@ -164,7 +173,7 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
       }catch(e){say("assistant",e instanceof Error?e.message:"Split failed.");}
       return;
     }
-    if (title) {
+    if (title && timeline && item) {
       const value = title[1].trim().replace(/^["“]|["”]$/g, "");
       if (!value || value.length > 180) { say("assistant", "Tell me a shorter title, up to 180 characters."); return; }
       try {
@@ -174,7 +183,7 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
       } catch(e) { say("assistant", e instanceof Error ? e.message : "Could not add that title."); }
       return;
     }
-    if (/(export|render|download|make a preview|review copy)/.test(lowered)) {
+    if (localExport && timeline && item) {
       setBusy(true); say("assistant", "I’m making a review video now. Keep the page open; the export will stay on your device.");
       const controller = new AbortController();renderAbort.current?.abort();renderAbort.current=controller;
       try {
@@ -188,8 +197,28 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
       finally { if(renderAbort.current===controller){setBusy(false); renderAbort.current=null;} }
       return;
     }
-    say("assistant", "I can make that edit once it is supported. For now, try “Trim to 10 seconds”, “Split at 5 seconds”, “Add title My Video”, or “Export preview”. I won't pretend a change was applied.");
+    const selected = models.find(m => m.id === model);
+    if (!selected?.available || !modelConnected) {
+      say("assistant", selected?.kind !== "chat"
+        ? selected?.name + " is selected as the production-model preference, but its inference adapter is not connected. No video has been changed and no credits were used. The local editor still works; choose a connected chat model for creative advice."
+        : "That chat model is not connected to an authorized provider yet. No API call was made. The local editing tools remain available.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const requestBody = {model,message:prompt,context:JSON.stringify({project:projectTitle,source:source?.name,durationSeconds:source?.duration,clipCount:clips}),history:messages.slice(-8).map(m=>({role:m.role,content:m.text.slice(0,1200)}))};
+      const quoteResponse = await fetch("/api/director", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...requestBody,preview:true})});
+      const quote = await quoteResponse.json();
+      if (!quoteResponse.ok || typeof quote.estimateUsd !== "number" || typeof quote.approvalToken !== "string") {say("assistant",quote.error || "Unable to estimate model cost. No request sent.");return;}
+      const approved = window.confirm("Send this creative chat request to " + selected.name + "?\\nEstimated upper cost: $" + quote.estimateUsd.toFixed(5) + " USD. Actual billing may differ.\\nNo video is sent.\\n\\nOK = approve paid inference; Cancel = do not spend.");
+      if (!approved) {say("assistant", "AI request cancelled. No paid inference was requested.");return;}
+      const response = await fetch("/api/director", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...requestBody,approved:true,approvalToken:quote.approvalToken})});
+      const data = await response.json();
+      say("assistant", response.ok && typeof data.answer === "string" ? data.answer : (data.error || "Model temporarily unavailable."));
+    } catch {say("assistant", "Could not reach the model gateway. Your project was not changed.");}
+    finally {setBusy(false);}
   };
+  const selectedModel = models.find(m => m.id === model);
   return <main className={styles.shell}>
     <aside className={styles.rail}>
       <Link href="/" className={styles.brand}>MONTAGE</Link>
@@ -208,11 +237,11 @@ export function ChatFirstStudio({ projectId }: { projectId?: string }) {
           <div className={styles.advanced}><button type="button" onClick={() => setAdvanced(!advanced)}>{advanced ? "Hide" : "Show"} traditional editor</button>{advanced && currentId && <Link href={`/studio/projects/${encodeURIComponent(currentId)}/footage`}>Footage tools</Link>}{advanced && currentId && <Link href={`/studio/projects/${encodeURIComponent(currentId)}/edit?classic=1`}>Timeline editor</Link>}</div>
         </div>
         <section className={styles.chat}>
-          <div className={styles.chatHeader}><div className={styles.agentAvatar}>M</div><div><strong>Montage Director</strong><span>Talk to edit · actions are saved to your project</span></div></div>
+          <div className={styles.chatHeader}><div className={styles.agentAvatar}>M</div><div><strong>Montage Director</strong><span>{selectedModel?.kind === "chat" && selectedModel?.available ? "Chat gateway configured · approval required for paid calls" : "Local edits work · advanced models need integration"}</span></div><select aria-label="Choose production or chat model" value={model} disabled={busy} onChange={e=>setModel(e.target.value)} style={{marginLeft:"auto",maxWidth:205,border:"1px solid #343b4a",background:"#202631",color:"white",borderRadius:8,padding:8,fontSize:12}}>{models.length ? Array.from(new Set(models.map(m=>m.category))).map(group=><optgroup label={group} key={group}>{models.filter(m=>m.category===group).map(m=><option key={m.id} value={m.id}>{m.name}{m.available ? " · gateway configured" : " · setup required"}</option>)}</optgroup>) : <option value="jdopensource/JoyAI-Video-Edit">JoyAI Video Edit · setup required</option>}</select></div>
           <div className={styles.messages} aria-live="polite">{messages.map(m => <div key={m.id} className={m.role === "assistant" ? styles.assistantMessage : styles.userMessage}><span>{m.role === "assistant" ? "Montage" : "You"}</span><p>{m.text}</p></div>)}<div ref={transcriptEnd}/></div>
           <div className={styles.suggestions}>{["Trim to 10 seconds", "Add title My Story", "Export preview"].map(text => <button key={text} disabled={busy} onClick={() => void execute(text)} type="button">{text}</button>)}</div>
           <form className={styles.composer} onSubmit={e => { e.preventDefault(); void execute(draft); }}><textarea aria-label="Tell Montage what to edit" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void execute(draft); } }} placeholder="Tell Montage what you want to make…" rows={2} disabled={busy}/><div><button type="button" onClick={() => inputRef.current?.click()} disabled={busy} title="Upload footage">Attach footage</button><button type="submit" disabled={busy || !draft.trim()}>{busy ? "Working…" : "Send"}</button></div></form>
-          <p className={styles.disclosure}>This version runs verified editing commands, not a connected general-purpose AI agent. Unsupported requests are not executed.</p>
+          <p className={styles.disclosure}>{selectedModel ? selectedModel.name + " — " + selectedModel.reason + " Local timeline commands remain available. Video and 3D choices are suggestions only until an inference adapter and approval flow are verified." : "JoyAI is the default production suggestion. Specialized models require installation and verification; no subscription includes automatic API access."}</p>
         </section>
       </div>
     </section>
