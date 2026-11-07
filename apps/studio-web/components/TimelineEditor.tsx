@@ -665,7 +665,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
           <button className={styles.button} disabled={editingLocked || history.length === 0} onClick={undo} type="button">Undo</button>
           <button className={styles.button} disabled={editingLocked || future.length === 0} onClick={redo} type="button">Redo</button>
           {!localMode ? <button className={styles.button} disabled={state !== "ready" && state !== "saved"} onClick={() => void syncAgentChanges()} type="button" title="Read the latest saved project timeline without discarding unsaved work">Check agent edits</button> : null}
-          <button className={styles.button} disabled={state === "saving"} onClick={() => void load()} type="button">Reopen saved</button>
+          <button className={styles.button} disabled={state === "saving" || state === "loading"} onClick={() => { if ((state === "dirty" || state === "error") && !window.confirm("Discard unsaved changes and reopen the last saved timeline?")) return; void load(); }} type="button">Reopen saved</button>
           <button className={`${styles.button} ${styles.primary}`} disabled={!canSave} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save v${timeline.version}`}
           </button>
