@@ -108,11 +108,11 @@ test("timeline_edit MCP tool proposes then commits a source-safe edit on one can
   };
   const args={project_id:"p",expected_version:4,command:{type:"trim",trackId:"V1",itemId:"clip",startFrame:15,durationFrames:60}};
   const preview = await handleMontageMcp(request(call("timeline_edit",args),tokenA),{fetcher});
-  assert.equal((await preview.json()).result.isError,undefined);
+  assert.equal((await preview.json()).result.isError,false);
   assert.equal(writes,0);
   const saved = await handleMontageMcp(request(call("timeline_edit",{...args,commit:true,idempotency_key:"agent-edit-123"}),tokenA),{fetcher});
   const payload = await saved.json();
-  assert.equal(payload.result.isError,undefined);
+  assert.equal(payload.result.isError,false);
   assert.match(payload.result.content[0].text,/saved_and_verified/);
   assert.equal(writes,1);
   assert.equal(clip.sourceStartSeconds,1.5);
