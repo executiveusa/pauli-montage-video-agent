@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { runAgentTimelineEdit } from "./agent-timeline-edit";
 
 // The beta bridge uses the existing isolated Studio gateway, never a new data store.
 const BETA_STUDIO = "https://montage-staging.2.25.241.209.sslip.io";
@@ -64,6 +65,19 @@ export async function handleMontageMcp(request: Request, options: BridgeOptions 
   server.registerTool("project_get",{description:"Read one project in the authorized workspace.",inputSchema:{project_id:z.string()},annotations:read},({project_id})=>invoke("project.get",{projectId:project_id}));
   server.registerTool("project_validate",{description:"Validate a stored canonical project.",inputSchema:{project_id:z.string()},annotations:read},({project_id})=>invoke("project.validate",{projectId:project_id}));
   server.registerTool("timeline_get",{description:"Read the saved canonical timeline and version.",inputSchema:{project_id:z.string()},annotations:read},({project_id})=>invoke("timeline.get",{projectId:project_id}));
+  const editCommand = z.discriminatedUnion("type", [
+    z.object({type:z.literal("move"),trackId:z.string().min(1),itemId:z.string().min(1),startFrame:z.number().int().nonnegative()}),
+    z.object({type:z.literal("trim"),trackId:z.string().min(1),itemId:z.string().min(1),startFrame:z.number().int().nonnegative(),durationFrames:z.number().int().positive(),sourceInFrame:z.number().int().nonnegative().optional()}),
+    z.object({type:z.literal("split"),trackId:z.string().min(1),itemId:z.string().min(1),splitFrame:z.number().int().nonnegative(),rightItemId:z.string().min(1)}),
+    z.object({type:z.literal("slip"),trackId:z.string().min(1),itemId:z.string().min(1),deltaFrames:z.number().int()}),
+  ]);
+  server.registerTool("timeline_edit",{
+    description:"Plan or apply one frame-accurate change to the canonical Montage timeline, then read back. Default is preview-only. Caller must supply expected version from timeline_get and a stable idempotency key for commit. No automatic conflict rebase, no source extension without media evidence.",
+    inputSchema:{project_id:z.string().min(1),expected_version:z.number().int().positive(),command:editCommand,
+      commit:z.boolean().default(false),idempotency_key:z.string().optional()},
+    annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:false},
+  },({project_id,expected_version,command,commit,idempotency_key})=>
+    runAgentTimelineEdit(invoke,{projectId:project_id,expectedVersion:expected_version,command,commit,idempotencyKey:idempotency_key}));
   server.registerTool("project_create",{description:"Create a project in the authorized workspace.",inputSchema:{slug:z.string(),title:z.string(),objective:z.string(),deliverables:z.array(z.string()).min(1),quality_lane:z.enum(["economy","premium","sovereign","owner_private"]).default("premium"),idempotency_key:z.string().optional()},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},({idempotency_key,quality_lane,...input})=>invoke("project.create",{...input,qualityLane:quality_lane},{idempotency_key}));
   server.registerTool("timeline_replace",{description:"Save an edited timeline with the expected saved version. Read first; a stale write fails.",inputSchema:{project_id:z.string(),expected_version:z.number().int().min(1),timeline:z.record(z.string(),z.unknown()),idempotency_key:z.string().optional()},annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:false}},({project_id,expected_version,timeline,idempotency_key})=>invoke("timeline.replace",{projectId:project_id,expectedVersion:expected_version,timeline},{idempotency_key}));
   server.registerTool("action_run",{description:"Invoke an existing Studio action after describing its contract. Explicit human approval is required before setting approved=true; preserve idempotency keys for retries. May edit, render, access external sources, or spend provider credits according to the backend contract.",inputSchema:{action_id:z.string(),input:z.record(z.string(),z.unknown()).default({}),approved:z.boolean().default(false),idempotency_key:z.string().optional()},annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:true}},({action_id,input,...call})=>invoke(action_id,input,call));
