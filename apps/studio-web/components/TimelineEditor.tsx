@@ -20,6 +20,7 @@ import type {
 import { applyHumanTimelineCommand, HumanTimelineEditError } from "@/lib/human-timeline-bridge";
 import styles from "./TimelineEditor.module.css";
 import { browserSourceUrl } from "@/lib/browser-source-media";
+import { browserAssetTransferPath } from "@/lib/asset-transfer-path";
 
 type EditorState = "loading" | "ready" | "dirty" | "saving" | "saved" | "conflict" | "error";
 type Selection = { trackId: string; itemId: string } | null;
@@ -109,6 +110,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [zoom, setZoom] = useState(100);
   const [directorCommand, setDirectorCommand] = useState("");
   const [browserPreviewUrl, setBrowserPreviewUrl] = useState<string | null>(null);
+  const [hostedPreviewUrl, setHostedPreviewUrl] = useState<string | null>(null);
+  const [hostedSourceLoading, setHostedSourceLoading] = useState(false);
   const savingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const localMode = isLocalProjectId(projectId);
@@ -161,6 +164,43 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     void load();
   }, [load]);
 
+  const syncAgentChanges = useCallback(async () => {
+    if (localMode || savingRef.current || !timeline ||
+        !["ready", "saved"].includes(state)) return;
+    // Lock editing during the fetch so an in-flight refresh cannot erase a human edit.
+    const previousState = state;
+    let applied = false;
+    setState("loading");
+    try {
+      const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/timeline`,
+        { cache: "no-store" });
+      if (!response.ok) throw new Error("Saved project state could not be checked.");
+      const remote = await response.json() as Timeline;
+      if (!Number.isSafeInteger(remote.version) || !Array.isArray(remote.tracks))
+        throw new Error("Saved project timeline response is invalid.");
+      if (remote.version < timeline.version) {
+        setMessage("Remote timeline version is older than this editor. No changes applied.");
+        return;
+      }
+      if (remote.version === timeline.version) {
+        setMessage(`No new agent edits. Timeline v${timeline.version} is current.`);
+        return;
+      }
+      setTimeline(remote);
+      setHistory([]); // Do not undo over an agent-authored revision.
+      setFuture([]);
+      setSelection(null);
+      setPlaying(false);
+      setPlayhead(0);
+      setMessage(`Agent/human edits loaded from saved timeline v${remote.version}. Previous undo history was cleared.`);
+      applied = true;
+    } catch {
+      setMessage("Could not check saved agent changes. Your current timeline was not modified.");
+    } finally {
+      setState(applied ? "saved" : previousState);
+    }
+  }, [localMode, timeline, state, projectId]);
+
   const duration = timeline ? timelineLength(timeline) : 1;
   const selected = useMemo((): PreviewItem => {
     if (!timeline || !selection) return null;
@@ -192,8 +232,39 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     return () => { canceled = true; if (url) URL.revokeObjectURL(url); };
   }, [projectId, localMode, activeLocalAsset?.id]);
 
-  const previewUrl = browserPreviewUrl || activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
-  const sourceStatus = activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
+  // Hosted timeline items contain canonical asset IDs, not playable signed URLs.
+  // Resolve the existing tenant-scoped transfer route without putting asset tokens in project state.
+  const hostedAssetId = !localMode ? activePreview?.item.assetId : null;
+  useEffect(() => {
+    if (!hostedAssetId) { setHostedPreviewUrl(null); setHostedSourceLoading(false); return; }
+    let canceled = false;
+    setHostedPreviewUrl(null);
+    setHostedSourceLoading(true);
+    void fetch("/api/studio/actions/asset.download.request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ input: { projectId, assetId: hostedAssetId }, approved: false }),
+    }).then(async response => {
+      if (!response.ok) throw new Error("Signed media download unavailable.");
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || !("result" in payload)) throw new Error("Bad media response.");
+      const result = (payload as { result?: { path?: unknown } }).result;
+      if (typeof result?.path !== "string") throw new Error("Bad media path.");
+      return browserAssetTransferPath(result.path);
+    }).then(url => {
+      if (!canceled) setHostedPreviewUrl(url);
+    }).catch(() => {
+      if (!canceled) setMessage("Hosted source preview unavailable. Check project media access and retry from the footage library.");
+    }).finally(() => {
+      if (!canceled) setHostedSourceLoading(false);
+    });
+    return () => { canceled = true; };
+  }, [hostedAssetId, projectId]);
+
+  const previewUrl = (localMode ? browserPreviewUrl || activeLocalAsset?.previewUrl : hostedPreviewUrl)
+    || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
+  const sourceStatus = hostedSourceLoading ? "resolving-hosted-media" : activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
 
   const editingLocked = state === "saving" || state === "conflict" || state === "loading";
   const canSave = state === "dirty" || (state === "error" && timeline !== null);
@@ -593,7 +664,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         <div className={styles.actions}>
           <button className={styles.button} disabled={editingLocked || history.length === 0} onClick={undo} type="button">Undo</button>
           <button className={styles.button} disabled={editingLocked || future.length === 0} onClick={redo} type="button">Redo</button>
-          <button className={styles.button} disabled={state === "saving"} onClick={() => void load()} type="button">Reopen saved</button>
+          {!localMode ? <button className={styles.button} disabled={state !== "ready" && state !== "saved"} onClick={() => void syncAgentChanges()} type="button" title="Read the latest saved project timeline without discarding unsaved work">Check agent edits</button> : null}
+          <button className={styles.button} disabled={state === "saving" || state === "loading"} onClick={() => { if ((state === "dirty" || state === "error") && !window.confirm("Discard unsaved changes and reopen the last saved timeline?")) return; void load(); }} type="button">Reopen saved</button>
           <button className={`${styles.button} ${styles.primary}`} disabled={!canSave} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save v${timeline.version}`}
           </button>
@@ -609,7 +681,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         <section className={`${styles.panel} ${styles.directorPanel}`}>
           <div className={styles.panelHeader}><h2>Director</h2><span>same timeline state</span></div>
           <div className={styles.directorBody}>
-            <div className={styles.directorHint}>Agent and human edits land on this StudioProject timeline. No shadow edit model.</div>
+            <div className={styles.directorHint}>These are local command shortcuts, not a conversational AI agent. Authorized external agents edit the same saved StudioProject timeline through Montage MCP. Save your work before checking their changes.</div>
             <div className={styles.directorInput}>
               <input
                 aria-label="Director command"

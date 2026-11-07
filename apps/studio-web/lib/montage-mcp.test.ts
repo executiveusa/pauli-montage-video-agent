@@ -9,14 +9,15 @@ function request(body: unknown, token?: string, origin?: string) {
 }
 const call = (name: string, args = {}) => ({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}});
 
-test("real SDK transport initializes and discovers the 11 stable tools",async()=>{
+test("real SDK transport initializes and discovers the 12 stable tools",async()=>{
   const r = await handleMontageMcp(request({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-03-26",capabilities:{},clientInfo:{name:"acceptance",version:"1"}}}));
   assert.equal(r.status,200); assert.equal((await r.json()).result.serverInfo.name,"montage");
   const d = await handleMontageMcp(request({jsonrpc:"2.0",id:2,method:"tools/list"}));
   const tools = (await d.json()).result.tools;
-  assert.equal(tools.length,11);
+  assert.equal(tools.length,12);
   assert.equal(tools.find((t: {name:string})=>t.name==="timeline_get").annotations.readOnlyHint,true);
   assert.equal(tools.find((t: {name:string})=>t.name==="action_run").annotations.destructiveHint,true);
+  assert.equal(tools.find((t: {name:string})=>t.name==="timeline_edit").annotations.destructiveHint,true);
 });
 
 test("missing token cannot trigger any upstream operation",async()=>{
@@ -83,4 +84,36 @@ test("SDK tool save maps exact optimistic version; approval is explicit",async()
 test("cross-origin browser calls and persistent SSE are not accepted",async()=>{
   assert.equal((await handleMontageMcp(request(call("project_list"),tokenA,"https://evil.example"))).status,403);
   assert.equal((await handleMontageMcp(new Request("https://montage.example/api/mcp"))).status,405);
+});
+
+test("timeline_edit MCP tool proposes then commits a source-safe edit on one canonical project", async () => {
+  let version = 4;
+  let clip = {id:"clip",kind:"asset",assetId:"master",startSeconds:0,durationSeconds:3,sourceStartSeconds:1,sourceEndSeconds:4};
+  let writes = 0;
+  const fetcher:typeof fetch = async (url,init) => {
+    const body = JSON.parse(init!.body as string);
+    const action = String(url).split("/").pop();
+    if (action === "timeline.get") return Response.json({result:{version,canvas:{width:1080,height:1920,fps:30},
+      tracks:[{id:"V1",type:"video",order:0,items:[clip]}]}});
+    if (action === "timeline.replace") {
+      assert.equal(body.input.expectedVersion,4);
+      assert.equal(body.input.projectId,"p");
+      assert.equal(body.input.timeline.tracks[0].items[0].assetId,"master");
+      assert.equal(body.idempotency_key,"agent-edit-123");
+      clip=body.input.timeline.tracks[0].items[0];
+      version=5;writes++;
+      return Response.json({result:{timeline:{version}}});
+    }
+    throw new Error("unexpected action");
+  };
+  const args={project_id:"p",expected_version:4,command:{type:"trim",trackId:"V1",itemId:"clip",startFrame:15,durationFrames:60}};
+  const preview = await handleMontageMcp(request(call("timeline_edit",args),tokenA),{fetcher});
+  assert.equal((await preview.json()).result.isError,false);
+  assert.equal(writes,0);
+  const saved = await handleMontageMcp(request(call("timeline_edit",{...args,commit:true,idempotency_key:"agent-edit-123"}),tokenA),{fetcher});
+  const payload = await saved.json();
+  assert.equal(payload.result.isError,false);
+  assert.match(payload.result.content[0].text,/saved_and_verified/);
+  assert.equal(writes,1);
+  assert.equal(clip.sourceStartSeconds,1.5);
 });
