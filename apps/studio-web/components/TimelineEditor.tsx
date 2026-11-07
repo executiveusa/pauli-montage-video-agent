@@ -162,9 +162,12 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   }, [load]);
 
   const syncAgentChanges = useCallback(async () => {
-    // Never refresh over local unsaved work or an unresolved conflict.
     if (localMode || savingRef.current || !timeline ||
         !["ready", "saved"].includes(state)) return;
+    // Lock editing during the fetch so an in-flight refresh cannot erase a human edit.
+    const previousState = state;
+    let applied = false;
+    setState("loading");
     try {
       const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/timeline`,
         { cache: "no-store" });
@@ -181,15 +184,17 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         return;
       }
       setTimeline(remote);
-      setHistory([]); // Earlier undo snapshots must never overwrite a new remote revision.
+      setHistory([]); // Do not undo over an agent-authored revision.
       setFuture([]);
       setSelection(null);
       setPlaying(false);
       setPlayhead(0);
-      setState("saved");
-      setMessage(`Agent/human changes loaded from saved timeline v${remote.version}. Previous undo history was cleared to protect the new revision.`);
+      setMessage(`Agent/human edits loaded from saved timeline v${remote.version}. Previous undo history was cleared.`);
+      applied = true;
     } catch {
       setMessage("Could not check saved agent changes. Your current timeline was not modified.");
+    } finally {
+      setState(applied ? "saved" : previousState);
     }
   }, [localMode, timeline, state, projectId]);
 
