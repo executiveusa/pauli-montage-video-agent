@@ -9,14 +9,15 @@ function request(body: unknown, token?: string, origin?: string) {
 }
 const call = (name: string, args = {}) => ({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}});
 
-test("real SDK transport initializes and discovers the 11 stable tools",async()=>{
+test("real SDK transport initializes and discovers the 12 stable tools",async()=>{
   const r = await handleMontageMcp(request({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-03-26",capabilities:{},clientInfo:{name:"acceptance",version:"1"}}}));
   assert.equal(r.status,200); assert.equal((await r.json()).result.serverInfo.name,"montage");
   const d = await handleMontageMcp(request({jsonrpc:"2.0",id:2,method:"tools/list"}));
   const tools = (await d.json()).result.tools;
-  assert.equal(tools.length,11);
+  assert.equal(tools.length,12);
   assert.equal(tools.find((t: {name:string})=>t.name==="timeline_get").annotations.readOnlyHint,true);
   assert.equal(tools.find((t: {name:string})=>t.name==="action_run").annotations.destructiveHint,true);
+  assert.equal(tools.find((t: {name:string})=>t.name==="timeline_edit").annotations.destructiveHint,true);
 });
 
 test("missing token cannot trigger any upstream operation",async()=>{
