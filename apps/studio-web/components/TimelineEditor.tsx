@@ -20,6 +20,7 @@ import type {
 import { applyHumanTimelineCommand, HumanTimelineEditError } from "@/lib/human-timeline-bridge";
 import styles from "./TimelineEditor.module.css";
 import { browserSourceUrl } from "@/lib/browser-source-media";
+import { browserAssetTransferPath } from "@/lib/asset-transfer-path";
 
 type EditorState = "loading" | "ready" | "dirty" | "saving" | "saved" | "conflict" | "error";
 type Selection = { trackId: string; itemId: string } | null;
@@ -109,6 +110,8 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
   const [zoom, setZoom] = useState(100);
   const [directorCommand, setDirectorCommand] = useState("");
   const [browserPreviewUrl, setBrowserPreviewUrl] = useState<string | null>(null);
+  const [hostedPreviewUrl, setHostedPreviewUrl] = useState<string | null>(null);
+  const [hostedSourceLoading, setHostedSourceLoading] = useState(false);
   const savingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const localMode = isLocalProjectId(projectId);
@@ -229,8 +232,39 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     return () => { canceled = true; if (url) URL.revokeObjectURL(url); };
   }, [projectId, localMode, activeLocalAsset?.id]);
 
-  const previewUrl = browserPreviewUrl || activeLocalAsset?.previewUrl || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
-  const sourceStatus = activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
+  // Hosted timeline items contain canonical asset IDs, not playable signed URLs.
+  // Resolve the existing tenant-scoped transfer route without putting asset tokens in project state.
+  const hostedAssetId = !localMode ? activePreview?.item.assetId : null;
+  useEffect(() => {
+    if (!hostedAssetId) { setHostedPreviewUrl(null); setHostedSourceLoading(false); return; }
+    let canceled = false;
+    setHostedPreviewUrl(null);
+    setHostedSourceLoading(true);
+    void fetch("/api/studio/actions/asset.download.request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ input: { projectId, assetId: hostedAssetId }, approved: false }),
+    }).then(async response => {
+      if (!response.ok) throw new Error("Signed media download unavailable.");
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || !("result" in payload)) throw new Error("Bad media response.");
+      const result = (payload as { result?: { path?: unknown } }).result;
+      if (typeof result?.path !== "string") throw new Error("Bad media path.");
+      return browserAssetTransferPath(result.path);
+    }).then(url => {
+      if (!canceled) setHostedPreviewUrl(url);
+    }).catch(() => {
+      if (!canceled) setMessage("Hosted source preview unavailable. Check project media access and retry from the footage library.");
+    }).finally(() => {
+      if (!canceled) setHostedSourceLoading(false);
+    });
+    return () => { canceled = true; };
+  }, [hostedAssetId, projectId]);
+
+  const previewUrl = (localMode ? browserPreviewUrl || activeLocalAsset?.previewUrl : hostedPreviewUrl)
+    || (activePreview ? extensionString(activePreview.item, "previewUrl") : null);
+  const sourceStatus = hostedSourceLoading ? "resolving-hosted-media" : activeLocalAsset?.status || (activePreview ? extensionString(activePreview.item, "sourceStatus") : null);
 
   const editingLocked = state === "saving" || state === "conflict" || state === "loading";
   const canSave = state === "dirty" || (state === "error" && timeline !== null);
