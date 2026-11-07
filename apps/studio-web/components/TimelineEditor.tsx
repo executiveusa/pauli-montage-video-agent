@@ -161,6 +161,38 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
     void load();
   }, [load]);
 
+  const syncAgentChanges = useCallback(async () => {
+    // Never refresh over local unsaved work or an unresolved conflict.
+    if (localMode || savingRef.current || !timeline ||
+        !["ready", "saved"].includes(state)) return;
+    try {
+      const response = await fetch(`/api/studio/projects/${encodeURIComponent(projectId)}/timeline`,
+        { cache: "no-store" });
+      if (!response.ok) throw new Error("Saved project state could not be checked.");
+      const remote = await response.json() as Timeline;
+      if (!Number.isSafeInteger(remote.version) || !Array.isArray(remote.tracks))
+        throw new Error("Saved project timeline response is invalid.");
+      if (remote.version < timeline.version) {
+        setMessage("Remote timeline version is older than this editor. No changes applied.");
+        return;
+      }
+      if (remote.version === timeline.version) {
+        setMessage(`No new agent edits. Timeline v${timeline.version} is current.`);
+        return;
+      }
+      setTimeline(remote);
+      setHistory([]); // Earlier undo snapshots must never overwrite a new remote revision.
+      setFuture([]);
+      setSelection(null);
+      setPlaying(false);
+      setPlayhead(0);
+      setState("saved");
+      setMessage(`Agent/human changes loaded from saved timeline v${remote.version}. Previous undo history was cleared to protect the new revision.`);
+    } catch {
+      setMessage("Could not check saved agent changes. Your current timeline was not modified.");
+    }
+  }, [localMode, timeline, state, projectId]);
+
   const duration = timeline ? timelineLength(timeline) : 1;
   const selected = useMemo((): PreviewItem => {
     if (!timeline || !selection) return null;
@@ -593,6 +625,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         <div className={styles.actions}>
           <button className={styles.button} disabled={editingLocked || history.length === 0} onClick={undo} type="button">Undo</button>
           <button className={styles.button} disabled={editingLocked || future.length === 0} onClick={redo} type="button">Redo</button>
+          {!localMode ? <button className={styles.button} disabled={state !== "ready" && state !== "saved"} onClick={() => void syncAgentChanges()} type="button" title="Read the latest saved project timeline without discarding unsaved work">Check agent edits</button> : null}
           <button className={styles.button} disabled={state === "saving"} onClick={() => void load()} type="button">Reopen saved</button>
           <button className={`${styles.button} ${styles.primary}`} disabled={!canSave} onClick={() => void save()} type="button">
             {state === "saving" ? "Saving…" : `Save v${timeline.version}`}
@@ -609,7 +642,7 @@ export function TimelineEditor({ projectId }: { projectId: string }) {
         <section className={`${styles.panel} ${styles.directorPanel}`}>
           <div className={styles.panelHeader}><h2>Director</h2><span>same timeline state</span></div>
           <div className={styles.directorBody}>
-            <div className={styles.directorHint}>Agent and human edits land on this StudioProject timeline. No shadow edit model.</div>
+            <div className={styles.directorHint}>These are local command shortcuts, not a conversational AI agent. Authorized external agents edit the same saved StudioProject timeline through Montage MCP. Save your work before checking their changes.</div>
             <div className={styles.directorInput}>
               <input
                 aria-label="Director command"
